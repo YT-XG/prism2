@@ -11,7 +11,14 @@ export class TrayService {
 
   init(): void {
     try {
-      const image = nativeImage.createFromPath(icon)
+      const base = nativeImage.createFromPath(icon)
+      // 设计图标源是 512px，Windows 托盘 16px、mac 菜单栏 18px，视密度缩放到合适尺寸
+      const image =
+        process.platform === 'darwin'
+          ? base.resize({ width: 18, height: 18 })
+          : process.platform === 'win32'
+            ? base.resize({ width: 16, height: 16 })
+            : base
       if (process.platform === 'darwin') image.setTemplateImage(true)
       this.tray = new Tray(image)
       this.tray.setToolTip('Prism v2')

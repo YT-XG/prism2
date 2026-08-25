@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import log from 'electron-log'
 import BaseFrame from './BaseFrame'
 import { WINDOW_CHANNELS } from '@preload/ipc'
+import appIcon from '../../../resources/icon.png?asset'
 
 const { mainPage } = WINDOW_CHANNELS
 
@@ -27,8 +28,8 @@ export default class MainPageFrame extends BaseFrame {
     backgroundColor: '#00000000',
     frame: false,
     resizable: true,
-    alwaysOnTop: true,
-    skipTaskbar: true,
+    skipTaskbar: false,
+    icon: appIcon,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,
@@ -61,7 +62,6 @@ export default class MainPageFrame extends BaseFrame {
     } else if (this.window!.isVisible()) {
       this.sendOne(mainPage.toRenderer.startHide)
     } else {
-      this.window!.setAlwaysOnTop(true)
       this.#centerOnScreen()
       this.window!.setOpacity(0)
       this.window!.show()
@@ -75,7 +75,6 @@ export default class MainPageFrame extends BaseFrame {
   /** 最小化窗口让系统恢复焦点（用于自动粘贴场景） */
   minimizeForPaste(): void {
     if (this.window && !this.window.isDestroyed() && this.window.isVisible()) {
-      this.window.setAlwaysOnTop(false)
       if (process.platform === 'darwin') {
         this.window.hide()
         app.hide()
