@@ -1,0 +1,60 @@
+/*
+ * 共享动画：被 >=2 个组件使用的 keyframes + 全局 reduced-motion 兜底。
+ * 单组件专用 keyframes 放在组件 <style scoped>，命名 {feature}-{effect}。
+ */
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* 页面出场（主窗口 startHide 时渲染端切到该 class） */
+@keyframes page-exit {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+.dropdown-pop {
+  animation: dialog-in var(--duration-base) var(--ease-out-soft);
+}
+
+/* 减少动态效果偏好：全局兜底，组件内不要覆盖 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}

@@ -1,0 +1,73 @@
+/*
+ * 设计 Token（来源：前端样式参考图 + docs/AI前端样式重构提示词.md）
+ * 全应用唯一取值来源，禁止在组件里散落魔法值。
+ */
+:root {
+  /* 颜色（浅色） */
+  --bg-page: #f5f5f6;
+  --bg-surface: #ffffff;
+  --bg-hover: #f2f2f3;
+  --bg-selected: #111111;
+  --bg-selected-subtle: #f4f4f5;
+  --text-primary: #171717;
+  --text-secondary: #8a8a8f;
+  --text-muted: #b3b3b8;
+  --text-on-primary: #ffffff;
+
+  --border: #e6e6e8;
+
+  /* 粉彩强调（仅用于数据/事件卡片，正文导航保持黑白灰） */
+  --accent-lavender: #e9e3f7;
+  --accent-mint: #cdf0db;
+  --accent-yellow: #fbeec9;
+  --accent-blue: #cbd9fa;
+  --accent-violet: #d9cbee;
+
+  /* 深一档彩色文字（用于粉彩卡上的文字，保证对比度） */
+  --text-on-accent-lavender: #4b3a84;
+  --text-on-accent-mint: #1e6b3a;
+  --text-on-accent-yellow: #8a6d1b;
+  --text-on-accent-blue: #1f3f7a;
+  --text-on-accent-violet: #4a2d78;
+
+  /* 品牌色：聚焦/高亮用，克制使用 */
+  --brand: #6c5ce7;
+  --danger: #e5484d;
+
+  /* 字体 */
+  --font-sans: 'Inter', 'SF Pro Display', -apple-system, 'PingFang SC', 'HarmonyOS Sans SC',
+    'Microsoft YaHei', sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'SFMono-Regular', Menlo, Consolas, 'Liberation Mono',
+    monospace;
+
+  /* 间距刻度 */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-7: 32px;
+  --sp-8: 40px;
+
+  /* 圆角 */
+  --radius-sm: 8px;
+  --radius-md: 16px;
+  --radius-xl: 20px;
+  --radius-2xl: 28px;
+  --radius-pill: 9999px;
+
+  /* 阴影 */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.1);
+
+  /* 动效（时长/缓动，与 animations.css 中的 keyframes 配套） */
+  --duration-fast: 150ms;
+  --duration-base: 250ms;
+  --duration-slow: 350ms;
+  --ease-out-soft: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-soft: cubic-bezier(0.55, 0, 1, 0.45);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
