@@ -34,7 +34,7 @@ defineEmits<{ (e: 'click'): void }>()
 }
 
 .ui-pill.is-active {
-  background: var(--bg-selected);
-  color: var(--text-on-primary);
+  background: var(--brand);
+  color: #fff;
 }
 </style>

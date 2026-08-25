@@ -33,13 +33,13 @@ defineProps<{
 }
 
 .ui-btn--primary {
-  background: var(--bg-selected);
-  color: var(--text-on-primary);
+  background: var(--brand);
+  color: #fff;
   box-shadow: var(--shadow-sm);
 }
 
 .ui-btn--primary:hover {
-  background: #000;
+  background: color-mix(in srgb, var(--brand) 86%, #000);
 }
 
 .ui-btn--secondary {

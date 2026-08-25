@@ -182,7 +182,7 @@ onMounted(async () => {
 }
 
 .switch.is-on {
-  background: var(--bg-selected);
+  background: var(--brand);
 }
 
 .switch-knob {

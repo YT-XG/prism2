@@ -75,17 +75,19 @@
   --sidebar-bg: var(--bg-surface);
   --sidebar-header-bg: transparent;
   --sidebar-header-border: transparent;
-  --avatar-bg: var(--bg-selected);
-  --avatar-text: var(--text-on-primary);
+  --avatar-bg: var(--brand);
+  --avatar-text: #ffffff;
 }
 
 /*
- * 薰衣草主题（参考图配色）：侧边栏顶部淡紫渐变、淡紫头像胶囊、紫罗兰强调。
+ * 薰衣草主题（参考图配色）：
+ * - 整个侧边栏铺淡紫渐变（顶部更深、向下渐淡到近白）
+ * - 头像胶囊淡紫底 + 深紫字；强调色用紫罗兰
  */
 [data-theme='lavender'] {
-  --sidebar-bg: #fcfbfe;
-  --sidebar-header-bg: linear-gradient(180deg, #ece7fb 0%, rgba(236, 231, 251, 0) 100%);
-  --sidebar-header-border: #e7e1f6;
+  --sidebar-bg: linear-gradient(180deg, #ece7fb 0%, #f7f4fd 42%, #fcfbfe 100%);
+  --sidebar-header-bg: transparent;
+  --sidebar-header-border: transparent;
   --avatar-bg: #e7dff8;
   --avatar-text: #4a3a78;
   --brand: #7b7af0;

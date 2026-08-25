@@ -162,8 +162,8 @@ onMounted(async () => {
 }
 
 .nav-item.router-link-active {
-  background: var(--bg-selected);
-  color: var(--text-on-primary);
+  background: var(--brand);
+  color: #fff;
 }
 
 .nav-item__label {
