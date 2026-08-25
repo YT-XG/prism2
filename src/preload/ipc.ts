@@ -52,8 +52,8 @@ export interface AppSettings {
   githubRepo: string
   /** 剪贴板历史保留天数：10 | 30 | 90 */
   clipboardRetentionDays: number
-  /** 主题：light（默认）/ lavender（参考图薰衣草）/ dark（预留） */
-  theme: 'light' | 'dark' | 'lavender'
+  /** 主题：light / lavender（参考图）/ mint（白绿参考图）/ dark（预留） */
+  theme: 'light' | 'dark' | 'lavender' | 'mint'
 }
 
 // ---------------------------------------------------------------------------

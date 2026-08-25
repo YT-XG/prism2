@@ -95,3 +95,18 @@
   --bg-selected-subtle: #f3effc;
   --border: #e7e3f2;
 }
+
+/*
+ * 白绿（薄荷）主题（参考图配色）：侧边栏白色→薄荷绿渐变、薄荷头像胶囊、绿色强调。
+ */
+[data-theme='mint'] {
+  --sidebar-bg: linear-gradient(180deg, #e6f6ee 0%, #f2fbf6 45%, #fbfefc 100%);
+  --sidebar-header-bg: transparent;
+  --sidebar-header-border: transparent;
+  --avatar-bg: #ddf3e7;
+  --avatar-text: #1e6b3a;
+  --brand: #2f9e6e;
+  --bg-hover: #eaf8f1;
+  --bg-selected-subtle: #edf9f2;
+  --border: #e0efe6;
+}

@@ -62,7 +62,9 @@ onMounted(async () => {
 <style scoped>
 .main-page {
   display: flex;
+  gap: var(--sp-3);
   height: 100%;
+  padding: var(--sp-3);
   background: var(--bg-page);
 }
 
@@ -71,8 +73,9 @@ onMounted(async () => {
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  padding: var(--sp-4) var(--sp-3);
-  border-right: 1px solid var(--border);
+  padding: var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
   background: var(--sidebar-bg);
 }
 
@@ -205,5 +208,8 @@ onMounted(async () => {
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  background: var(--bg-page);
 }
 </style>

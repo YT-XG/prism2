@@ -24,21 +24,25 @@
 
 ## 组件层（`components/ui/`）
 
-- `UiButton`（primary 黑底 / secondary 描边 / ghost / danger）
+- `UiButton`（primary 品牌色强调 / secondary 描边 / ghost / danger）
 - `UiInput`（带 leading 图标、聚焦光环）
-- `UiPillTab`（药丸激活态）
+- `UiPillTab`（药丸激活态，激活=品牌色）
 - `UiEmptyState`、`UiDialog`（浮层）
 
 > 业务视图只准用这层组件 + token 拼装。图标统一用 `@lucide/vue`（细线、stroke 1.5–1.75、20px）。
 
 ## 主题
 
-已落地 **浅色** 与 **薰衣草**（参考图配色，`[data-theme='lavender']`，含侧边栏淡紫渐变、淡紫头像胶囊、紫罗兰强调）。**深色** 为后续迭代，预留 `--bg-*` token 但本期不做。
+已落地 **浅色**、**薰衣草**、**白绿（薄荷）** 三套（`[data-theme='lavender']` / `[data-theme='mint']`，含整条侧边栏渐变、头像胶囊、强调色）。**深色** 为后续迭代，预留 `--bg-*` token 但本期不做。
 
 主题切换：设置 → 外观 → 主题；选择后写入 `settings.json` 并即时生效（`document.documentElement.dataset.theme`）。
+
+## 布局容器
+
+主界面为**圆角卡片包裹**结构：侧边栏与内容区是两块独立圆角面板（`--radius-xl`），中间留缝、浮于页面底色上，不靠硬性分隔线。
 
 ## 原则
 
 - 彩色只用于强调/数据卡，正文导航保持黑白灰。
-- 主操作按钮黑色白字；激活态优先级 黑胶囊 > 浅灰胶囊 > 文字加粗。
+- 主操作按钮品牌色强调；激活态优先级 强调色 > 浅灰 > 文字加粗。
 - 留白充足；数据密集表格可收紧间距但保持圆角/配色/字体一致。

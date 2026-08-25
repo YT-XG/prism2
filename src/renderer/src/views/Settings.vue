@@ -23,7 +23,7 @@
         <div class="setting-row">
           <div class="row-info">
             <div class="row-name">主题</div>
-            <div class="row-desc">浅色 / 薰衣草（参考图）；深色将在后续版本提供</div>
+            <div class="row-desc">浅色 / 薰衣草 / 白绿（参考图）；深色将在后续版本提供</div>
           </div>
           <div class="cm-pills">
             <UiPillTab
@@ -77,11 +77,12 @@ async function toggle(key: 'autoStart'): Promise<void> {
   await window.electronAPI.settings.update({ [key]: next })
 }
 
-type ThemeValue = 'light' | 'lavender' | 'dark'
+type ThemeValue = 'light' | 'lavender' | 'mint' | 'dark'
 
 const THEMES: { value: ThemeValue; label: string; disabled?: boolean }[] = [
   { value: 'light', label: '浅色' },
   { value: 'lavender', label: '薰衣草（参考图）' },
+  { value: 'mint', label: '白绿（参考图）' },
   { value: 'dark', label: '深色', disabled: true }
 ]
 

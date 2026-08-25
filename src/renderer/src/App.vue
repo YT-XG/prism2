@@ -95,8 +95,7 @@ onMounted(() => {
   align-items: center;
   justify-content: space-between;
   padding: 0 var(--sp-3) 0 var(--sp-4);
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-surface);
+  background: transparent;
 }
 
 .titlebar-brand {
