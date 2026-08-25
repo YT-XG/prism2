@@ -85,7 +85,7 @@
  * 侧边栏透明、无边框，直接浮于渐变之上；组件区为白色。头像淡紫胶囊 + 深紫字。
  */
 [data-theme='lavender'] {
-  --page-bg: linear-gradient(165deg, #ece7fb 0%, #f5f1fc 48%, #fcfbfe 100%);
+  --page-bg: linear-gradient(170deg, #f2edfc 0%, #faf7fe 55%, #fdfdfe 100%);
   --sidebar-bg: transparent;
   --sidebar-header-bg: transparent;
   --sidebar-header-border: transparent;
@@ -102,7 +102,7 @@
  * 侧边栏透明、无边框；组件区为白色。薄荷头像胶囊 + 深绿字。
  */
 [data-theme='mint'] {
-  --page-bg: linear-gradient(165deg, #e6f6ee 0%, #f2fbf6 50%, #fbfefc 100%);
+  --page-bg: linear-gradient(170deg, #ecf7f1 0%, #f6fbf8 55%, #fdfefe 100%);
   --sidebar-bg: transparent;
   --sidebar-header-bg: transparent;
   --sidebar-header-border: transparent;

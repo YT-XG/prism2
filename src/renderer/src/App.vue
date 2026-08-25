@@ -89,7 +89,7 @@ onMounted(() => {
 }
 
 .titlebar {
-  height: 44px;
+  height: 38px;
   flex-shrink: 0;
   display: flex;
   align-items: center;

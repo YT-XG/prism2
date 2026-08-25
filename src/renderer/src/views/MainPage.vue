@@ -5,7 +5,6 @@
         <span class="mark-dot"></span>
         <div class="mark-text">
           <div class="mark-title">Prism</div>
-          <div class="mark-sub">Desktop Toolkit</div>
         </div>
       </div>
 
@@ -62,9 +61,9 @@ onMounted(async () => {
 <style scoped>
 .main-page {
   display: flex;
-  gap: var(--sp-3);
+  gap: var(--sp-2);
   height: 100%;
-  padding: var(--sp-3);
+  padding: var(--sp-2);
   background: transparent;
 }
 
@@ -73,7 +72,7 @@ onMounted(async () => {
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  padding: var(--sp-3);
+  padding: var(--sp-2);
   border: none;
   border-radius: var(--radius-xl);
   background: var(--sidebar-bg);
@@ -82,8 +81,8 @@ onMounted(async () => {
 .sidebar-mark {
   display: flex;
   align-items: center;
-  gap: var(--sp-3);
-  padding: var(--sp-3);
+  gap: var(--sp-2);
+  padding: var(--sp-2);
   margin-bottom: var(--sp-2);
   border-radius: var(--radius-md);
   background: var(--sidebar-header-bg);
@@ -91,8 +90,8 @@ onMounted(async () => {
 }
 
 .mark-dot {
-  width: 34px;
-  height: 34px;
+  width: 28px;
+  height: 28px;
   border-radius: var(--radius-pill);
   background: var(--avatar-bg);
   color: var(--avatar-text);
@@ -107,25 +106,20 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 700;
 }
 
 .mark-title {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
-}
-
-.mark-sub {
-  font-size: 11px;
-  color: var(--text-muted);
 }
 
 .nav {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: var(--sp-5);
+  gap: var(--sp-4);
   overflow-y: auto;
 }
 
@@ -148,10 +142,10 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   gap: var(--sp-3);
-  height: 38px;
+  height: 36px;
   padding: 0 var(--sp-3);
   border-radius: var(--radius-pill);
-  color: var(--text-secondary);
+  color: var(--text-primary);
   text-decoration: none;
   font-size: 13px;
   font-weight: 500;
@@ -182,7 +176,7 @@ onMounted(async () => {
   justify-content: center;
   border-radius: var(--radius-pill);
   background: var(--bg-selected-subtle);
-  color: var(--text-secondary);
+  color: var(--text-primary);
   font-size: 11px;
   font-weight: 600;
 }
@@ -193,7 +187,7 @@ onMounted(async () => {
 }
 
 .sidebar-footer {
-  padding: var(--sp-3) var(--sp-2) var(--sp-1);
+  padding: var(--sp-2) var(--sp-2) var(--sp-1);
   border-top: 1px solid var(--border);
 }
 
