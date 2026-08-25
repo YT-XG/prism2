@@ -23,16 +23,17 @@
         <div class="setting-row">
           <div class="row-info">
             <div class="row-name">主题</div>
-            <div class="row-desc">暗色主题将在后续版本提供</div>
+            <div class="row-desc">浅色 / 薰衣草（参考图）；深色将在后续版本提供</div>
           </div>
           <div class="cm-pills">
             <UiPillTab
-              v-for="t in ['light', 'dark']"
-              :key="t"
-              :active="settings.theme === t"
-              @click="setTheme(t)"
+              v-for="t in THEMES"
+              :key="t.value"
+              :active="settings.theme === t.value"
+              :class="{ 'is-disabled': t.disabled }"
+              @click="setTheme(t.value)"
             >
-              {{ t === 'light' ? '浅色' : '深色' }}
+              {{ t.label }}
             </UiPillTab>
           </div>
         </div>
@@ -76,8 +77,18 @@ async function toggle(key: 'autoStart'): Promise<void> {
   await window.electronAPI.settings.update({ [key]: next })
 }
 
-function setTheme(theme: 'light' | 'dark'): void {
+type ThemeValue = 'light' | 'lavender' | 'dark'
+
+const THEMES: { value: ThemeValue; label: string; disabled?: boolean }[] = [
+  { value: 'light', label: '浅色' },
+  { value: 'lavender', label: '薰衣草（参考图）' },
+  { value: 'dark', label: '深色', disabled: true }
+]
+
+function setTheme(theme: ThemeValue): void {
+  if (theme === 'dark') return // 深色尚未实现
   settings.value.theme = theme
+  document.documentElement.dataset.theme = theme
   void window.electronAPI.settings.update({ theme })
 }
 
@@ -193,6 +204,12 @@ onMounted(async () => {
 .cm-pills {
   display: flex;
   gap: var(--sp-2);
+}
+
+.cm-pills :deep(.ui-pill.is-disabled) {
+  opacity: 0.45;
+  cursor: default;
+  pointer-events: none;
 }
 
 .keycaps {

@@ -73,23 +73,28 @@ onMounted(async () => {
   flex-direction: column;
   padding: var(--sp-4) var(--sp-3);
   border-right: 1px solid var(--border);
-  background: var(--bg-surface);
+  background: var(--sidebar-bg);
 }
 
 .sidebar-mark {
   display: flex;
   align-items: center;
   gap: var(--sp-3);
-  padding: var(--sp-2) var(--sp-2) var(--sp-4);
+  padding: var(--sp-3);
+  margin-bottom: var(--sp-2);
+  border-radius: var(--radius-md);
+  background: var(--sidebar-header-bg);
+  border: 1px solid var(--sidebar-header-border);
 }
 
 .mark-dot {
   width: 34px;
   height: 34px;
   border-radius: var(--radius-pill);
-  background: var(--bg-selected);
-  color: var(--text-on-primary);
+  background: var(--avatar-bg);
+  color: var(--avatar-text);
   position: relative;
+  flex-shrink: 0;
 }
 
 .mark-dot::after {

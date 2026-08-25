@@ -46,6 +46,11 @@ function playExit(): void {
 onMounted(() => {
   window.electronAPI.window.notifyReady()
 
+  // 应用持久化的主题（启动时）
+  void window.electronAPI.settings.get().then((s) => {
+    document.documentElement.dataset.theme = s.theme
+  })
+
   subscribeOnUnmounted(() =>
     window.electronAPI.window.onSetPage((p) => {
       if (p.page) router.push(`/mainPage/${p.page}`)
