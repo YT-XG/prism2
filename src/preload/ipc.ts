@@ -66,6 +66,7 @@ export const WINDOW_CHANNELS = {
     toMain: {
       minimize: 'to-main-MainPage:minimize',
       hideAfterAnimation: 'to-main-MainPage:hideAfterAnimation',
+      toggleMaximize: 'to-main-MainPage:toggleMaximize',
       ready: 'to-main-MainPage:ready',
       openTranslate: 'to-main-MainPage:openTranslate'
     },
@@ -73,7 +74,8 @@ export const WINDOW_CHANNELS = {
       startHide: 'to-renderer-MainPage:startHide',
       reShow: 'to-renderer-MainPage:reShow',
       setPage: 'to-renderer-MainPage:setPage',
-      version: 'to-renderer-MainPage:version'
+      version: 'to-renderer-MainPage:version',
+      maximizeState: 'to-renderer-MainPage:maximizeState'
     }
   }
 } as const
@@ -129,10 +131,12 @@ export interface ElectronAPI {
   window: {
     minimize: () => void
     hideAfterAnimation: () => void
+    toggleMaximize: () => void
     notifyReady: () => void
     onWindowEvent: (event: MainWindowEvent, cb: () => void) => () => void
     onSetPage: (cb: (payload: SetPagePayload) => void) => () => void
     onVersion: (cb: (version: string) => void) => () => void
+    onMaximizeState: (cb: (maximized: boolean) => void) => () => void
   }
   settings: {
     get: () => Promise<AppSettings>

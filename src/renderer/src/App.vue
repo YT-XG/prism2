@@ -1,5 +1,10 @@
 <template>
-  <div class="app-shell" :class="{ 'is-exiting': exiting }">
+  <div
+    class="app-shell"
+    :class="{ 'is-exiting': exiting }"
+    ref="shellRef"
+    @animationend="onAnimationEnd"
+  >
     <header class="titlebar drag-region">
       <div class="titlebar-brand">
         <span class="brand-dot"></span>
@@ -8,6 +13,10 @@
       <div class="titlebar-actions no-drag">
         <button class="tb-btn" title="最小化" @click="minimize">
           <Minus :size="15" :stroke-width="1.75" />
+        </button>
+        <button class="tb-btn" :title="isMaximized ? '还原' : '最大化'" @click="toggleMaximize">
+          <Square v-if="!isMaximized" :size="13" :stroke-width="1.75" />
+          <Minimize2 v-else :size="13" :stroke-width="1.75" />
         </button>
         <button class="tb-btn tb-close" title="隐藏" @click="hideWindow">
           <X :size="15" :stroke-width="1.75" />
@@ -24,24 +33,53 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { Minus, X } from '@lucide/vue'
+import { Minus, X, Square, Minimize2 } from '@lucide/vue'
 import { subscribeOnUnmounted } from '@renderer/composables/useIpcListener'
 
 const router = useRouter()
 const exiting = ref(false)
 const version = ref('')
+const isMaximized = ref(false)
+const shellRef = ref<HTMLElement | null>(null)
+
+/** 入场：窗口 mount / reShow 时由渲染端触发，播 page-enter 动画 */
+function playEnter(): void {
+  const el = shellRef.value
+  if (!el) return
+  exiting.value = false
+  el.classList.remove('page-enter', 'page-exit')
+  void el.offsetWidth // 强制 reflow，保证重复显示时动画能重新播放
+  el.classList.add('page-enter')
+}
+
+/** 出场：收到 startHide 后切 page-exit，播完（animationend）再通知主进程隐藏 */
+function playExit(): void {
+  const el = shellRef.value
+  if (!el || exiting.value) return
+  exiting.value = true
+  el.classList.add('page-exit')
+}
+
+function onAnimationEnd(e: AnimationEvent): void {
+  const el = shellRef.value
+  if (!el) return
+  if (e.animationName === 'page-enter') {
+    el.classList.remove('page-enter')
+  } else if (e.animationName === 'page-exit') {
+    window.electronAPI.window.hideAfterAnimation()
+  }
+}
 
 function minimize(): void {
   window.electronAPI.window.minimize()
 }
 
-function hideWindow(): void {
-  playExit()
+function toggleMaximize(): void {
+  window.electronAPI.window.toggleMaximize()
 }
 
-function playExit(): void {
-  exiting.value = true
-  setTimeout(() => window.electronAPI.window.hideAfterAnimation(), 320)
+function hideWindow(): void {
+  playExit()
 }
 
 onMounted(() => {
@@ -63,9 +101,7 @@ onMounted(() => {
   )
 
   subscribeOnUnmounted(() =>
-    window.electronAPI.window.onWindowEvent('reShow', () => {
-      exiting.value = false
-    })
+    window.electronAPI.window.onWindowEvent('reShow', playEnter)
   )
 
   subscribeOnUnmounted(() =>
@@ -73,6 +109,14 @@ onMounted(() => {
       version.value = v
     })
   )
+
+  subscribeOnUnmounted(() =>
+    window.electronAPI.window.onMaximizeState((max) => {
+      isMaximized.value = max
+    })
+  )
+
+  playEnter()
 })
 </script>
 
@@ -86,13 +130,11 @@ onMounted(() => {
   border-radius: var(--radius-md);
   overflow: hidden;
   box-shadow: var(--shadow-lg);
-  transition: opacity var(--duration-base) var(--ease-out-soft),
-    transform var(--duration-base) var(--ease-out-soft);
 }
 
 .app-shell.is-exiting {
-  opacity: 0;
-  transform: translateY(6px);
+  animation: page-exit var(--duration-base) var(--ease-out-soft) forwards;
+  pointer-events: none;
 }
 
 .titlebar {

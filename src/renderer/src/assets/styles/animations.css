@@ -32,6 +32,22 @@
   }
 }
 
+/* 页面入场（主窗口 mount / reShow 时渲染端触发） */
+@keyframes page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.page-enter {
+  animation: page-enter var(--duration-base) var(--ease-out-soft);
+}
+
 /* 页面出场（主窗口 startHide 时渲染端切到该 class） */
 @keyframes page-exit {
   from {

@@ -25,6 +25,7 @@ const electronAPI: ElectronAPI = {
   window: {
     minimize: () => ipcRenderer.send(mainPage.toMain.minimize),
     hideAfterAnimation: () => ipcRenderer.send(mainPage.toMain.hideAfterAnimation),
+    toggleMaximize: () => ipcRenderer.send(mainPage.toMain.toggleMaximize),
     notifyReady: () => ipcRenderer.send(mainPage.toMain.ready),
 
     onWindowEvent: (event: MainWindowEvent, cb: () => void) => {
@@ -39,7 +40,10 @@ const electronAPI: ElectronAPI = {
 
     onVersion: (cb: (version: string) => void) => subscribe(mainPage.toRenderer.version, (v) =>
       cb(v as string)
-    )
+    ),
+
+    onMaximizeState: (cb: (maximized: boolean) => void) =>
+      subscribe(mainPage.toRenderer.maximizeState, (m) => cb(Boolean(m)))
   },
 
   settings: {

@@ -41,11 +41,17 @@ export default class MainPageFrame extends BaseFrame {
 
   create(): BrowserWindow {
     const window = super.create()
+    // 把最大化状态推给渲染端（标题栏据此切换图标）
+    const pushMaxState = (): void => {
+      if (!window.isDestroyed()) this.sendOne(mainPage.toRenderer.maximizeState, window.isMaximized())
+    }
+    window.on('maximize', pushMaxState)
+    window.on('unmaximize', pushMaxState)
     window.hide()
     return window
   }
 
-  /** 居中显示/隐藏（toggle），首次创建后居中淡入，再次调用则退场隐藏 */
+  /** 居中显示/隐藏（toggle）：动画归渲染端，主进程只负责 show/hide 时序 */
   showCentered(): void {
     if (this.#showLock) return
     this.#showLock = true
@@ -54,21 +60,13 @@ export default class MainPageFrame extends BaseFrame {
     if (!this.isAlive()) {
       this.create()
       this.#centerOnScreen()
-      this.window!.setOpacity(0)
       this.window!.show()
-      this.window!.webContents.once('did-finish-load', () => {
-        setTimeout(() => this.window?.setOpacity(1), 30)
-      })
     } else if (this.window!.isVisible()) {
       this.sendOne(mainPage.toRenderer.startHide)
     } else {
       this.#centerOnScreen()
-      this.window!.setOpacity(0)
       this.window!.show()
-      setTimeout(() => {
-        this.window?.setOpacity(1)
-        this.sendOne(mainPage.toRenderer.reShow)
-      }, 30)
+      this.sendOne(mainPage.toRenderer.reShow)
     }
   }
 
@@ -99,6 +97,12 @@ export default class MainPageFrame extends BaseFrame {
 
     this.recvOne(mainPage.toMain.minimize, () => {
       if (this.isAlive()) this.window!.minimize()
+    })
+
+    this.recvOne(mainPage.toMain.toggleMaximize, () => {
+      if (!this.isAlive()) return
+      if (this.window!.isMaximized()) this.window!.unmaximize()
+      else this.window!.maximize()
     })
 
     this.recvOne(mainPage.toMain.hideAfterAnimation, () => {
