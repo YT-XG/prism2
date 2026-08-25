@@ -74,7 +74,7 @@ onMounted(() => {
   height: 100%;
   display: flex;
   flex-direction: column;
-  background: var(--bg-page);
+  background: var(--page-bg);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   overflow: hidden;

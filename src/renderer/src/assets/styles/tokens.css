@@ -71,8 +71,9 @@
   --ease-in-soft: cubic-bezier(0.55, 0, 1, 0.45);
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
 
-  /* 侧边栏 / 品牌（可按主题覆盖） */
-  --sidebar-bg: var(--bg-surface);
+  /* 页面 / 侧边栏 / 品牌（可按主题覆盖） */
+  --page-bg: var(--bg-page);
+  --sidebar-bg: transparent;
   --sidebar-header-bg: transparent;
   --sidebar-header-border: transparent;
   --avatar-bg: var(--brand);
@@ -80,12 +81,12 @@
 }
 
 /*
- * 薰衣草主题（参考图配色）：
- * - 整个侧边栏铺淡紫渐变（顶部更深、向下渐淡到近白）
- * - 头像胶囊淡紫底 + 深紫字；强调色用紫罗兰
+ * 薰衣草主题（参考图配色）：整个最外层页面铺淡紫渐变（顶部较深向下渐淡），
+ * 侧边栏透明、无边框，直接浮于渐变之上；组件区为白色。头像淡紫胶囊 + 深紫字。
  */
 [data-theme='lavender'] {
-  --sidebar-bg: linear-gradient(180deg, #ece7fb 0%, #f7f4fd 42%, #fcfbfe 100%);
+  --page-bg: linear-gradient(165deg, #ece7fb 0%, #f5f1fc 48%, #fcfbfe 100%);
+  --sidebar-bg: transparent;
   --sidebar-header-bg: transparent;
   --sidebar-header-border: transparent;
   --avatar-bg: #e7dff8;
@@ -97,10 +98,12 @@
 }
 
 /*
- * 白绿（薄荷）主题（参考图配色）：侧边栏白色→薄荷绿渐变、薄荷头像胶囊、绿色强调。
+ * 白绿（薄荷）主题（参考图配色）：整个最外层页面白色→薄荷绿渐变，
+ * 侧边栏透明、无边框；组件区为白色。薄荷头像胶囊 + 深绿字。
  */
 [data-theme='mint'] {
-  --sidebar-bg: linear-gradient(180deg, #e6f6ee 0%, #f2fbf6 45%, #fbfefc 100%);
+  --page-bg: linear-gradient(165deg, #e6f6ee 0%, #f2fbf6 50%, #fbfefc 100%);
+  --sidebar-bg: transparent;
   --sidebar-header-bg: transparent;
   --sidebar-header-border: transparent;
   --avatar-bg: #ddf3e7;

@@ -65,7 +65,7 @@ onMounted(async () => {
   gap: var(--sp-3);
   height: 100%;
   padding: var(--sp-3);
-  background: var(--bg-page);
+  background: transparent;
 }
 
 .sidebar {
@@ -74,7 +74,7 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   padding: var(--sp-3);
-  border: 1px solid var(--border);
+  border: none;
   border-radius: var(--radius-xl);
   background: var(--sidebar-bg);
 }
@@ -210,6 +210,6 @@ onMounted(async () => {
   flex-direction: column;
   border: 1px solid var(--border);
   border-radius: var(--radius-xl);
-  background: var(--bg-page);
+  background: var(--bg-surface);
 }
 </style>
