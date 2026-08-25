@@ -3,7 +3,7 @@
     <header class="titlebar drag-region">
       <div class="titlebar-brand">
         <span class="brand-dot"></span>
-        <span class="titlebar-title">Prism</span>
+        <span class="titlebar-title">Prism <span class="titlebar-version">v{{ version }}</span></span>
       </div>
       <div class="titlebar-actions no-drag">
         <button class="tb-btn" title="最小化" @click="minimize">
@@ -29,6 +29,7 @@ import { subscribeOnUnmounted } from '@renderer/composables/useIpcListener'
 
 const router = useRouter()
 const exiting = ref(false)
+const version = ref('')
 
 function minimize(): void {
   window.electronAPI.window.minimize()
@@ -64,6 +65,12 @@ onMounted(() => {
   subscribeOnUnmounted(() =>
     window.electronAPI.window.onWindowEvent('reShow', () => {
       exiting.value = false
+    })
+  )
+
+  subscribeOnUnmounted(() =>
+    window.electronAPI.window.onVersion((v) => {
+      version.value = v
     })
   )
 })
@@ -116,6 +123,13 @@ onMounted(() => {
   font-weight: 600;
   color: var(--text-primary);
   letter-spacing: 0.01em;
+}
+
+.titlebar-version {
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--text-muted);
+  margin-left: var(--sp-2);
 }
 
 .titlebar-actions {

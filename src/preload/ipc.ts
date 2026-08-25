@@ -132,6 +132,7 @@ export interface ElectronAPI {
     notifyReady: () => void
     onWindowEvent: (event: MainWindowEvent, cb: () => void) => () => void
     onSetPage: (cb: (payload: SetPagePayload) => void) => () => void
+    onVersion: (cb: (version: string) => void) => () => void
   }
   settings: {
     get: () => Promise<AppSettings>

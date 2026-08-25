@@ -1,13 +1,6 @@
 <template>
   <div class="main-page">
     <aside class="sidebar">
-      <div class="sidebar-mark">
-        <span class="mark-dot"></span>
-        <div class="mark-text">
-          <div class="mark-title">Prism</div>
-        </div>
-      </div>
-
       <nav class="nav">
         <div class="nav-group">
           <div class="nav-label">Main menu</div>
@@ -27,9 +20,6 @@
         </div>
       </nav>
 
-      <div class="sidebar-footer">
-        <div class="version">v{{ version }}</div>
-      </div>
     </aside>
 
     <section class="content">
@@ -44,7 +34,6 @@ import { ClipboardList, Settings2 } from '@lucide/vue'
 import { subscribeOnUnmounted } from '@renderer/composables/useIpcListener'
 
 const count = ref(0)
-const version = ref('2.0.0')
 
 onMounted(async () => {
   count.value = await window.electronAPI.clipboard.getHistoryCount()
@@ -76,43 +65,6 @@ onMounted(async () => {
   border: none;
   border-radius: var(--radius-xl);
   background: var(--sidebar-bg);
-}
-
-.sidebar-mark {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-  padding: var(--sp-2);
-  margin-bottom: var(--sp-2);
-  border-radius: var(--radius-md);
-  background: var(--sidebar-header-bg);
-  border: 1px solid var(--sidebar-header-border);
-}
-
-.mark-dot {
-  width: 28px;
-  height: 28px;
-  border-radius: var(--radius-pill);
-  background: var(--avatar-bg);
-  color: var(--avatar-text);
-  position: relative;
-  flex-shrink: 0;
-}
-
-.mark-dot::after {
-  content: 'P';
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.mark-title {
-  font-size: 13px;
-  font-weight: 600;
 }
 
 .nav {
@@ -184,16 +136,6 @@ onMounted(async () => {
 .nav-item.router-link-active .nav-badge {
   background: rgba(255, 255, 255, 0.18);
   color: var(--text-on-primary);
-}
-
-.sidebar-footer {
-  padding: var(--sp-2) var(--sp-2) var(--sp-1);
-  border-top: 1px solid var(--border);
-}
-
-.version {
-  font-size: 11px;
-  color: var(--text-muted);
 }
 
 .content {

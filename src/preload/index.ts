@@ -35,6 +35,10 @@ const electronAPI: ElectronAPI = {
 
     onSetPage: (cb: (payload: SetPagePayload) => void) => subscribe(mainPage.toRenderer.setPage, (p) =>
       cb(p as SetPagePayload)
+    ),
+
+    onVersion: (cb: (version: string) => void) => subscribe(mainPage.toRenderer.version, (v) =>
+      cb(v as string)
     )
   },
 
