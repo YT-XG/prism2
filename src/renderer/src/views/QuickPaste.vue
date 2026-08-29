@@ -131,20 +131,24 @@ function formatTime(ts: number): string {
   return `${p(d.getMonth() + 1)}-${p(d.getDate())}`
 }
 
-/** 窗口每次显示（重新聚焦）时聚焦输入框并全选 */
+/** 重新拉取最近历史（窗口每次显示时补齐隐藏期间复制的内容） */
+async function refreshHistory(): Promise<void> {
+  historyList.value = await window.electronAPI.clipboard.getHistory(MAX_ITEMS, 0)
+  void loadImages(historyList.value)
+}
+
+/** 窗口每次显示（重新聚焦）时聚焦输入框并全选，同时刷新历史 */
 function onFocusWindow(): void {
   keyword.value = ''
   searchResults.value = []
+  void refreshHistory()
   inputRef.value?.focus()
   inputRef.value?.select()
 }
 
 onMounted(async () => {
-  onFocusWindow()
   window.addEventListener('focus', onFocusWindow)
-
-  historyList.value = await window.electronAPI.clipboard.getHistory(MAX_ITEMS, 0)
-  void loadImages(historyList.value)
+  onFocusWindow()
 
   subscribeOnUnmounted(() =>
     window.electronAPI.clipboard.onNewItem((item) => {

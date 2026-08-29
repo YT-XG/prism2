@@ -12,7 +12,7 @@
  * - 不再触发通知弹窗（属后续迭代），只广播新记录给所有可见窗口。
  * - 所有 IPC handler 入参做类型收窄的防御性处理。
  */
-import { ipcMain, clipboard, nativeImage, ClipboardItem, app } from 'electron'
+import { ipcMain, clipboard, nativeImage, ClipboardItem, app, BrowserWindow } from 'electron'
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -523,7 +523,7 @@ class ClipboardService extends SqliteStore {
       this.getImageData(String(filename ?? ''))
     )
 
-    ipcMain.handle(C.clickItem, async (_e, payload: { content?: string; type?: string }) => {
+    ipcMain.handle(C.clickItem, async (event, payload: { content?: string; type?: string }) => {
       const content = String(payload?.content ?? '')
       const type: HistoryItem['type'] = payload?.type === 'image' ? 'image' : 'text'
       if (!content) return
@@ -541,12 +541,25 @@ class ClipboardService extends SqliteStore {
       }
       await this.syncMonitorCache()
 
-      // 隐藏快捷搜索框（若开着），再走主窗口的粘贴流程
-      windowFactory.hideQuickPaste()
-      const mainPageFrame = windowFactory.getMainPageFrame()
-      mainPageFrame.minimizeForPaste()
-      // 等待窗口隐藏/最小化后的前台焦点转移稳定（置顶窗口归还焦点更慢）
-      await new Promise((resolve) => setTimeout(resolve, 250))
+      // 退场时应最小化"真正持有焦点的那个窗口"，才能把焦点可靠交还给上一个前台应用：
+      // - 主页面是普通任务栏窗口，minimize() 会可靠归还焦点；
+      // - 快捷粘贴是 alwaysOnTop + skipTaskbar 的工具窗，不能靠隐藏主页面来归还焦点，
+      //   否则焦点回不到上一个应用，后续 SendKeys 的 ^v 就发到错误窗口。
+      const senderWin = BrowserWindow.fromWebContents(event.sender)
+      const quickPasteWin = windowFactory.getQuickPasteFrame().getWindow()
+
+      if (senderWin && quickPasteWin && senderWin === quickPasteWin) {
+        // 从快捷粘贴窗口发起：最小化它来归还焦点（内部抑制 blur 自动隐藏）
+        await windowFactory.getQuickPasteFrame().dismissForPaste()
+      } else {
+        // 从主页面发起：关闭快捷粘贴（若有），并最小化主页面归还焦点
+        windowFactory.hideQuickPaste()
+        const mainPageFrame = windowFactory.getMainPageFrame()
+        mainPageFrame.minimizeForPaste()
+        // 等待窗口最小化后的前台焦点转移稳定
+        await new Promise((resolve) => setTimeout(resolve, 250))
+      }
+
       await inputService.pasteToPreviousWindow()
     })
 

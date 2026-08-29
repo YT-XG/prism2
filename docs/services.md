@@ -32,7 +32,7 @@
 | `getHistoryCount` | invoke | `() -> number` |
 | `getRetentionState` | invoke | `() -> ClipboardRetention` |
 | `setRetentionState` | invoke | `(Partial<ClipboardRetention>) -> void`（合并后清理一次） |
-| `clickItem` | invoke | `({ content, type }) -> void`（写剪贴板→隐藏窗口→恢复焦点→粘贴） |
+| `clickItem` | invoke | `({ content, type }) -> void`（写剪贴板→按发起窗口最小化归还焦点→模拟粘贴） |
 | `getImageData` | invoke | `(filename) -> string`（图片 data URL，空串=不可用） |
 | `getFavorites` | invoke | `() -> FavoriteItem[]` |
 | `getFavoritesByCategory` | invoke | `(category) -> FavoriteItem[]` |
@@ -65,4 +65,4 @@
 | 窗口 | 路由 | 说明 |
 |------|------|------|
 | `MainPageFrame` | `/mainPage` | 主界面（热键 `shortcut`） |
-| `QuickPasteFrame` | `/quickPaste` | 快捷粘贴搜索框（热键 `searchBoxShortcut`，失焦隐藏，回车粘贴） |
+| `QuickPasteFrame` | `/quickPaste` | 快捷粘贴搜索框（热键 `searchBoxShortcut`，失焦隐藏，回车粘贴，显示时刷新历史） |
