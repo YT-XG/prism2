@@ -6,7 +6,14 @@
  */
 import { contextBridge, ipcRenderer } from 'electron'
 import { BROADCAST, SERVICE_CHANNELS, WINDOW_CHANNELS } from './ipc'
-import type { AppSettings, ElectronAPI, HistoryItem, MainWindowEvent, SetPagePayload } from './ipc'
+import type {
+  AppSettings,
+  ClipboardRetention,
+  ElectronAPI,
+  HistoryItem,
+  MainWindowEvent,
+  SetPagePayload
+} from './ipc'
 
 const { mainPage } = WINDOW_CHANNELS
 const C = SERVICE_CHANNELS.clipboard
@@ -58,8 +65,9 @@ const electronAPI: ElectronAPI = {
     deleteHistory: (id: number) => ipcRenderer.invoke(C.deleteHistory, id) as Promise<void>,
     clearHistory: () => ipcRenderer.invoke(C.clearHistory) as Promise<void>,
     getHistoryCount: () => ipcRenderer.invoke(C.getHistoryCount) as Promise<number>,
-    getRetentionDays: () => ipcRenderer.invoke(C.getRetentionDays) as Promise<number>,
-    setRetentionDays: (days: number) => ipcRenderer.invoke(C.setRetentionDays, days) as Promise<void>,
+    getRetentionState: () => ipcRenderer.invoke(C.getRetentionState) as Promise<ClipboardRetention>,
+    setRetentionState: (partial: Partial<ClipboardRetention>) =>
+      ipcRenderer.invoke(C.setRetentionState, partial) as Promise<void>,
     clickItem: (content: string) => ipcRenderer.invoke(C.clickItem, content) as Promise<void>,
     getFavorites: () => ipcRenderer.invoke(C.getFavorites),
     getFavoritesByCategory: (category: string) =>

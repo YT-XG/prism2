@@ -67,7 +67,9 @@ const settings = ref<AppSettings>({
   autoStart: false,
   updateSource: 'github',
   githubRepo: '',
-  clipboardRetentionDays: 30,
+  clipboardRetentionValue: 1,
+  clipboardAutoClean: true,
+  clipboardRetentionUnit: 'month',
   theme: 'light'
 })
 

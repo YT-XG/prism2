@@ -22,7 +22,9 @@ const DEFAULT_SETTINGS: AppSettings = {
   autoStart: false,
   updateSource: 'github',
   githubRepo: 'YT-XG/electron-vite-learn',
-  clipboardRetentionDays: 30,
+  clipboardRetentionValue: 1,
+  clipboardAutoClean: true,
+  clipboardRetentionUnit: 'month',
   theme: 'light'
 }
 

@@ -13,8 +13,8 @@ const { mainPage } = WINDOW_CHANNELS
 export default class MainPageFrame extends BaseFrame {
   static readonly WIDTH = 800
   static readonly HEIGHT = 600
-  static readonly MIN_WIDTH = 600
-  static readonly MIN_HEIGHT = 450
+  static readonly MIN_WIDTH = 760
+  static readonly MIN_HEIGHT = 540
 
   /** showCentered 防抖锁 */
   #showLock = false

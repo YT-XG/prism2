@@ -34,6 +34,20 @@ export interface CategoryItem {
   count: number
 }
 
+/**
+ * 剪贴板历史自动清除策略。
+ * 滑动窗口：每次触发清理时以当下为基准，删除早于「value 个 unit」的历史记录。
+ * 例如 value=5、unit=day → 保留最近 5 天。
+ */
+export interface ClipboardRetention {
+  /** 定时自动清除总开关 */
+  autoClean: boolean
+  /** 清除数量：1-30 */
+  value: number
+  /** 清除单位：day / week / month / year */
+  unit: 'day' | 'week' | 'month' | 'year'
+}
+
 /** 应用设置 */
 export interface AppSettings {
   /** 主页面显隐快捷键，如 'CommandOrControl+Alt+V' */
@@ -50,8 +64,12 @@ export interface AppSettings {
   updateSource: 'lan' | 'github'
   /** GitHub 仓库地址（owner/repo） */
   githubRepo: string
-  /** 剪贴板历史保留天数：10 | 30 | 90 */
-  clipboardRetentionDays: number
+  /** 剪贴板历史自动清除数量：1-30 */
+  clipboardRetentionValue: number
+  /** 自动清除开关 */
+  clipboardAutoClean: boolean
+  /** 剪贴板历史自动清除单位：day | week | month | year */
+  clipboardRetentionUnit: 'day' | 'week' | 'month' | 'year'
   /** 主题：light / lavender（参考图）/ mint（白绿参考图）/ dark（预留） */
   theme: 'light' | 'dark' | 'lavender' | 'mint'
 }
@@ -92,8 +110,8 @@ export const SERVICE_CHANNELS = {
     deleteHistory: 'to-service-ClipboardService:deleteHistory',
     clearHistory: 'to-service-ClipboardService:clearHistory',
     getHistoryCount: 'to-service-ClipboardService:getHistoryCount',
-    getRetentionDays: 'to-service-ClipboardService:getRetentionDays',
-    setRetentionDays: 'to-service-ClipboardService:setRetentionDays',
+    getRetentionState: 'to-service-ClipboardService:getRetentionState',
+    setRetentionState: 'to-service-ClipboardService:setRetentionState',
     clickItem: 'to-service-ClipboardService:clickItem',
     getFavorites: 'to-service-ClipboardService:getFavorites',
     getFavoritesByCategory: 'to-service-ClipboardService:getFavoritesByCategory',
@@ -148,8 +166,8 @@ export interface ElectronAPI {
     deleteHistory: (id: number) => Promise<void>
     clearHistory: () => Promise<void>
     getHistoryCount: () => Promise<number>
-    getRetentionDays: () => Promise<number>
-    setRetentionDays: (days: number) => Promise<void>
+    getRetentionState: () => Promise<ClipboardRetention>
+    setRetentionState: (partial: Partial<ClipboardRetention>) => Promise<void>
     clickItem: (content: string) => Promise<void>
     getFavorites: () => Promise<FavoriteItem[]>
     getFavoritesByCategory: (category: string) => Promise<FavoriteItem[]>

@@ -9,7 +9,8 @@
 | `HistoryItem` | id, content, created_at |
 | `FavoriteItem` | id, content, category, description, created_at |
 | `CategoryItem` | name, count |
-| `AppSettings` | shortcut, snippetShortcut, searchBoxShortcut, serverUrl, autoStart, updateSource, githubRepo, clipboardRetentionDays, theme |
+| `ClipboardRetention` | autoClean, value(1-30), unit(day/week/month/year) |
+| `AppSettings` | shortcut, snippetShortcut, searchBoxShortcut, serverUrl, autoStart, updateSource, githubRepo, clipboardRetentionValue, clipboardAutoClean, clipboardRetentionUnit, theme |
 
 ## SettingsService（`to-service-SettingsService:*`）
 
@@ -27,8 +28,8 @@
 | `deleteHistory` | invoke | `(id) -> void` |
 | `clearHistory` | invoke | `() -> void` |
 | `getHistoryCount` | invoke | `() -> number` |
-| `getRetentionDays` | invoke | `() -> number` |
-| `setRetentionDays` | invoke | `(days) -> void` |
+| `getRetentionState` | invoke | `() -> ClipboardRetention` |
+| `setRetentionState` | invoke | `(Partial<ClipboardRetention>) -> void`（合并后清理一次） |
 | `clickItem` | invoke | `(content) -> void`（写剪贴板→隐藏窗口→恢复焦点→粘贴） |
 | `getFavorites` | invoke | `() -> FavoriteItem[]` |
 | `getFavoritesByCategory` | invoke | `(category) -> FavoriteItem[]` |

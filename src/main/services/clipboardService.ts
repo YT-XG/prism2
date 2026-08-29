@@ -15,7 +15,7 @@ import { settingsService } from './settingsService'
 import { windowFactory } from '../frame/WindowFactory'
 import { broadcast } from '../utils/platform'
 import { BROADCAST, SERVICE_CHANNELS } from '@preload/ipc'
-import type { HistoryItem, FavoriteItem, CategoryItem } from '@preload/ipc'
+import type { HistoryItem, FavoriteItem, CategoryItem, ClipboardRetention } from '@preload/ipc'
 
 class ClipboardService extends SqliteStore {
   /** 剪贴板监控定时器 */
@@ -24,8 +24,12 @@ class ClipboardService extends SqliteStore {
   /** 上次剪贴板文本（用于去重） */
   private lastText = ''
 
-  /** 当前保留天数 */
-  private retentionDays = 30
+  /** 当前自动清除策略 */
+  private retention: ClipboardRetention = {
+    autoClean: true,
+    value: 1,
+    unit: 'month'
+  }
 
   constructor() {
     super('clipboard.db', 'ClipboardService')
@@ -61,10 +65,7 @@ class ClipboardService extends SqliteStore {
     this.save()
     this.registerIPC()
 
-    const settings = settingsService.getAll()
-    if (settings.clipboardRetentionDays) {
-      this.retentionDays = settings.clipboardRetentionDays
-    }
+    this.retention = this.#loadRetention(settingsService.getAll())
 
     await this.start()
     this.autoCleanup()
@@ -212,14 +213,29 @@ class ClipboardService extends SqliteStore {
     this.save()
   }
 
-  getRetentionDays(): number {
-    return this.retentionDays
+  getRetentionState(): ClipboardRetention {
+    return { ...this.retention }
   }
 
-  setRetentionDays(days: number): void {
-    if (typeof days !== 'number' || !Number.isFinite(days) || days < 1) return
-    this.retentionDays = Math.floor(days)
-    settingsService.update({ clipboardRetentionDays: this.retentionDays })
+  setRetentionState(partial: Partial<ClipboardRetention>): void {
+    const next = { ...this.retention, ...partial }
+
+    // 防御性类型收窄与范围钳制
+    if (typeof next.autoClean !== 'boolean') next.autoClean = this.retention.autoClean
+    const units = ['day', 'week', 'month', 'year'] as const
+    if (!units.includes(next.unit)) next.unit = this.retention.unit
+    if (typeof next.value !== 'number' || !Number.isFinite(next.value)) {
+      next.value = this.retention.value
+    } else {
+      next.value = Math.min(30, Math.max(1, Math.floor(next.value)))
+    }
+
+    this.retention = next
+    settingsService.update({
+      clipboardAutoClean: next.autoClean,
+      clipboardRetentionValue: next.value,
+      clipboardRetentionUnit: next.unit
+    })
     this.autoCleanup()
   }
 
@@ -235,11 +251,33 @@ class ClipboardService extends SqliteStore {
     await this.syncMonitorCache()
   }
 
-  /** 清理超过保留天数的历史记录 */
+  /** 依据当前保留策略计算删除截止时间（毫秒） */
+  #computeCutoff(retention: ClipboardRetention): number {
+    const DAY_MS = 24 * 60 * 60 * 1000
+    // 单位换算：月按 30 天、年按 365 天近似（与旧版"月=30 天"一致）
+    const unitMs = {
+      day: DAY_MS,
+      week: 7 * DAY_MS,
+      month: 30 * DAY_MS,
+      year: 365 * DAY_MS
+    }[retention.unit]
+    return Date.now() - retention.value * unitMs
+  }
+
+  /** 从设置加载保留策略 */
+  #loadRetention(settings: ReturnType<typeof settingsService.getAll>): ClipboardRetention {
+    return {
+      autoClean: settings.clipboardAutoClean !== false,
+      value: settings.clipboardRetentionValue || 1,
+      unit: settings.clipboardRetentionUnit
+    }
+  }
+
+  /** 清理超过保留策略的历史记录（离线开关关闭时不删除） */
   private autoCleanup(): void {
-    if (!this.db) return
+    if (!this.db || !this.retention.autoClean) return
     try {
-      const cutoff = Date.now() - this.retentionDays * 24 * 60 * 60 * 1000
+      const cutoff = this.#computeCutoff(this.retention)
       this.run('DELETE FROM clipboard_history WHERE created_at < ?', [cutoff])
       this.save()
     } catch (err) {
@@ -261,8 +299,10 @@ class ClipboardService extends SqliteStore {
     ipcMain.handle(C.deleteHistory, (_e, id: number) => this.delete(Number(id)))
     ipcMain.handle(C.clearHistory, () => this.clearAll())
     ipcMain.handle(C.getHistoryCount, () => this.getHistoryCount())
-    ipcMain.handle(C.getRetentionDays, () => this.getRetentionDays())
-    ipcMain.handle(C.setRetentionDays, (_e, days: number) => this.setRetentionDays(Number(days)))
+    ipcMain.handle(C.getRetentionState, () => this.getRetentionState())
+    ipcMain.handle(C.setRetentionState, (_e, partial: Partial<ClipboardRetention>) =>
+      this.setRetentionState(partial ?? {})
+    )
 
     ipcMain.handle(C.clickItem, async (_e, content: string) => {
       await clipboard.writeText(content)

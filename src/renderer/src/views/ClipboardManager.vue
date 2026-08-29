@@ -4,6 +4,32 @@
     <header class="cm-header">
       <div class="cm-titlebar">
         <h1 class="cm-title">剪贴板</h1>
+        <div class="cm-auto-clean">
+          <UiSwitch
+            :model-value="retention.autoClean"
+            @update:model-value="onAutoCleanToggle"
+          />
+          <select
+            class="cm-retention-select"
+            :value="retention.value"
+            :disabled="!retention.autoClean"
+            @change="onValueChange"
+          >
+            <option v-for="n in RETENTION_VALUES" :key="n" :value="n">{{ n }}</option>
+          </select>
+          <select
+            class="cm-retention-select"
+            :value="retention.unit"
+            :disabled="!retention.autoClean"
+            @change="onUnitChange"
+          >
+            <option value="day">日</option>
+            <option value="week">周</option>
+            <option value="month">月</option>
+            <option value="year">年</option>
+          </select>
+          <span class="cm-retention-suffix">前</span>
+        </div>
         <div class="cm-tabs">
           <UiPillTab :active="activeTab === 'history'" @click="switchTab('history')">
             <History :size="14" :stroke-width="1.6" /> 历史记录
@@ -23,16 +49,6 @@
       <UiButton v-if="historyList.length" variant="danger" class="ghost-btn" @click="clearConfirm = true">
         <Trash2 :size="14" :stroke-width="1.6" /> 清空
       </UiButton>
-      <div class="cm-retention">
-        <UiPillTab
-          v-for="opt in RETENTION"
-          :key="opt.value"
-          :active="retentionDays === opt.value"
-          @click="setRetentionDays(opt.value)"
-        >
-          {{ opt.label }}
-        </UiPillTab>
-      </div>
     </div>
 
     <div v-else class="cm-toolbar cm-toolbar--col">
@@ -72,43 +88,70 @@
       </div>
 
       <div v-else class="cm-list">
-        <div
-          v-for="(item, index) in displayList"
-          :key="item.id"
-          class="cm-card"
-          :class="activeTab === 'favorites' ? `cm-card--${tint(index)}` : ''"
-          @click="copyItem(item.content)"
-        >
-          <div class="cm-card__content">{{ item.content }}</div>
-
-          <div v-if="activeTab === 'favorites' && (item as FavoriteItem).category || (item as FavoriteItem).description" class="cm-card__meta">
-            <span v-if="(item as FavoriteItem).category" class="cm-card__cat">
-              {{ (item as FavoriteItem).category }}
-            </span>
-            <span v-if="(item as FavoriteItem).description" class="cm-card__desc">
-              {{ (item as FavoriteItem).description }}
-            </span>
+        <!-- 历史：按天分组 -->
+        <template v-if="activeTab === 'history'">
+          <div v-for="section in daySections" :key="section.key" class="cm-day">
+            <div class="cm-day__label">{{ section.label }}</div>
+            <div class="cm-day__cards">
+              <div
+                v-for="item in section.items"
+                :key="item.id"
+                class="cm-card"
+                @click="copyItem(item.content)"
+              >
+                <div class="cm-card__content">{{ item.content }}</div>
+                <div class="cm-card__footer">
+                  <span class="cm-card__time">{{ formatClock(item.created_at) }}</span>
+                  <div class="cm-card__actions" @click.stop>
+                    <button class="action-btn" title="收藏" @click="quickFavorite(item)">
+                      <Star :size="14" :stroke-width="1.6" />
+                    </button>
+                    <button class="action-btn action-btn--danger" title="删除" @click="deleteItem(item)">
+                      <Trash2 :size="14" :stroke-width="1.6" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
+        </template>
 
-          <div class="cm-card__footer">
-            <span class="cm-card__time">{{ formatTime(item.created_at) }}</span>
-            <div class="cm-card__actions" @click.stop>
-              <template v-if="activeTab === 'history'">
-                <button class="action-btn" title="收藏" @click="quickFavorite(item as HistoryItem)">
-                  <Star :size="14" :stroke-width="1.6" />
-                </button>
-              </template>
-              <template v-else>
+        <!-- 片段：平铺 -->
+        <template v-else>
+          <div
+            v-for="(item, index) in displayList"
+            :key="item.id"
+            class="cm-card"
+            :class="`cm-card--${tint(index)}`"
+            @click="copyItem(item.content)"
+          >
+            <div class="cm-card__content">{{ item.content }}</div>
+
+            <div
+              v-if="(item as FavoriteItem).category || (item as FavoriteItem).description"
+              class="cm-card__meta"
+            >
+              <span v-if="(item as FavoriteItem).category" class="cm-card__cat">
+                {{ (item as FavoriteItem).category }}
+              </span>
+              <span v-if="(item as FavoriteItem).description" class="cm-card__desc">
+                {{ (item as FavoriteItem).description }}
+              </span>
+            </div>
+
+            <div class="cm-card__footer">
+              <span class="cm-card__time">{{ formatTime(item.created_at) }}</span>
+              <div class="cm-card__actions" @click.stop>
                 <button class="action-btn" title="编辑" @click="editFavorite(item as FavoriteItem)">
                   <Pencil :size="14" :stroke-width="1.6" />
                 </button>
-              </template>
-              <button class="action-btn action-btn--danger" title="删除" @click="deleteItem(item)">
-                <Trash2 :size="14" :stroke-width="1.6" />
-              </button>
+                <button class="action-btn action-btn--danger" title="删除" @click="deleteItem(item)">
+                  <Trash2 :size="14" :stroke-width="1.6" />
+                </button>
+              </div>
             </div>
           </div>
-        </div>
+        </template>
       </div>
     </div>
 
@@ -160,14 +203,9 @@ import UiInput from '@renderer/components/ui/UiInput.vue'
 import UiButton from '@renderer/components/ui/UiButton.vue'
 import UiEmptyState from '@renderer/components/ui/UiEmptyState.vue'
 import UiDialog from '@renderer/components/ui/UiDialog.vue'
+import UiSwitch from '@renderer/components/ui/UiSwitch.vue'
 import { subscribeOnUnmounted } from '@renderer/composables/useIpcListener'
-import type { HistoryItem, FavoriteItem, CategoryItem } from '@preload/ipc'
-
-const RETENTION = [
-  { label: '10天', value: 10 },
-  { label: '30天', value: 30 },
-  { label: '3个月', value: 90 }
-] as const
+import type { HistoryItem, FavoriteItem, CategoryItem, ClipboardRetention } from '@preload/ipc'
 
 const activeTab = ref<'history' | 'favorites'>('history')
 const historyList = ref<HistoryItem[]>([])
@@ -177,7 +215,9 @@ const categories = ref<CategoryItem[]>([])
 const selectedCategory = ref('')
 const keyword = ref('')
 const favKeyword = ref('')
-const retentionDays = ref(30)
+const retention = ref<ClipboardRetention>({ autoClean: true, value: 1, unit: 'month' })
+/** 清理数量下拉可选值：1-30 */
+const RETENTION_VALUES = Array.from({ length: 30 }, (_, i) => i + 1)
 const showDialog = ref(false)
 const editing = ref<FavoriteItem | null>(null)
 const form = ref({ content: '', category: '', description: '' })
@@ -202,6 +242,52 @@ const displayList = computed<DisplayItem[]>(() => {
 
 const tint = (index: number): string =>
   (['lavender', 'mint', 'yellow', 'blue', 'violet'] as const)[index % 5]
+
+interface DaySection {
+  key: string
+  label: string
+  items: HistoryItem[]
+}
+
+/** 历史记录按天分组（今天 / 昨天 / M月D日，跨年带年份） */
+const daySections = computed<DaySection[]>(() => {
+  const sections = new Map<string, DaySection>()
+  for (const item of displayList.value as HistoryItem[]) {
+    const key = toDayKey(item.created_at)
+    let section = sections.get(key)
+    if (!section) {
+      section = { key, label: toDayLabel(item.created_at), items: [] }
+      sections.set(key, section)
+    }
+    section.items.push(item)
+  }
+  return [...sections.values()]
+})
+
+function toDayKey(ts: number): string {
+  const d = new Date(ts)
+  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
+}
+
+function toDayLabel(ts: number): string {
+  const d = new Date(ts)
+  const now = Date.now()
+  const today = toDayKey(now)
+  const yesterday = toDayKey(now - 86_400_000)
+  const key = toDayKey(ts)
+  if (key === today) return '今天'
+  if (key === yesterday) return '昨天'
+  const sameYear = d.getFullYear() === new Date().getFullYear()
+  return sameYear ? `${d.getMonth() + 1}月${d.getDate()}日` : `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`
+}
+
+const pad = (n: number): string => String(n).padStart(2, '0')
+
+/** 卡片时钟（分组后仅显示时分） */
+function formatClock(ts: number): string {
+  const d = new Date(ts)
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
 
 async function fetchHistory(): Promise<void> {
   historyList.value = await window.electronAPI.clipboard.getHistory(100, 0)
@@ -288,9 +374,25 @@ async function clearAllHistory(): Promise<void> {
   clearConfirm.value = false
 }
 
-async function setRetentionDays(days: number): Promise<void> {
-  retentionDays.value = days
-  await window.electronAPI.clipboard.setRetentionDays(days)
+async function onAutoCleanToggle(value: boolean): Promise<void> {
+  retention.value.autoClean = value
+  await window.electronAPI.clipboard.setRetentionState({ autoClean: value })
+  await fetchHistory()
+}
+
+async function onValueChange(event: Event): Promise<void> {
+  if (!retention.value.autoClean) return
+  const value = Number((event.target as HTMLSelectElement).value)
+  retention.value.value = value
+  await window.electronAPI.clipboard.setRetentionState({ value })
+  await fetchHistory()
+}
+
+async function onUnitChange(event: Event): Promise<void> {
+  if (!retention.value.autoClean) return
+  const unit = (event.target as HTMLSelectElement).value as ClipboardRetention['unit']
+  retention.value.unit = unit
+  await window.electronAPI.clipboard.setRetentionState({ unit })
   await fetchHistory()
 }
 
@@ -306,7 +408,7 @@ function formatTime(ts: number): string {
 
 onMounted(async () => {
   await fetchHistory()
-  retentionDays.value = await window.electronAPI.clipboard.getRetentionDays()
+  retention.value = await window.electronAPI.clipboard.getRetentionState()
 
   subscribeOnUnmounted(() =>
     window.electronAPI.clipboard.onNewItem((item) => {
@@ -334,13 +436,48 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--sp-4);
+  gap: var(--sp-3) var(--sp-4);
+  flex-wrap: wrap;
 }
 
 .cm-title {
   margin: 0;
   font-size: 20px;
   font-weight: 600;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.cm-auto-clean {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.cm-retention-select {
+  height: 30px;
+  padding: 0 var(--sp-2);
+  font-size: 12px;
+  color: var(--text-secondary);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  outline: none;
+  cursor: pointer;
+}
+
+.cm-retention-select:focus {
+  border-color: var(--brand);
+}
+
+.cm-retention-select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.cm-retention-suffix {
+  font-size: 12px;
+  color: var(--text-secondary);
 }
 
 .cm-tabs {
@@ -370,14 +507,10 @@ onMounted(async () => {
   gap: var(--sp-3);
 }
 
-.cm-retention,
 .cm-cats {
   display: flex;
   gap: var(--sp-2);
   flex-shrink: 0;
-}
-
-.cm-cats {
   flex-wrap: wrap;
 }
 
@@ -399,6 +532,19 @@ onMounted(async () => {
 }
 
 .cm-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.cm-day__label {
+  padding: 0 var(--sp-1) var(--sp-2);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.cm-day__cards {
   display: flex;
   flex-direction: column;
   gap: var(--sp-3);
