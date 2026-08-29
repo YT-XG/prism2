@@ -49,7 +49,7 @@ defineEmits<{ (e: 'update:modelValue', value: boolean): void }>()
   border-radius: 50%;
   background: #fff;
   box-shadow: var(--shadow-sm);
-  transition: transform var(--duration-fast) var(--ease-out-soft);
+  transition: transform var(--duration-base) var(--ease-spring);
 }
 
 .ui-switch.is-on .ui-switch__thumb {

@@ -147,6 +147,15 @@ onMounted(async () => {
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   padding: var(--sp-2) var(--sp-4);
+  animation: fade-up var(--duration-enter) var(--ease-out-soft);
+}
+
+.setting-group:nth-child(2) {
+  animation-delay: 60ms;
+}
+
+.setting-group:nth-child(3) {
+  animation-delay: 120ms;
 }
 
 .setting-row {
@@ -155,6 +164,12 @@ onMounted(async () => {
   justify-content: space-between;
   gap: var(--sp-4);
   padding: var(--sp-3) 0;
+  border-radius: var(--radius-sm);
+  transition: background-color var(--duration-fast) var(--ease-out-soft);
+}
+
+.setting-row:hover {
+  background: var(--bg-selected-subtle);
 }
 
 .setting-row + .setting-row {
@@ -234,5 +249,12 @@ onMounted(async () => {
   font-size: 12px;
   font-weight: 500;
   color: var(--text-primary);
+  transition: transform var(--duration-fast) var(--ease-out-soft),
+    box-shadow var(--duration-fast) var(--ease-out-soft);
+}
+
+.keycap:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px var(--shadow-sm), 0 1px 0 var(--border);
 }
 </style>

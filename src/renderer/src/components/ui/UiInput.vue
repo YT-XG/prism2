@@ -42,7 +42,7 @@ defineEmits<{
 
 .ui-input:focus-within {
   border-color: var(--brand);
-  box-shadow: 0 0 0 3px rgba(108, 92, 231, 0.12);
+  box-shadow: var(--ring);
 }
 
 .ui-input__leading {

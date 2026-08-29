@@ -36,5 +36,6 @@ defineEmits<{ (e: 'click'): void }>()
 .ui-pill.is-active {
   background: var(--brand);
   color: #fff;
+  animation: pop var(--duration-base) var(--ease-spring);
 }
 </style>

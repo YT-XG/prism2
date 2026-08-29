@@ -32,6 +32,11 @@ defineProps<{
   transform: scale(0.97);
 }
 
+.ui-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+
 .ui-btn--primary {
   background: var(--brand);
   color: #fff;
@@ -40,6 +45,7 @@ defineProps<{
 
 .ui-btn--primary:hover {
   background: color-mix(in srgb, var(--brand) 86%, #000);
+  transform: translateY(-1px);
 }
 
 .ui-btn--secondary {

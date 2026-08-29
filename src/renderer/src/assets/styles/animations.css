@@ -64,6 +64,66 @@
   animation: dialog-in var(--duration-base) var(--ease-out-soft);
 }
 
+/* 淡入上移：视图/分组标题/工具栏的通用入场 */
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 卡片入场：fade-up 基础上叠加轻微缩放，用于列表项/导航项阶梯入场 */
+@keyframes card-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* 弹入：徽标 / 对勾 / 药丸激活态 */
+@keyframes pop {
+  from {
+    opacity: 0;
+    transform: scale(0.5);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* 柔和浮动：空状态图标 */
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-4px);
+  }
+}
+
+/* 柔和脉动：标题栏品牌圆点 */
+@keyframes pulse-soft {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.6;
+    transform: scale(0.92);
+  }
+}
+
 /* 减少动态效果偏好：全局兜底，组件内不要覆盖 */
 @media (prefers-reduced-motion: reduce) {
   *,

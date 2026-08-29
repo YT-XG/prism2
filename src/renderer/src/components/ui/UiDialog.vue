@@ -81,4 +81,9 @@ defineEmits<{
 .dialog-leave-to {
   opacity: 0;
 }
+
+/* 面板弹入：遮罩淡入的同时面板用弹性曲线缩放上移 */
+.dialog-enter-active .ui-dialog {
+  animation: dialog-in var(--duration-base) var(--ease-spring);
+}
 </style>

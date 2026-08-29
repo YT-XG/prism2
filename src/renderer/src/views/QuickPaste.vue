@@ -22,27 +22,29 @@
           <Search :size="22" :stroke-width="1.6" />
           <span>{{ keyword ? '无匹配记录' : '暂无剪贴板历史' }}</span>
         </div>
-        <div
-          v-for="(item, index) in results"
-          :key="item.id"
-          class="qp-item"
-          :class="{ 'qp-item--active': index === activeIndex }"
-          @click="paste(item)"
-          @mouseenter="activeIndex = index"
-        >
-          <img
-            v-if="item.type === 'image' && imageCache[item.content]"
-            :src="imageCache[item.content]"
-            class="qp-item__thumb"
-            alt=""
-          />
-          <ImageIcon v-else-if="item.type === 'image'" :size="16" :stroke-width="1.6" class="qp-item__img-icon" />
-          <div class="qp-item__text" :class="{ 'qp-item__text--muted': item.type === 'image' }">
-            <template v-if="item.type === 'image'">图片 · {{ formatTime(item.created_at) }}</template>
-            <template v-else>{{ item.content }}</template>
+        <TransitionGroup v-else tag="div" name="qp" class="qp-items">
+          <div
+            v-for="(item, index) in results"
+            :key="item.id"
+            class="qp-item"
+            :class="{ 'qp-item--active': index === activeIndex }"
+            @click="paste(item)"
+            @mouseenter="activeIndex = index"
+          >
+            <img
+              v-if="item.type === 'image' && imageCache[item.content]"
+              :src="imageCache[item.content]"
+              class="qp-item__thumb"
+              alt=""
+            />
+            <ImageIcon v-else-if="item.type === 'image'" :size="16" :stroke-width="1.6" class="qp-item__img-icon" />
+            <div class="qp-item__text" :class="{ 'qp-item__text--muted': item.type === 'image' }">
+              <template v-if="item.type === 'image'">图片 · {{ formatTime(item.created_at) }}</template>
+              <template v-else>{{ item.content }}</template>
+            </div>
+            <span class="qp-item__time">{{ formatTime(item.created_at) }}</span>
           </div>
-          <span class="qp-item__time">{{ formatTime(item.created_at) }}</span>
-        </div>
+        </TransitionGroup>
       </div>
     </div>
   </div>
@@ -202,7 +204,7 @@ onBeforeUnmount(() => {
 
 .qp-input--focused {
   border-color: var(--brand);
-  box-shadow: 0 0 0 3px rgba(108, 92, 231, 0.12);
+  box-shadow: var(--ring);
 }
 
 .qp-input__icon {
@@ -238,6 +240,30 @@ onBeforeUnmount(() => {
   padding: 0 var(--sp-3) var(--sp-3);
 }
 
+.qp-items {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* 结果列表过渡（TransitionGroup） */
+.qp-enter-active {
+  animation: card-in var(--duration-enter) var(--ease-out-soft);
+}
+
+.qp-leave-active {
+  transition: opacity 160ms var(--ease-out-soft), transform 160ms var(--ease-out-soft);
+}
+
+.qp-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+
+.qp-move {
+  transition: transform var(--duration-base) var(--ease-out-soft);
+}
+
 .qp-empty {
   height: 100%;
   display: flex;
@@ -249,17 +275,37 @@ onBeforeUnmount(() => {
   font-size: 12px;
 }
 
+.qp-empty svg {
+  animation: float 3s ease-in-out infinite;
+}
+
 .qp-item {
+  position: relative;
   display: flex;
   align-items: center;
   gap: var(--sp-2);
   padding: var(--sp-2) var(--sp-3);
   border-radius: var(--radius-sm);
   cursor: pointer;
+  transition: background-color var(--duration-fast) var(--ease-out-soft);
 }
 
+/* 当前选中项：左侧品牌色竖条 + 背景 */
 .qp-item--active {
   background: var(--bg-hover);
+}
+
+.qp-item--active::before {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 2px;
+  height: 14px;
+  border-radius: 1px;
+  background: var(--brand);
+  animation: pop var(--duration-base) var(--ease-spring);
 }
 
 .qp-item__thumb {

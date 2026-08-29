@@ -100,101 +100,115 @@
 
     <!-- 列表 -->
     <div class="cm-body">
-      <div v-if="!displayList.length" class="cm-empty">
-        <UiEmptyState
-          :title="activeTab === 'history' ? '暂无历史记录' : '暂无片段'"
-          :hint="activeTab === 'history' ? '复制文字后会自动出现在这里' : '点击右上方按钮手动添加片段'"
-        >
-          <template #icon>
-            <History v-if="activeTab === 'history'" :size="30" :stroke-width="1.6" />
-            <Star v-else :size="30" :stroke-width="1.6" />
-          </template>
-        </UiEmptyState>
-      </div>
+      <Transition name="view" mode="out-in">
+        <div :key="activeTab" class="cm-view">
+          <div v-if="!displayList.length" class="cm-empty">
+            <UiEmptyState
+              :title="activeTab === 'history' ? '暂无历史记录' : '暂无片段'"
+              :hint="activeTab === 'history' ? '复制文字后会自动出现在这里' : '点击右上方按钮手动添加片段'"
+            >
+              <template #icon>
+                <History v-if="activeTab === 'history'" :size="30" :stroke-width="1.6" />
+                <Star v-else :size="30" :stroke-width="1.6" />
+              </template>
+            </UiEmptyState>
+          </div>
 
-      <div v-else class="cm-list">
-        <!-- 历史：按天分组 -->
-        <template v-if="activeTab === 'history'">
-          <div v-for="section in daySections" :key="section.key" class="cm-day">
-            <div class="cm-day__label">{{ section.label }}</div>
-            <div class="cm-day__cards">
-              <div
-                v-for="item in section.items"
-                :key="item.id"
-                class="cm-card"
-                :class="{ 'is-selected': selectMode && selectedIds.has(item.id) }"
-                @click="onCardClick(item)"
-              >
-                <span v-if="selectMode" class="cm-card__check">
-                  <Check v-if="selectedIds.has(item.id)" :size="12" :stroke-width="3" />
-                </span>
-                <div class="cm-card__content">
-                  <img
-                    v-if="item.type === 'image'"
-                    :src="imageCache[item.content]"
-                    class="cm-card__image"
-                    alt="剪贴板图片"
-                  />
-                  <template v-else>{{ item.content }}</template>
-                </div>
-                <div class="cm-card__footer">
-                  <span class="cm-card__time">{{ formatClock(item.created_at) }}</span>
-                  <div v-if="!selectMode" class="cm-card__actions" @click.stop>
-                    <button
-                      v-if="item.type !== 'image'"
-                      class="action-btn"
-                      title="收藏"
-                      @click="quickFavorite(item)"
-                    >
-                      <Star :size="14" :stroke-width="1.6" />
-                    </button>
-                    <button class="action-btn action-btn--danger" title="删除" @click="requestDeleteItem(item)">
-                      <Trash2 :size="14" :stroke-width="1.6" />
-                    </button>
+          <div v-else class="cm-list">
+            <!-- 历史：按天分组 -->
+            <template v-if="activeTab === 'history'">
+              <div v-for="section in daySections" :key="section.key" class="cm-day">
+                <div class="cm-day__label">{{ section.label }}</div>
+                <TransitionGroup tag="div" name="cm-card" class="cm-day__cards">
+                  <div
+                    v-for="(item, index) in section.items"
+                    :key="item.id"
+                    class="cm-card"
+                    :class="{ 'is-selected': selectMode && selectedIds.has(item.id), 'is-copied': justCopiedId === item.id }"
+                    :style="cardDelay(section.startIndex + index)"
+                    @click="onCardClick(item)"
+                  >
+                    <span v-if="selectMode" class="cm-card__check">
+                      <Check v-if="selectedIds.has(item.id)" :size="12" :stroke-width="3" />
+                    </span>
+                    <div class="cm-card__content">
+                      <img
+                        v-if="item.type === 'image'"
+                        :src="imageCache[item.content]"
+                        class="cm-card__image"
+                        alt="剪贴板图片"
+                      />
+                      <template v-else>{{ item.content }}</template>
+                    </div>
+                    <div class="cm-card__footer">
+                      <span v-if="justCopiedId === item.id" class="cm-card__copied">
+                        <Check :size="12" :stroke-width="3" /> 已复制
+                      </span>
+                      <span v-else class="cm-card__time">{{ formatClock(item.created_at) }}</span>
+                      <div v-if="!selectMode" class="cm-card__actions" @click.stop>
+                        <button
+                          v-if="item.type !== 'image'"
+                          class="action-btn"
+                          title="收藏"
+                          @click="quickFavorite(item)"
+                        >
+                          <Star :size="14" :stroke-width="1.6" />
+                        </button>
+                        <button class="action-btn action-btn--danger" title="删除" @click="requestDeleteItem(item)">
+                          <Trash2 :size="14" :stroke-width="1.6" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </TransitionGroup>
+              </div>
+            </template>
+
+            <!-- 片段：平铺 -->
+            <template v-else>
+              <TransitionGroup tag="div" name="cm-card" class="cm-fav-list">
+                <div
+                  v-for="(item, index) in displayList"
+                  :key="item.id"
+                  class="cm-card"
+                  :class="[`cm-card--${tint(index)}`, { 'is-copied': justCopiedId === item.id }]"
+                  :style="cardDelay(index)"
+                  @click="handleCopy({ content: item.content, type: 'text', id: item.id })"
+                >
+                  <div class="cm-card__content">{{ item.content }}</div>
+
+                  <div
+                    v-if="(item as FavoriteItem).category || (item as FavoriteItem).description"
+                    class="cm-card__meta"
+                  >
+                    <span v-if="(item as FavoriteItem).category" class="cm-card__cat">
+                      {{ (item as FavoriteItem).category }}
+                    </span>
+                    <span v-if="(item as FavoriteItem).description" class="cm-card__desc">
+                      {{ (item as FavoriteItem).description }}
+                    </span>
+                  </div>
+
+                  <div class="cm-card__footer">
+                    <span v-if="justCopiedId === item.id" class="cm-card__copied">
+                      <Check :size="12" :stroke-width="3" /> 已复制
+                    </span>
+                    <span v-else class="cm-card__time">{{ formatTime(item.created_at) }}</span>
+                    <div class="cm-card__actions" @click.stop>
+                      <button class="action-btn" title="编辑" @click="editFavorite(item as FavoriteItem)">
+                        <Pencil :size="14" :stroke-width="1.6" />
+                      </button>
+                      <button class="action-btn action-btn--danger" title="删除" @click="requestDeleteItem(item)">
+                        <Trash2 :size="14" :stroke-width="1.6" />
+                      </button>
+                    </div>
                   </div>
                 </div>
-              </div>
-            </div>
+              </TransitionGroup>
+            </template>
           </div>
-        </template>
-
-        <!-- 片段：平铺 -->
-        <template v-else>
-          <div
-            v-for="(item, index) in displayList"
-            :key="item.id"
-            class="cm-card"
-            :class="`cm-card--${tint(index)}`"
-            @click="copyItem({ content: item.content, type: 'text' })"
-          >
-            <div class="cm-card__content">{{ item.content }}</div>
-
-            <div
-              v-if="(item as FavoriteItem).category || (item as FavoriteItem).description"
-              class="cm-card__meta"
-            >
-              <span v-if="(item as FavoriteItem).category" class="cm-card__cat">
-                {{ (item as FavoriteItem).category }}
-              </span>
-              <span v-if="(item as FavoriteItem).description" class="cm-card__desc">
-                {{ (item as FavoriteItem).description }}
-              </span>
-            </div>
-
-            <div class="cm-card__footer">
-              <span class="cm-card__time">{{ formatTime(item.created_at) }}</span>
-              <div class="cm-card__actions" @click.stop>
-                <button class="action-btn" title="编辑" @click="editFavorite(item as FavoriteItem)">
-                  <Pencil :size="14" :stroke-width="1.6" />
-                </button>
-                <button class="action-btn action-btn--danger" title="删除" @click="requestDeleteItem(item)">
-                  <Trash2 :size="14" :stroke-width="1.6" />
-                </button>
-              </div>
-            </div>
-          </div>
-        </template>
-      </div>
+        </div>
+      </Transition>
     </div>
 
     <!-- 添加/编辑片段 -->
@@ -260,7 +274,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { History, Star, Search, Plus, Trash2, Pencil, Check, SquareCheckBig, X } from '@lucide/vue'
 import UiPillTab from '@renderer/components/ui/UiPillTab.vue'
 import UiInput from '@renderer/components/ui/UiInput.vue'
@@ -297,6 +311,10 @@ const deleteConfirm = ref(false)
 const batchDeleteConfirm = ref(false)
 /** 图片记录的 data URL 缓存（content 文件名 → data URL） */
 const imageCache = ref<Record<string, string>>({})
+/** 最近一次点击复制的记录 id（用于展示「已复制」反馈） */
+const justCopiedId = ref<number | null>(null)
+/** 「已复制」反馈复位定时器 */
+let copiedTimer: ReturnType<typeof setTimeout> | null = null
 
 type DisplayItem = HistoryItem | FavoriteItem
 
@@ -321,20 +339,23 @@ const tint = (index: number): string =>
 interface DaySection {
   key: string
   label: string
+  startIndex: number
   items: HistoryItem[]
 }
 
 /** 历史记录按天分组（今天 / 昨天 / M月D日，跨年带年份） */
 const daySections = computed<DaySection[]>(() => {
   const sections = new Map<string, DaySection>()
+  let offset = 0
   for (const item of displayList.value as HistoryItem[]) {
     const key = toDayKey(item.created_at)
     let section = sections.get(key)
     if (!section) {
-      section = { key, label: toDayLabel(item.created_at), items: [] }
+      section = { key, label: toDayLabel(item.created_at), startIndex: offset, items: [] }
       sections.set(key, section)
     }
     section.items.push(item)
+    offset++
   }
   return [...sections.values()]
 })
@@ -403,6 +424,23 @@ watch(keyword, async (val) => {
 
 async function copyItem(item: Pick<HistoryItem, 'content' | 'type'>): Promise<void> {
   await window.electronAPI.clipboard.clickItem({ content: item.content, type: item.type })
+}
+
+/** 点击复制：执行复制并展示短暂的「已复制」反馈 */
+async function handleCopy(item: Pick<HistoryItem, 'content' | 'type'> & { id?: number }): Promise<void> {
+  await copyItem(item)
+  if (typeof item.id !== 'number') return
+  justCopiedId.value = item.id
+  if (copiedTimer) clearTimeout(copiedTimer)
+  copiedTimer = setTimeout(() => {
+    justCopiedId.value = null
+    copiedTimer = null
+  }, 1200)
+}
+
+/** 卡片阶梯入场的延迟（最多 8 项封顶，避免长列表拖沓） */
+function cardDelay(index: number): Record<string, string> {
+  return { '--cm-delay': `${Math.min(index, 8) * 40}ms` }
 }
 
 async function quickFavorite(item: HistoryItem): Promise<void> {
@@ -482,7 +520,7 @@ function exitSelectMode(): void {
 /** 卡片点击：选择模式下切换勾选，否则复制 */
 function onCardClick(item: HistoryItem): void {
   if (selectMode.value) toggleSelect(item)
-  else void copyItem(item)
+  else void handleCopy(item)
 }
 
 function toggleSelect(item: HistoryItem): void {
@@ -551,6 +589,13 @@ onMounted(async () => {
     })
   )
 })
+
+onBeforeUnmount(() => {
+  if (copiedTimer) {
+    clearTimeout(copiedTimer)
+    copiedTimer = null
+  }
+})
 </script>
 
 <style scoped>
@@ -565,6 +610,7 @@ onMounted(async () => {
   padding: var(--sp-4) var(--sp-5) var(--sp-3);
   border-bottom: 1px solid var(--border);
   background: var(--bg-surface);
+  animation: fade-up var(--duration-enter) var(--ease-out-soft);
 }
 
 .cm-titlebar {
@@ -630,6 +676,8 @@ onMounted(async () => {
   align-items: center;
   gap: var(--sp-3);
   padding: var(--sp-3) var(--sp-5);
+  animation: fade-up var(--duration-enter) var(--ease-out-soft) backwards;
+  animation-delay: 60ms;
 }
 
 .cm-toolbar--col {
@@ -675,13 +723,38 @@ onMounted(async () => {
   padding: var(--sp-3) var(--sp-5) var(--sp-5);
 }
 
+/* Tab 切换的整块过渡容器 */
+.cm-view {
+  height: 100%;
+}
+
+.view-enter-active,
+.view-leave-active {
+  transition: opacity var(--duration-base) var(--ease-out-soft);
+}
+
+.view-enter-from,
+.view-leave-to {
+  opacity: 0;
+}
+
 .cm-empty {
   display: flex;
   justify-content: center;
   padding-top: var(--sp-8);
 }
 
+.cm-empty :deep(.ui-empty__icon) {
+  animation: float 3s ease-in-out infinite;
+}
+
 .cm-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.cm-fav-list {
   display: flex;
   flex-direction: column;
   gap: var(--sp-3);
@@ -692,12 +765,33 @@ onMounted(async () => {
   font-size: 12px;
   font-weight: 600;
   color: var(--text-secondary);
+  animation: fade-up var(--duration-enter) var(--ease-out-soft);
 }
 
 .cm-day__cards {
   display: flex;
   flex-direction: column;
   gap: var(--sp-3);
+}
+
+/* 卡片列表过渡（TransitionGroup）：
+   enter 用 card-in + 内联 --cm-delay 做阶梯；leave 淡出缩放；move 平滑位移 */
+.cm-card-enter-active {
+  animation: card-in var(--duration-enter) var(--ease-out-soft) backwards;
+  animation-delay: var(--cm-delay, 0ms);
+}
+
+.cm-card-leave-active {
+  transition: opacity 180ms var(--ease-out-soft), transform 180ms var(--ease-out-soft);
+}
+
+.cm-card-leave-to {
+  opacity: 0;
+  transform: scale(0.97) translateY(-4px);
+}
+
+.cm-card-move {
+  transition: transform var(--duration-base) var(--ease-out-soft);
 }
 
 .cm-card {
@@ -707,18 +801,53 @@ onMounted(async () => {
   border: 1px solid var(--border);
   background: var(--bg-surface);
   cursor: pointer;
-  transition: transform 120ms var(--ease-out-soft), box-shadow var(--duration-fast) var(--ease-out-soft),
-    border-color var(--duration-fast) var(--ease-out-soft);
+  transition: transform 160ms var(--ease-out-soft), box-shadow var(--duration-base) var(--ease-out-soft),
+    border-color var(--duration-base) var(--ease-out-soft);
+}
+
+/* 顶部品牌色细高光条：hover 时浮现，营造"面板"层次 */
+.cm-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: var(--sp-4);
+  right: var(--sp-4);
+  height: 1px;
+  border-radius: 1px;
+  background: var(--brand);
+  opacity: 0;
+  transition: opacity var(--duration-base) var(--ease-out-soft);
+  pointer-events: none;
 }
 
 .cm-card:hover {
-  transform: translateY(-1px);
-  box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md), 0 0 0 1px color-mix(in srgb, var(--brand) 14%, transparent);
+}
+
+.cm-card:hover::before {
+  opacity: 0.55;
 }
 
 .cm-card.is-selected {
   border-color: var(--brand);
   box-shadow: 0 0 0 1px var(--brand), var(--shadow-sm);
+}
+
+/* 点击复制成功后的短暂高亮反馈 */
+.cm-card.is-copied {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 1px var(--brand), 0 4px 16px color-mix(in srgb, var(--brand) 18%, transparent);
+}
+
+.cm-card__copied {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--brand);
+  animation: pop var(--duration-base) var(--ease-spring);
 }
 
 .cm-card__check {
@@ -802,11 +931,14 @@ onMounted(async () => {
   display: flex;
   gap: var(--sp-1);
   opacity: 0;
-  transition: opacity var(--duration-fast) var(--ease-out-soft);
+  transform: translateX(6px);
+  transition: opacity var(--duration-fast) var(--ease-out-soft),
+    transform var(--duration-fast) var(--ease-out-soft);
 }
 
 .cm-card:hover .cm-card__actions {
   opacity: 1;
+  transform: translateX(0);
 }
 
 .cm-card--lavender {
@@ -881,7 +1013,7 @@ onMounted(async () => {
 .form-input:focus,
 .form-textarea:focus {
   border-color: var(--brand);
-  box-shadow: 0 0 0 3px rgba(108, 92, 231, 0.12);
+  box-shadow: var(--ring);
 }
 .form-textarea {
   resize: vertical;

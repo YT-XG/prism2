@@ -7,7 +7,7 @@
           <RouterLink class="nav-item" to="/mainPage/clipboard">
             <ClipboardList :size="17" :stroke-width="1.6" />
             <span class="nav-item__label">剪贴板</span>
-            <span v-if="count" class="nav-badge">{{ count > 99 ? '99+' : count }}</span>
+            <span v-if="count" :key="count" class="nav-badge">{{ count > 99 ? '99+' : count }}</span>
           </RouterLink>
         </div>
 
@@ -88,6 +88,7 @@ onMounted(async () => {
   color: var(--text-muted);
   padding: 0 var(--sp-2) var(--sp-1);
   text-transform: uppercase;
+  animation: fade-up var(--duration-enter) var(--ease-out-soft);
 }
 
 .nav-item {
@@ -101,13 +102,32 @@ onMounted(async () => {
   text-decoration: none;
   font-size: 13px;
   font-weight: 500;
+  animation: card-in var(--duration-enter) var(--ease-out-soft);
   transition: background-color var(--duration-fast) var(--ease-out-soft),
-    color var(--duration-fast) var(--ease-out-soft);
+    color var(--duration-fast) var(--ease-out-soft),
+    transform var(--duration-fast) var(--ease-out-soft);
+}
+
+/* 导航项阶梯入场 */
+.nav-item:nth-child(1) {
+  animation-delay: 60ms;
+}
+
+.nav-item:nth-child(2) {
+  animation-delay: 120ms;
+}
+
+.nav-item svg {
+  transition: transform var(--duration-fast) var(--ease-out-soft);
 }
 
 .nav-item:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
+}
+
+.nav-item:hover svg {
+  transform: translateX(2px);
 }
 
 .nav-item.router-link-active {
@@ -131,6 +151,7 @@ onMounted(async () => {
   color: var(--text-primary);
   font-size: 11px;
   font-weight: 600;
+  animation: pop var(--duration-base) var(--ease-spring);
 }
 
 .nav-item.router-link-active .nav-badge {

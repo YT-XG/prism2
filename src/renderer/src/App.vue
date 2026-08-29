@@ -25,7 +25,9 @@
     </header>
 
     <main class="app-content">
-      <RouterView />
+      <Transition name="route" mode="out-in">
+        <RouterView />
+      </Transition>
     </main>
   </div>
 </template>
@@ -162,6 +164,24 @@ onMounted(() => {
   height: 12px;
   border-radius: var(--radius-pill);
   background: var(--brand);
+  animation: pulse-soft 3.2s var(--ease-in-soft) infinite;
+}
+
+/* 路由切换过渡：出场淡出上移，入场淡入上移 */
+.route-enter-active,
+.route-leave-active {
+  transition: opacity var(--duration-base) var(--ease-out-soft),
+    transform var(--duration-base) var(--ease-out-soft);
+}
+
+.route-enter-from {
+  opacity: 0;
+  transform: translateY(8px);
+}
+
+.route-leave-to {
+  opacity: 0;
+  transform: translateY(-8px);
 }
 
 .titlebar-title {
