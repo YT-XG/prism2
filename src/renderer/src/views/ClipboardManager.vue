@@ -4,11 +4,16 @@
     <header class="cm-header">
       <div class="cm-titlebar">
         <h1 class="cm-title">剪贴板</h1>
-        <div class="cm-auto-clean">
+        <div
+          class="cm-auto-clean"
+          :class="{ 'is-off': !retention.autoClean }"
+          title="开启后自动删除超出保留期的历史记录"
+        >
           <UiSwitch
             :model-value="retention.autoClean"
             @update:model-value="onAutoCleanToggle"
           />
+          <span class="cm-retention-text">保留最近</span>
           <select
             class="cm-retention-select"
             :value="retention.value"
@@ -28,7 +33,6 @@
             <option value="month">月</option>
             <option value="year">年</option>
           </select>
-          <span class="cm-retention-suffix">前</span>
         </div>
         <div class="cm-tabs">
           <UiPillTab :active="activeTab === 'history'" @click="switchTab('history')">
@@ -46,9 +50,32 @@
       <UiInput v-model="keyword" placeholder="搜索历史记录...">
         <template #leading><Search :size="15" :stroke-width="1.6" /></template>
       </UiInput>
-      <UiButton v-if="historyList.length" variant="danger" class="ghost-btn" @click="clearConfirm = true">
-        <Trash2 :size="14" :stroke-width="1.6" /> 清空
-      </UiButton>
+      <template v-if="!selectMode">
+        <UiButton
+          v-if="historyList.length"
+          variant="secondary"
+          class="cm-select-btn"
+          @click="enterSelectMode"
+        >
+          <SquareCheckBig :size="14" :stroke-width="1.6" /> 选择
+        </UiButton>
+        <UiButton v-if="historyList.length" variant="danger" @click="clearConfirm = true">
+          <Trash2 :size="14" :stroke-width="1.6" /> 清空全部
+        </UiButton>
+      </template>
+      <template v-else>
+        <span class="cm-select-count">已选 {{ selectedIds.size }} 项</span>
+        <UiButton
+          variant="danger"
+          :disabled="!selectedIds.size"
+          @click="batchDeleteConfirm = true"
+        >
+          <Trash2 :size="14" :stroke-width="1.6" /> 删除所选
+        </UiButton>
+        <UiButton variant="ghost" @click="exitSelectMode">
+          <X :size="14" :stroke-width="1.6" /> 取消
+        </UiButton>
+      </template>
     </div>
 
     <div v-else class="cm-toolbar cm-toolbar--col">
@@ -97,16 +124,33 @@
                 v-for="item in section.items"
                 :key="item.id"
                 class="cm-card"
-                @click="copyItem(item.content)"
+                :class="{ 'is-selected': selectMode && selectedIds.has(item.id) }"
+                @click="onCardClick(item)"
               >
-                <div class="cm-card__content">{{ item.content }}</div>
+                <span v-if="selectMode" class="cm-card__check">
+                  <Check v-if="selectedIds.has(item.id)" :size="12" :stroke-width="3" />
+                </span>
+                <div class="cm-card__content">
+                  <img
+                    v-if="item.type === 'image'"
+                    :src="imageCache[item.content]"
+                    class="cm-card__image"
+                    alt="剪贴板图片"
+                  />
+                  <template v-else>{{ item.content }}</template>
+                </div>
                 <div class="cm-card__footer">
                   <span class="cm-card__time">{{ formatClock(item.created_at) }}</span>
-                  <div class="cm-card__actions" @click.stop>
-                    <button class="action-btn" title="收藏" @click="quickFavorite(item)">
+                  <div v-if="!selectMode" class="cm-card__actions" @click.stop>
+                    <button
+                      v-if="item.type !== 'image'"
+                      class="action-btn"
+                      title="收藏"
+                      @click="quickFavorite(item)"
+                    >
                       <Star :size="14" :stroke-width="1.6" />
                     </button>
-                    <button class="action-btn action-btn--danger" title="删除" @click="deleteItem(item)">
+                    <button class="action-btn action-btn--danger" title="删除" @click="requestDeleteItem(item)">
                       <Trash2 :size="14" :stroke-width="1.6" />
                     </button>
                   </div>
@@ -123,7 +167,7 @@
             :key="item.id"
             class="cm-card"
             :class="`cm-card--${tint(index)}`"
-            @click="copyItem(item.content)"
+            @click="copyItem({ content: item.content, type: 'text' })"
           >
             <div class="cm-card__content">{{ item.content }}</div>
 
@@ -145,7 +189,7 @@
                 <button class="action-btn" title="编辑" @click="editFavorite(item as FavoriteItem)">
                   <Pencil :size="14" :stroke-width="1.6" />
                 </button>
-                <button class="action-btn action-btn--danger" title="删除" @click="deleteItem(item)">
+                <button class="action-btn action-btn--danger" title="删除" @click="requestDeleteItem(item)">
                   <Trash2 :size="14" :stroke-width="1.6" />
                 </button>
               </div>
@@ -185,11 +229,33 @@
     </UiDialog>
 
     <!-- 清空确认 -->
-    <UiDialog :model-value="clearConfirm" title="清空历史记录" @update:model-value="clearConfirm = false">
+    <UiDialog :model-value="clearConfirm" title="清空全部历史记录" @update:model-value="clearConfirm = false">
       <p class="confirm-text">确定清空所有历史记录吗？此操作不可恢复。</p>
       <template #footer>
         <UiButton variant="ghost" @click="clearConfirm = false">取消</UiButton>
         <UiButton variant="danger" @click="clearAllHistory">确定清空</UiButton>
+      </template>
+    </UiDialog>
+
+    <!-- 单条删除确认 -->
+    <UiDialog
+      :model-value="deleteConfirm"
+      :title="deleteTarget && activeTab === 'favorites' ? '删除片段' : '删除记录'"
+      @update:model-value="deleteConfirm = false"
+    >
+      <p class="confirm-text">确定删除这条{{ activeTab === 'favorites' ? '片段' : '记录' }}吗？此操作不可恢复。</p>
+      <template #footer>
+        <UiButton variant="ghost" @click="deleteConfirm = false">取消</UiButton>
+        <UiButton variant="danger" @click="confirmDeleteItem">删除</UiButton>
+      </template>
+    </UiDialog>
+
+    <!-- 批量删除确认 -->
+    <UiDialog :model-value="batchDeleteConfirm" title="删除所选记录" @update:model-value="batchDeleteConfirm = false">
+      <p class="confirm-text">确定删除选中的 <strong>{{ selectedIds.size }}</strong> 条记录吗？此操作不可恢复。</p>
+      <template #footer>
+        <UiButton variant="ghost" @click="batchDeleteConfirm = false">取消</UiButton>
+        <UiButton variant="danger" @click="confirmBatchDelete">删除所选</UiButton>
       </template>
     </UiDialog>
   </div>
@@ -197,7 +263,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
-import { History, Star, Search, Plus, Trash2, Pencil } from '@lucide/vue'
+import { History, Star, Search, Plus, Trash2, Pencil, Check, SquareCheckBig, X } from '@lucide/vue'
 import UiPillTab from '@renderer/components/ui/UiPillTab.vue'
 import UiInput from '@renderer/components/ui/UiInput.vue'
 import UiButton from '@renderer/components/ui/UiButton.vue'
@@ -222,6 +288,17 @@ const showDialog = ref(false)
 const editing = ref<FavoriteItem | null>(null)
 const form = ref({ content: '', category: '', description: '' })
 const clearConfirm = ref(false)
+/** 批量选择模式 */
+const selectMode = ref(false)
+/** 批量选择模式下已勾选的记录 id 集合 */
+const selectedIds = ref<Set<number>>(new Set())
+/** 单条删除确认：待删除目标 + 弹窗开关 */
+const deleteTarget = ref<DisplayItem | null>(null)
+const deleteConfirm = ref(false)
+/** 批量删除确认弹窗开关 */
+const batchDeleteConfirm = ref(false)
+/** 图片记录的 data URL 缓存（content 文件名 → data URL） */
+const imageCache = ref<Record<string, string>>({})
 
 type DisplayItem = HistoryItem | FavoriteItem
 
@@ -291,6 +368,19 @@ function formatClock(ts: number): string {
 
 async function fetchHistory(): Promise<void> {
   historyList.value = await window.electronAPI.clipboard.getHistory(100, 0)
+  void loadImages(historyList.value)
+}
+
+/** 懒加载图片记录的预览 data URL */
+async function loadImages(items: HistoryItem[]): Promise<void> {
+  const targets = items.filter((i) => i.type === 'image' && !imageCache.value[i.content])
+  if (!targets.length) return
+  const urls = await Promise.all(
+    targets.map((i) => window.electronAPI.clipboard.getImageData(i.content))
+  )
+  targets.forEach((item, i) => {
+    if (urls[i]) imageCache.value[item.content] = urls[i]
+  })
 }
 async function fetchFavorites(): Promise<void> {
   favoritesList.value = await window.electronAPI.clipboard.getFavorites()
@@ -301,6 +391,7 @@ async function fetchCategories(): Promise<void> {
 
 async function switchTab(tab: 'history' | 'favorites'): Promise<void> {
   activeTab.value = tab
+  exitSelectMode()
   if (tab === 'history') await fetchHistory()
   else {
     await fetchFavorites()
@@ -312,8 +403,8 @@ watch(keyword, async (val) => {
   searchResults.value = val.trim() ? await window.electronAPI.clipboard.searchHistory(val) : []
 })
 
-async function copyItem(content: string): Promise<void> {
-  await window.electronAPI.clipboard.clickItem(content)
+async function copyItem(item: Pick<HistoryItem, 'content' | 'type'>): Promise<void> {
+  await window.electronAPI.clipboard.clickItem({ content: item.content, type: item.type })
 }
 
 async function quickFavorite(item: HistoryItem): Promise<void> {
@@ -357,15 +448,60 @@ async function saveFavorite(): Promise<void> {
   await fetchCategories()
 }
 
-async function deleteItem(item: DisplayItem): Promise<void> {
+/** 单条删除：先弹确认，确认后执行 */
+function requestDeleteItem(item: DisplayItem): void {
+  deleteTarget.value = item
+  deleteConfirm.value = true
+}
+
+async function confirmDeleteItem(): Promise<void> {
+  const target = deleteTarget.value
+  deleteConfirm.value = false
+  deleteTarget.value = null
+  if (!target) return
   if (activeTab.value === 'history') {
-    await window.electronAPI.clipboard.deleteHistory(item.id)
-    historyList.value = historyList.value.filter((h) => h.id !== item.id)
+    await window.electronAPI.clipboard.deleteHistory(target.id)
+    historyList.value = historyList.value.filter((h) => h.id !== target.id)
   } else {
-    await window.electronAPI.clipboard.deleteFavorite(item.id)
-    favoritesList.value = favoritesList.value.filter((f) => f.id !== item.id)
+    await window.electronAPI.clipboard.deleteFavorite(target.id)
+    favoritesList.value = favoritesList.value.filter((f) => f.id !== target.id)
     await fetchCategories()
   }
+}
+
+/** 进入批量选择模式 */
+function enterSelectMode(): void {
+  selectMode.value = true
+  selectedIds.value = new Set()
+}
+
+/** 退出批量选择模式并清空勾选 */
+function exitSelectMode(): void {
+  selectMode.value = false
+  if (selectedIds.value.size) selectedIds.value = new Set()
+}
+
+/** 卡片点击：选择模式下切换勾选，否则复制 */
+function onCardClick(item: HistoryItem): void {
+  if (selectMode.value) toggleSelect(item)
+  else void copyItem(item)
+}
+
+function toggleSelect(item: HistoryItem): void {
+  const next = new Set(selectedIds.value)
+  if (next.has(item.id)) next.delete(item.id)
+  else next.add(item.id)
+  selectedIds.value = next
+}
+
+/** 批量删除所选记录 */
+async function confirmBatchDelete(): Promise<void> {
+  const ids = [...selectedIds.value]
+  batchDeleteConfirm.value = false
+  if (!ids.length) return
+  await window.electronAPI.clipboard.deleteHistoryBatch(ids)
+  historyList.value = historyList.value.filter((h) => !ids.includes(h.id))
+  exitSelectMode()
 }
 
 async function clearAllHistory(): Promise<void> {
@@ -412,7 +548,10 @@ onMounted(async () => {
 
   subscribeOnUnmounted(() =>
     window.electronAPI.clipboard.onNewItem((item) => {
-      if (!historyList.value.some((h) => h.id === item.id)) historyList.value.unshift(item)
+      // 新增或"置顶"（重复复制）：移除旧位置后插到最前
+      historyList.value = historyList.value.filter((h) => h.id !== item.id)
+      historyList.value.unshift(item)
+      if (item.type === 'image') void loadImages([item])
     })
   )
 })
@@ -454,6 +593,16 @@ onMounted(async () => {
   gap: var(--sp-2);
 }
 
+.cm-auto-clean.is-off {
+  opacity: 0.55;
+}
+
+.cm-retention-text {
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
 .cm-retention-select {
   height: 30px;
   padding: 0 var(--sp-2);
@@ -473,11 +622,6 @@ onMounted(async () => {
 .cm-retention-select:disabled {
   opacity: 0.5;
   cursor: not-allowed;
-}
-
-.cm-retention-suffix {
-  font-size: 12px;
-  color: var(--text-secondary);
 }
 
 .cm-tabs {
@@ -500,6 +644,16 @@ onMounted(async () => {
 
 .cm-toolbar .ui-input {
   flex: 1;
+}
+
+.cm-select-btn {
+  flex-shrink: 0;
+}
+
+.cm-select-count {
+  flex-shrink: 0;
+  font-size: 13px;
+  color: var(--text-secondary);
 }
 
 .cm-toolbar-row {
@@ -551,17 +705,48 @@ onMounted(async () => {
 }
 
 .cm-card {
+  position: relative;
   padding: var(--sp-4);
   border-radius: var(--radius-md);
   border: 1px solid var(--border);
   background: var(--bg-surface);
   cursor: pointer;
-  transition: transform 120ms var(--ease-out-soft), box-shadow var(--duration-fast) var(--ease-out-soft);
+  transition: transform 120ms var(--ease-out-soft), box-shadow var(--duration-fast) var(--ease-out-soft),
+    border-color var(--duration-fast) var(--ease-out-soft);
 }
 
 .cm-card:hover {
   transform: translateY(-1px);
   box-shadow: var(--shadow-md);
+}
+
+.cm-card.is-selected {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 1px var(--brand), var(--shadow-sm);
+}
+
+.cm-card__check {
+  position: absolute;
+  top: var(--sp-3);
+  right: var(--sp-3);
+  z-index: 1;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 1.5px solid var(--border);
+  background: var(--bg-surface);
+  color: transparent;
+  transition: background-color var(--duration-fast) var(--ease-out-soft),
+    border-color var(--duration-fast) var(--ease-out-soft);
+}
+
+.cm-card.is-selected .cm-card__check {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: #fff;
 }
 
 .cm-card__content {
@@ -573,6 +758,14 @@ onMounted(async () => {
   -webkit-box-orient: vertical;
   overflow: hidden;
   word-break: break-all;
+}
+
+.cm-card__image {
+  max-width: 100%;
+  max-height: 160px;
+  object-fit: contain;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
 }
 
 .cm-card__meta {

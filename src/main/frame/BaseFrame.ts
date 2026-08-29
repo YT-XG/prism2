@@ -7,6 +7,7 @@
 import { BrowserWindow, BrowserWindowConstructorOptions, ipcMain } from 'electron'
 import { join } from 'node:path'
 import { is } from '@electron-toolkit/utils'
+import { WINDOW_CHANNELS } from '@preload/ipc'
 
 type IPCOnHandler = {
   channel: string
@@ -97,7 +98,7 @@ export default abstract class BaseFrame {
 
   /** 子类可重写注册 IPC；默认注册基础关闭通道 */
   protected registerIPC(): void {
-    this.recvOne('to-main-BaseFrame:closeWindow', (event) => {
+    this.recvOne(WINDOW_CHANNELS.baseFrame.toMain.closeWindow, (event) => {
       const senderWindow = BrowserWindow.fromWebContents(event.sender)
       if (senderWindow && !senderWindow.isDestroyed()) {
         if (isQuitting) senderWindow.close()

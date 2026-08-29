@@ -12,11 +12,15 @@
 // 数据模型
 // ---------------------------------------------------------------------------
 
+/** 剪贴板记录类型：文本 / 图片（图片的 content 为文件名） */
+export type HistoryItemType = 'text' | 'image'
+
 /** 剪贴板历史记录项 */
 export interface HistoryItem {
   id: number
   content: string
   created_at: number
+  type: HistoryItemType
 }
 
 /** 收藏片段项 */
@@ -80,6 +84,12 @@ export interface AppSettings {
 
 /** 渲染 ↔ 主窗口（窗口类，经 recvOne/recvTwo/sendOne/sendTwo） */
 export const WINDOW_CHANNELS = {
+  /** BaseFrame 基础通道（所有窗口共用） */
+  baseFrame: {
+    toMain: {
+      closeWindow: 'to-main-BaseFrame:closeWindow'
+    }
+  },
   mainPage: {
     toMain: {
       minimize: 'to-main-MainPage:minimize',
@@ -108,11 +118,13 @@ export const SERVICE_CHANNELS = {
     getHistory: 'to-service-ClipboardService:getHistory',
     searchHistory: 'to-service-ClipboardService:searchHistory',
     deleteHistory: 'to-service-ClipboardService:deleteHistory',
+    deleteHistoryBatch: 'to-service-ClipboardService:deleteHistoryBatch',
     clearHistory: 'to-service-ClipboardService:clearHistory',
     getHistoryCount: 'to-service-ClipboardService:getHistoryCount',
     getRetentionState: 'to-service-ClipboardService:getRetentionState',
     setRetentionState: 'to-service-ClipboardService:setRetentionState',
     clickItem: 'to-service-ClipboardService:clickItem',
+    getImageData: 'to-service-ClipboardService:getImageData',
     getFavorites: 'to-service-ClipboardService:getFavorites',
     getFavoritesByCategory: 'to-service-ClipboardService:getFavoritesByCategory',
     getCategories: 'to-service-ClipboardService:getCategories',
@@ -151,6 +163,8 @@ export interface ElectronAPI {
     hideAfterAnimation: () => void
     toggleMaximize: () => void
     notifyReady: () => void
+    /** 隐藏当前窗口（经 BaseFrame 基础通道，任意窗口可用） */
+    hide: () => void
     onWindowEvent: (event: MainWindowEvent, cb: () => void) => () => void
     onSetPage: (cb: (payload: SetPagePayload) => void) => () => void
     onVersion: (cb: (version: string) => void) => () => void
@@ -164,11 +178,16 @@ export interface ElectronAPI {
     getHistory: (limit?: number, offset?: number) => Promise<HistoryItem[]>
     searchHistory: (keyword: string) => Promise<HistoryItem[]>
     deleteHistory: (id: number) => Promise<void>
+    /** 批量删除历史记录（ids 为非法集合时静默忽略非法项） */
+    deleteHistoryBatch: (ids: number[]) => Promise<void>
     clearHistory: () => Promise<void>
     getHistoryCount: () => Promise<number>
     getRetentionState: () => Promise<ClipboardRetention>
     setRetentionState: (partial: Partial<ClipboardRetention>) => Promise<void>
-    clickItem: (content: string) => Promise<void>
+    /** 点击历史项：写剪贴板 → 隐藏窗口 → 恢复焦点 → 模拟粘贴 */
+    clickItem: (payload: { content: string; type: HistoryItemType }) => Promise<void>
+    /** 读取图片记录为 data URL（仅 type='image'，返回空串表示不可用） */
+    getImageData: (filename: string) => Promise<string>
     getFavorites: () => Promise<FavoriteItem[]>
     getFavoritesByCategory: (category: string) => Promise<FavoriteItem[]>
     getCategories: () => Promise<CategoryItem[]>

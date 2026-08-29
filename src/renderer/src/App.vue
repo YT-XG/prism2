@@ -5,7 +5,7 @@
     ref="shellRef"
     @animationend="onAnimationEnd"
   >
-    <header class="titlebar drag-region">
+    <header v-if="!isQuickPaste" class="titlebar drag-region">
       <div class="titlebar-brand">
         <span class="brand-dot"></span>
         <span class="titlebar-title">Prism <span class="titlebar-version">v{{ version }}</span></span>
@@ -31,16 +31,20 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, computed, onMounted } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { Minus, X, Square, Minimize2 } from '@lucide/vue'
 import { subscribeOnUnmounted } from '@renderer/composables/useIpcListener'
 
 const router = useRouter()
+const route = useRoute()
 const exiting = ref(false)
 const version = ref('')
 const isMaximized = ref(false)
 const shellRef = ref<HTMLElement | null>(null)
+
+/** 快捷粘贴窗口：无标题栏的轻量视图 */
+const isQuickPaste = computed(() => route.path.startsWith('/quickPaste'))
 
 /** 入场：窗口 mount / reShow 时由渲染端触发，播 page-enter 动画 */
 function playEnter(): void {

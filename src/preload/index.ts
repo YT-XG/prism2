@@ -15,7 +15,7 @@ import type {
   SetPagePayload
 } from './ipc'
 
-const { mainPage } = WINDOW_CHANNELS
+const { mainPage, baseFrame } = WINDOW_CHANNELS
 const C = SERVICE_CHANNELS.clipboard
 const S = SERVICE_CHANNELS.settings
 
@@ -34,6 +34,7 @@ const electronAPI: ElectronAPI = {
     hideAfterAnimation: () => ipcRenderer.send(mainPage.toMain.hideAfterAnimation),
     toggleMaximize: () => ipcRenderer.send(mainPage.toMain.toggleMaximize),
     notifyReady: () => ipcRenderer.send(mainPage.toMain.ready),
+    hide: () => ipcRenderer.send(baseFrame.toMain.closeWindow),
 
     onWindowEvent: (event: MainWindowEvent, cb: () => void) => {
       const channel =
@@ -63,12 +64,17 @@ const electronAPI: ElectronAPI = {
       ipcRenderer.invoke(C.getHistory, limit, offset) as Promise<HistoryItem[]>,
     searchHistory: (keyword: string) => ipcRenderer.invoke(C.searchHistory, keyword) as Promise<HistoryItem[]>,
     deleteHistory: (id: number) => ipcRenderer.invoke(C.deleteHistory, id) as Promise<void>,
+    deleteHistoryBatch: (ids: number[]) =>
+      ipcRenderer.invoke(C.deleteHistoryBatch, ids) as Promise<void>,
     clearHistory: () => ipcRenderer.invoke(C.clearHistory) as Promise<void>,
     getHistoryCount: () => ipcRenderer.invoke(C.getHistoryCount) as Promise<number>,
     getRetentionState: () => ipcRenderer.invoke(C.getRetentionState) as Promise<ClipboardRetention>,
     setRetentionState: (partial: Partial<ClipboardRetention>) =>
       ipcRenderer.invoke(C.setRetentionState, partial) as Promise<void>,
-    clickItem: (content: string) => ipcRenderer.invoke(C.clickItem, content) as Promise<void>,
+    clickItem: (payload: { content: string; type: 'text' | 'image' }) =>
+      ipcRenderer.invoke(C.clickItem, payload) as Promise<void>,
+    getImageData: (filename: string) =>
+      ipcRenderer.invoke(C.getImageData, filename) as Promise<string>,
     getFavorites: () => ipcRenderer.invoke(C.getFavorites),
     getFavoritesByCategory: (category: string) =>
       ipcRenderer.invoke(C.getFavoritesByCategory, category),

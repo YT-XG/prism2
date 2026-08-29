@@ -40,7 +40,9 @@ class InputService {
   #runScript(script: string, osascript = false): Promise<void> {
     return new Promise((resolve, reject) => {
       const command = osascript ? `osascript -e '${script}'` : `powershell -NoProfile -Command "${script}"`
-      exec(command, (err) => {
+      // windowsHide 必须为 true：否则 spawn powershell 会闪出控制台窗口，
+      // 该窗口会抢占前台焦点，导致 SendKeys 的 ^v 发进控制台而非目标应用
+      exec(command, { windowsHide: true }, (err) => {
         if (err) reject(err)
         else resolve()
       })

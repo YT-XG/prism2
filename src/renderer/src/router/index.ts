@@ -1,6 +1,7 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
 import MainPage from '@renderer/views/MainPage.vue'
 import ClipboardManager from '@renderer/views/ClipboardManager.vue'
+import QuickPaste from '@renderer/views/QuickPaste.vue'
 import Settings from '@renderer/views/Settings.vue'
 
 const router = createRouter({
@@ -15,6 +16,7 @@ const router = createRouter({
         { path: 'settings', name: 'settings', component: Settings }
       ]
     },
+    { path: '/quickPaste', name: 'quickPaste', component: QuickPaste },
     { path: '/', redirect: '/mainPage/clipboard' },
     { path: '/:pathMatch(.*)*', redirect: '/mainPage/clipboard' }
   ]

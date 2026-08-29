@@ -90,7 +90,10 @@ class SettingsService {
     this.#tryRegister(this.settings.shortcut, () => {
       windowFactory.getMainPageFrame().showCentered()
     }, '主页面')
-    // 片段选择器 / 搜索框随对应功能迁移时再接入（暂不注册，避免空引用）
+    this.#tryRegister(this.settings.searchBoxShortcut, () => {
+      windowFactory.getQuickPasteFrame().toggle()
+    }, '快捷粘贴')
+    // 片段选择器随对应功能迁移时再接入（暂不注册，避免空引用）
   }
 
   #tryRegister(accelerator: string, callback: () => void, label: string): void {

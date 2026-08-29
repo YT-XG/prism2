@@ -27,7 +27,7 @@ npm run build        # typecheck 后构建
 src/
 ├── main/                         # 主进程
 │   ├── index.ts                  # 入口：单实例、生命周期、服务初始化、托盘
-│   ├── frame/                    # BaseFrame v2 + WindowFactory + MainPageFrame
+│   ├── frame/                    # BaseFrame v2 + WindowFactory + MainPageFrame + QuickPasteFrame
 │   ├── services/                 # services/ 复数；模块级单例 + 构造器注册 IPC
 │   │   ├── db/sqliteDatabase.ts  # SQLite 公共基类（init/save/run/all/one）
 │   │   ├── settingsService.ts
@@ -43,7 +43,7 @@ src/
     ├── assets/styles/            # tokens.css / animations.css / main.css
     ├── components/ui/            # 设计系统组件层
     ├── composables/useIpcListener.ts
-    ├── views/                    # MainPage / ClipboardManager / Settings
+    ├── views/                    # MainPage / ClipboardManager / QuickPaste / Settings
     └── router/  types.d.ts
 scripts/import-legacy-db.mjs      # 旧剪贴板数据一次性导入
 docs/                             # 本仓库文档 + design-ref/ 参考图
