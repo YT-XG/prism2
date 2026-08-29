@@ -31,6 +31,8 @@ const POLL_INTERVAL_MS = 1000
 const CLEANUP_INTERVAL_MS = 60 * 60 * 1000
 /** 落盘防抖（ms）：高频复制时不至于每秒全量写盘 */
 const SAVE_DEBOUNCE_MS = 2000
+/** 保留期配置变更后的延迟清理（ms）：把 value/unit/autoClean 的连续改动合并为一次最终清理，避免中间态误删 */
+const CLEANUP_DEBOUNCE_MS = 5000
 /** 图片文件名合法格式（防御路径穿越） */
 const IMAGE_NAME_RE = /^[\w.-]+$/
 
@@ -43,6 +45,9 @@ class ClipboardService extends SqliteStore {
 
   /** 落盘防抖定时器 */
   private saveTimer: ReturnType<typeof setTimeout> | null = null
+
+  /** 保留期配置变更后的延迟清理定时器（连续改动会重置） */
+  private cleanupDebounceTimer: ReturnType<typeof setTimeout> | null = null
 
   /** 监控是否已停止（防止停止后 finally 里重新调度） */
   private stopped = false
@@ -117,6 +122,10 @@ class ClipboardService extends SqliteStore {
     if (this.cleanupTimer) {
       clearInterval(this.cleanupTimer)
       this.cleanupTimer = null
+    }
+    if (this.cleanupDebounceTimer) {
+      clearTimeout(this.cleanupDebounceTimer)
+      this.cleanupDebounceTimer = null
     }
     if (this.saveTimer) {
       clearTimeout(this.saveTimer)
@@ -445,7 +454,18 @@ class ClipboardService extends SqliteStore {
       clipboardRetentionValue: next.value,
       clipboardRetentionUnit: next.unit
     })
-    this.autoCleanup()
+    // 不立即清理：value/unit/autoClean 常被连续修改，立即清理会按中间态误删。
+    // 改为防抖延迟，最后一次改动后按最终配置清理；定时任务与启动时也会兜底清理。
+    this.scheduleCleanup()
+  }
+
+  /** 延迟触发清理：连续改动会重置计时，最终按最后一次的完整配置执行 */
+  private scheduleCleanup(): void {
+    if (this.cleanupDebounceTimer) clearTimeout(this.cleanupDebounceTimer)
+    this.cleanupDebounceTimer = setTimeout(() => {
+      this.cleanupDebounceTimer = null
+      this.autoCleanup()
+    }, CLEANUP_DEBOUNCE_MS)
   }
 
   /** 主动写入剪贴板后同步监控缓存，避免被当作"新复制"触发广播 */

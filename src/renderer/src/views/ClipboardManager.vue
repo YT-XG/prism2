@@ -17,7 +17,6 @@
           <select
             class="cm-retention-select"
             :value="retention.value"
-            :disabled="!retention.autoClean"
             @change="onValueChange"
           >
             <option v-for="n in RETENTION_VALUES" :key="n" :value="n">{{ n }}</option>
@@ -25,7 +24,6 @@
           <select
             class="cm-retention-select"
             :value="retention.unit"
-            :disabled="!retention.autoClean"
             @change="onUnitChange"
           >
             <option value="day">日</option>
@@ -517,7 +515,6 @@ async function onAutoCleanToggle(value: boolean): Promise<void> {
 }
 
 async function onValueChange(event: Event): Promise<void> {
-  if (!retention.value.autoClean) return
   const value = Number((event.target as HTMLSelectElement).value)
   retention.value.value = value
   await window.electronAPI.clipboard.setRetentionState({ value })
@@ -525,7 +522,6 @@ async function onValueChange(event: Event): Promise<void> {
 }
 
 async function onUnitChange(event: Event): Promise<void> {
-  if (!retention.value.autoClean) return
   const unit = (event.target as HTMLSelectElement).value as ClipboardRetention['unit']
   retention.value.unit = unit
   await window.electronAPI.clipboard.setRetentionState({ unit })
