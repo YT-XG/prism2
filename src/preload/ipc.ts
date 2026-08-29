@@ -52,6 +52,42 @@ export interface ClipboardRetention {
   unit: 'day' | 'week' | 'month' | 'year'
 }
 
+/**
+ * 备份导入合并方式：
+ * - merge：按主键 INSERT OR IGNORE，保留双方记录（已存在的 id 跳过，不覆盖对方数据）；
+ * - replace：清空本地历史/收藏/图片后，完全替换为备份内容。
+ */
+export type BackupImportMode = 'merge' | 'replace'
+
+/** 导出备份结果 */
+export interface BackupExportResult {
+  ok: boolean
+  /** 用户取消（未选择保存位置） */
+  canceled: boolean
+  /** 保存路径（canceled 时为 undefined） */
+  path?: string
+  /** 失败原因（ok=false 时） */
+  error?: string
+  historyCount?: number
+  favoriteCount?: number
+  imageCount?: number
+}
+
+/** 导入备份结果 */
+export interface BackupImportResult {
+  ok: boolean
+  /** 用户取消（未选择文件） */
+  canceled: boolean
+  /** 失败原因（ok=false 时） */
+  error?: string
+  importedHistory?: number
+  importedFavorites?: number
+  importedImages?: number
+  skippedHistory?: number
+  skippedFavorites?: number
+  skippedImages?: number
+}
+
 /** 应用设置 */
 export interface AppSettings {
   /** 主页面显隐快捷键，如 'CommandOrControl+Alt+V' */
@@ -133,9 +169,14 @@ export const SERVICE_CHANNELS = {
     updateFavorite: 'to-service-ClipboardService:updateFavorite',
     deleteFavorite: 'to-service-ClipboardService:deleteFavorite',
     clearFavorites: 'to-service-ClipboardService:clearFavorites',
-    writeText: 'to-service-ClipboardService:writeText'
+    writeText: 'to-service-ClipboardService:writeText',
+    exportBackup: 'to-service-ClipboardService:exportBackup',
+    importBackup: 'to-service-ClipboardService:importBackup'
   }
 } as const
+
+/** 备份文件扩展名（zip 格式 + 自定义扩展名，导入时按此过滤） */
+export const BACKUP_EXTENSION = '.prismbackup'
 
 /** 服务广播（服务 → 所有窗口） */
 export const BROADCAST = {
@@ -202,6 +243,10 @@ export interface ElectronAPI {
     deleteFavorite: (id: number) => Promise<void>
     clearFavorites: () => Promise<void>
     writeText: (text: string) => Promise<void>
+    /** 导出剪贴板记录备份（弹保存对话框；zip 格式，扩展名 .prismbackup） */
+    exportBackup: () => Promise<BackupExportResult>
+    /** 导入剪贴板记录备份（弹打开对话框；mode 指定合并/替换） */
+    importBackup: (mode: BackupImportMode) => Promise<BackupImportResult>
     onNewItem: (cb: (item: HistoryItem) => void) => () => void
   }
 }

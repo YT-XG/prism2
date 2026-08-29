@@ -1,5 +1,5 @@
 {
-  "name": "prism-next",
+  "name": "prism2",
   "version": "2.0.0",
   "description": "Prism v2 - 桌面效率工具（剪贴板/翻译/搜索，全新架构与设计系统）",
   "main": "./out/main/index.js",
@@ -23,6 +23,7 @@
     "@electron-toolkit/preload": "^3.0.2",
     "@electron-toolkit/utils": "^4.0.0",
     "@lucide/vue": "^1.34.0",
+    "adm-zip": "^0.6.0",
     "electron-log": "^5.4.4",
     "pinia": "^4.0.3",
     "pinia-plugin-persistedstate": "^4.7.1",

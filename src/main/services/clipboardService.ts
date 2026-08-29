@@ -12,18 +12,36 @@
  * - 不再触发通知弹窗（属后续迭代），只广播新记录给所有可见窗口。
  * - 所有 IPC handler 入参做类型收窄的防御性处理。
  */
-import { ipcMain, clipboard, nativeImage, ClipboardItem, app, BrowserWindow } from 'electron'
+import {
+  ipcMain,
+  clipboard,
+  nativeImage,
+  ClipboardItem,
+  app,
+  BrowserWindow,
+  dialog
+} from 'electron'
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from 'node:fs'
+import { basename, join } from 'node:path'
 import log from 'electron-log'
+import initSqlJs, { type Database } from 'sql.js'
+import AdmZip from 'adm-zip'
 import { SqliteStore } from './db/sqliteDatabase'
 import { inputService } from './inputService'
 import { settingsService } from './settingsService'
 import { windowFactory } from '../frame/WindowFactory'
 import { broadcast } from '../utils/platform'
-import { BROADCAST, SERVICE_CHANNELS } from '@preload/ipc'
-import type { HistoryItem, FavoriteItem, CategoryItem, ClipboardRetention } from '@preload/ipc'
+import { BACKUP_EXTENSION, BROADCAST, SERVICE_CHANNELS } from '@preload/ipc'
+import type {
+  HistoryItem,
+  FavoriteItem,
+  CategoryItem,
+  ClipboardRetention,
+  BackupImportMode,
+  BackupExportResult,
+  BackupImportResult
+} from '@preload/ipc'
 
 /** 轮询间隔（ms） */
 const POLL_INTERVAL_MS = 1000
@@ -35,6 +53,16 @@ const SAVE_DEBOUNCE_MS = 2000
 const CLEANUP_DEBOUNCE_MS = 5000
 /** 图片文件名合法格式（防御路径穿越） */
 const IMAGE_NAME_RE = /^[\w.-]+$/
+
+/** 备份文件内 manifest.json 的结构（app 标识 + 格式版本用于校验） */
+interface BackupManifest {
+  app: string
+  formatVersion: number
+  exportedAt: string
+  historyCount: number
+  favoriteCount: number
+  imageCount: number
+}
 
 class ClipboardService extends SqliteStore {
   /** 剪贴板监控定时器（自调度 setTimeout，避免回调重叠） */
@@ -521,6 +549,208 @@ class ClipboardService extends SqliteStore {
   }
 
   // -------------------------------------------------------------------------
+  // 备份导出 / 导入（zip 打包，扩展名 .prismbackup）
+  // -------------------------------------------------------------------------
+
+  /** 列出图片目录中的图片文件名（防御性过滤非法文件名） */
+  #listImageFiles(): string[] {
+    const dir = this.#imageDir()
+    if (!existsSync(dir)) return []
+    return readdirSync(dir).filter((f) => IMAGE_NAME_RE.test(f))
+  }
+
+  /** 删除图片目录中所有图片文件（replace 导入前清场用） */
+  #clearImageFiles(): void {
+    for (const f of this.#listImageFiles()) this.#removeImageFile(f)
+  }
+
+  /** 读取外部 sql.js 实例的查询结果（通用解析为行对象） */
+  #readTable(db: Database, sql: string): Record<string, unknown>[] {
+    const res = db.exec(sql)
+    if (!res || res.length === 0) return []
+    const cols = res[0].columns
+    return res[0].values.map((v) => {
+      const o: Record<string, unknown> = {}
+      cols.forEach((c, i) => (o[c] = v[i]))
+      return o
+    })
+  }
+
+  /** 导出剪贴板记录备份：clipboard.db + 图片 + manifest，打包为 .prismbackup（zip） */
+  async exportBackup(): Promise<BackupExportResult> {
+    // 先把内存中防抖中的变更落盘，保证备份的是最新数据
+    this.save()
+    const stamp = new Date()
+      .toISOString()
+      .replace(/[-:]/g, '')
+      .replace(/\.\d{3}Z$/, '')
+      .replace('T', '-')
+    const { canceled, filePath } = await dialog.showSaveDialog({
+      title: '导出剪贴板记录备份',
+      defaultPath: `Prism-backup-${stamp}${BACKUP_EXTENSION}`,
+      filters: [{ name: 'Prism 剪贴板备份', extensions: [BACKUP_EXTENSION.slice(1)] }]
+    })
+    if (canceled || !filePath) return { ok: false, canceled: true }
+
+    try {
+      const historyCount = this.getHistoryCount()
+      const favoriteCount = this.getFavorites().length
+      const imageFiles = this.#listImageFiles()
+      const manifest: BackupManifest = {
+        app: 'prism2',
+        formatVersion: 1,
+        exportedAt: new Date().toISOString(),
+        historyCount,
+        favoriteCount,
+        imageCount: imageFiles.length
+      }
+
+      const zip = new AdmZip()
+      zip.addFile('manifest.json', Buffer.from(JSON.stringify(manifest, null, 2), 'utf-8'))
+      if (existsSync(this.filePath)) zip.addFile('clipboard.db', readFileSync(this.filePath))
+      for (const f of imageFiles) {
+        const abs = this.#imagePath(f)
+        if (existsSync(abs)) zip.addLocalFile(abs, 'images')
+      }
+      zip.writeZip(filePath)
+
+      log.info(
+        `[clipboard] backup exported: ${filePath} (history=${historyCount}, favorites=${favoriteCount}, images=${imageFiles.length})`
+      )
+      return {
+        ok: true,
+        canceled: false,
+        path: filePath,
+        historyCount,
+        favoriteCount,
+        imageCount: imageFiles.length
+      }
+    } catch (err) {
+      log.error('[clipboard] backup export failed:', err)
+      return { ok: false, canceled: false, error: String((err as Error)?.message ?? err) }
+    }
+  }
+
+  /** 导入剪贴板记录备份：mode='merge' 保留双方；mode='replace' 清空后完全替换 */
+  async importBackup(mode: BackupImportMode): Promise<BackupImportResult> {
+    const { canceled, filePaths } = await dialog.showOpenDialog({
+      title: '导入剪贴板记录备份',
+      properties: ['openFile'],
+      filters: [{ name: 'Prism 剪贴板备份', extensions: [BACKUP_EXTENSION.slice(1)] }]
+    })
+    if (canceled || filePaths.length === 0) return { ok: false, canceled: true }
+
+    const srcPath = filePaths[0]
+    try {
+      const zip = new AdmZip(srcPath)
+      const manifestEntry = zip.getEntry('manifest.json')
+      const dbEntry = zip.getEntry('clipboard.db')
+      if (!manifestEntry || !dbEntry) {
+        return {
+          ok: false,
+          canceled: false,
+          error: '不是有效的 Prism 备份文件（缺少 manifest.json 或 clipboard.db）'
+        }
+      }
+
+      let manifest: { app?: string; formatVersion?: number }
+      try {
+        manifest = JSON.parse(manifestEntry.getData().toString('utf-8'))
+      } catch {
+        return { ok: false, canceled: false, error: '备份文件 manifest 解析失败' }
+      }
+      if (manifest.app !== 'prism2' || manifest.formatVersion !== 1) {
+        return {
+          ok: false,
+          canceled: false,
+          error: `不支持的备份格式（app=${manifest.app ?? '未知'}, version=${manifest.formatVersion ?? '未知'}）`
+        }
+      }
+
+      // 用独立的 sql.js 实例读取备份 DB，不改动当前服务实例的数据库
+      const SQL = await initSqlJs({
+        locateFile: (file) => join(app.getAppPath(), 'node_modules', 'sql.js', 'dist', file)
+      })
+      const backupDb = new SQL.Database(dbEntry.getData())
+      const backupHistory = this.#readTable(backupDb, 'SELECT * FROM clipboard_history')
+      const backupFavorites = this.#readTable(backupDb, 'SELECT * FROM favorites')
+      backupDb.close()
+
+      const importMode: BackupImportMode = mode === 'replace' ? 'replace' : 'merge'
+      let importedHistory = 0
+      let importedFavorites = 0
+      let importedImages = 0
+      let skippedHistory = 0
+      let skippedFavorites = 0
+      let skippedImages = 0
+
+      if (importMode === 'replace') {
+        this.run('DELETE FROM clipboard_history')
+        this.run('DELETE FROM favorites')
+        this.#clearImageFiles()
+      }
+
+      for (const row of backupHistory) {
+        this.db?.run(
+          'INSERT OR IGNORE INTO clipboard_history (id, content, created_at, type) VALUES (?, ?, ?, ?)',
+          [row.id, row.content, row.created_at, row.type]
+        )
+        if ((this.db?.getRowsModified() ?? 0) > 0) {
+          importedHistory++
+        } else {
+          skippedHistory++
+        }
+      }
+
+      for (const row of backupFavorites) {
+        this.db?.run(
+          'INSERT OR IGNORE INTO favorites (id, content, category, description, created_at) VALUES (?, ?, ?, ?, ?)',
+          [row.id, row.content, row.category, row.description, row.created_at]
+        )
+        if ((this.db?.getRowsModified() ?? 0) > 0) {
+          importedFavorites++
+        } else {
+          skippedFavorites++
+        }
+      }
+
+      const imageEntries = zip
+        .getEntries()
+        .filter((e) => !e.isDirectory && e.entryName.startsWith('images/'))
+      for (const entry of imageEntries) {
+        const name = basename(entry.entryName)
+        if (!IMAGE_NAME_RE.test(name)) continue
+        const dest = this.#imagePath(name)
+        if (importMode === 'merge' && existsSync(dest)) {
+          skippedImages++
+          continue
+        }
+        writeFileSync(dest, entry.getData())
+        importedImages++
+      }
+
+      this.save()
+
+      log.info(
+        `[clipboard] backup imported: ${srcPath} mode=${importMode} (history+${importedHistory}/skip${skippedHistory}, favorites+${importedFavorites}/skip${skippedFavorites}, images+${importedImages}/skip${skippedImages})`
+      )
+      return {
+        ok: true,
+        canceled: false,
+        importedHistory,
+        importedFavorites,
+        importedImages,
+        skippedHistory,
+        skippedFavorites,
+        skippedImages
+      }
+    } catch (err) {
+      log.error('[clipboard] backup import failed:', err)
+      return { ok: false, canceled: false, error: String((err as Error)?.message ?? err) }
+    }
+  }
+
+  // -------------------------------------------------------------------------
   // IPC
   // -------------------------------------------------------------------------
 
@@ -601,6 +831,11 @@ class ClipboardService extends SqliteStore {
     ipcMain.handle(C.clearFavorites, () => this.clearAllFavorites())
 
     ipcMain.handle(C.writeText, (_e, text: string) => this.writeText(String(text ?? '')))
+
+    ipcMain.handle(C.exportBackup, () => this.exportBackup())
+    ipcMain.handle(C.importBackup, (_e, mode: BackupImportMode) =>
+      this.importBackup(mode === 'replace' ? 'replace' : 'merge')
+    )
   }
 }
 

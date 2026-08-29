@@ -8,6 +8,9 @@ import { contextBridge, ipcRenderer } from 'electron'
 import { BROADCAST, SERVICE_CHANNELS, WINDOW_CHANNELS } from './ipc'
 import type {
   AppSettings,
+  BackupExportResult,
+  BackupImportMode,
+  BackupImportResult,
   ClipboardRetention,
   ElectronAPI,
   HistoryItem,
@@ -87,6 +90,9 @@ const electronAPI: ElectronAPI = {
     deleteFavorite: (id: number) => ipcRenderer.invoke(C.deleteFavorite, id) as Promise<void>,
     clearFavorites: () => ipcRenderer.invoke(C.clearFavorites) as Promise<void>,
     writeText: (text: string) => ipcRenderer.invoke(C.writeText, text) as Promise<void>,
+    exportBackup: () => ipcRenderer.invoke(C.exportBackup) as Promise<BackupExportResult>,
+    importBackup: (mode: BackupImportMode) =>
+      ipcRenderer.invoke(C.importBackup, mode) as Promise<BackupImportResult>,
     onNewItem: (cb: (item: HistoryItem) => void) => subscribe(BROADCAST.clipboardNew, (item) => cb(item as HistoryItem))
   }
 }
