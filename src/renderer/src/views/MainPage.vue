@@ -35,13 +35,25 @@ import { subscribeOnUnmounted } from '@renderer/composables/useIpcListener'
 
 const count = ref(0)
 
-onMounted(async () => {
+/** 从主进程重新拉取权威历史计数（新增/删除/清空/导入后均以此为准） */
+async function refreshCount(): Promise<void> {
   count.value = await window.electronAPI.clipboard.getHistoryCount()
+}
 
+onMounted(async () => {
+  await refreshCount()
+
+  // 历史变更广播触发时刷新计数，避免删除/清空/导入后侧栏角标残留
   subscribeOnUnmounted(() =>
-    window.electronAPI.clipboard.onNewItem((_item) => {
-      if (!count.value) count.value = 0
-      count.value += 1
+    window.electronAPI.clipboard.onHistoryChanged(() => {
+      void refreshCount()
+    })
+  )
+
+  // 窗口重新显示时兜底刷新（隐藏期间的变更广播被 onlyVisible 跳过）
+  subscribeOnUnmounted(() =>
+    window.electronAPI.window.onWindowEvent('reShow', () => {
+      void refreshCount()
     })
   )
 })

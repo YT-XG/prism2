@@ -93,7 +93,8 @@ const electronAPI: ElectronAPI = {
     exportBackup: () => ipcRenderer.invoke(C.exportBackup) as Promise<BackupExportResult>,
     importBackup: (mode: BackupImportMode) =>
       ipcRenderer.invoke(C.importBackup, mode) as Promise<BackupImportResult>,
-    onNewItem: (cb: (item: HistoryItem) => void) => subscribe(BROADCAST.clipboardNew, (item) => cb(item as HistoryItem))
+    onNewItem: (cb: (item: HistoryItem) => void) => subscribe(BROADCAST.clipboardNew, (item) => cb(item as HistoryItem)),
+    onHistoryChanged: (cb: () => void) => subscribe(BROADCAST.clipboardHistoryChanged, cb),
   }
 }
 

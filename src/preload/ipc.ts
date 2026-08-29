@@ -180,7 +180,8 @@ export const BACKUP_EXTENSION = '.prismbackup'
 
 /** 服务广播（服务 → 所有窗口） */
 export const BROADCAST = {
-  clipboardNew: 'broadcast:clipboard-new'
+  clipboardNew: 'broadcast:clipboard-new',
+  clipboardHistoryChanged: 'broadcast:clipboard-history-changed'
 } as const
 
 // ---------------------------------------------------------------------------
@@ -248,5 +249,7 @@ export interface ElectronAPI {
     /** 导入剪贴板记录备份（弹打开对话框；mode 指定合并/替换） */
     importBackup: (mode: BackupImportMode) => Promise<BackupImportResult>
     onNewItem: (cb: (item: HistoryItem) => void) => () => void
+    /** 历史变更（新增/删除/清空/导入）通知，用于侧栏计数等 UI 刷新 */
+    onHistoryChanged: (cb: () => void) => () => void
   }
 }

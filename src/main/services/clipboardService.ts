@@ -244,6 +244,11 @@ class ClipboardService extends SqliteStore {
     }
   }
 
+  /** 广播历史变更（新增/删除/清空/导入），供侧栏计数等 UI 刷新权威数据 */
+  #notifyHistoryChanged(): void {
+    broadcast(BROADCAST.clipboardHistoryChanged, undefined, { onlyVisible: true })
+  }
+
   /**
    * 新增一条剪贴板记录（重复内容置顶 + 防抖落盘 + 广播）。
    * @param content 文本内容或图片文件名
@@ -266,6 +271,7 @@ class ClipboardService extends SqliteStore {
           { id: existing.id, content, created_at: now, type } satisfies HistoryItem,
           { onlyVisible: true }
         )
+        this.#notifyHistoryChanged()
         return
       }
 
@@ -283,6 +289,7 @@ class ClipboardService extends SqliteStore {
         type
       }
       broadcast(BROADCAST.clipboardNew, newItem, { onlyVisible: true })
+      this.#notifyHistoryChanged()
       log.info('[ClipboardService] 新增记录:', type, content.substring(0, 50))
     } catch (err) {
       log.error('[ClipboardService] 插入失败:', err)
@@ -429,6 +436,7 @@ class ClipboardService extends SqliteStore {
     this.run('DELETE FROM clipboard_history WHERE id = ?', [id])
     if (row?.type === 'image') this.#removeImageFile(row.content)
     this.save()
+    this.#notifyHistoryChanged()
   }
 
   /** 批量删除历史记录：先收集图片文件名，删行后同步删文件，单次落盘 */
@@ -447,6 +455,7 @@ class ClipboardService extends SqliteStore {
     this.run(`DELETE FROM clipboard_history WHERE id IN (${placeholders})`, valid)
     images.forEach((img) => this.#removeImageFile(img.content))
     this.save()
+    this.#notifyHistoryChanged()
   }
 
   clearAll(): void {
@@ -457,6 +466,7 @@ class ClipboardService extends SqliteStore {
     this.run('DELETE FROM clipboard_history')
     images.forEach((img) => this.#removeImageFile(img.content))
     this.save()
+    this.#notifyHistoryChanged()
   }
 
   getRetentionState(): ClipboardRetention {
@@ -730,6 +740,7 @@ class ClipboardService extends SqliteStore {
       }
 
       this.save()
+      this.#notifyHistoryChanged()
 
       log.info(
         `[clipboard] backup imported: ${srcPath} mode=${importMode} (history+${importedHistory}/skip${skippedHistory}, favorites+${importedFavorites}/skip${skippedFavorites}, images+${importedImages}/skip${skippedImages})`
