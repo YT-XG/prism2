@@ -18,6 +18,9 @@ publish:
   # GitHub Release 发布目标：https://github.com/YT-XG/prism2
   owner: YT-XG
   repo: prism2
+  # 关键：electron-builder 默认会把不存在的 release 建成“草稿”（draft），
+  # 草稿对公开 API 与 v1 检查更新都不可见。显式设为正式发布。
+  releaseType: release
 win:
   target: nsis
   icon: build/icon.ico
