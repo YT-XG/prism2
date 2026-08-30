@@ -108,6 +108,8 @@ const electronAPI: ElectronAPI = {
       ipcRenderer.invoke(N.updateNote, id, content, color) as Promise<void>,
     deleteNote: (id: number) => ipcRenderer.invoke(N.deleteNote, id) as Promise<void>,
     togglePin: (id: number) => ipcRenderer.invoke(N.togglePin, id) as Promise<void>,
+    setNotePosition: (id: number, x: number, y: number) =>
+      ipcRenderer.invoke(N.setNotePosition, id, x, y) as Promise<void>,
   }
 }
 

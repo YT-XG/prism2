@@ -12,180 +12,147 @@
       </UiButton>
     </header>
 
-    <!-- 快捷搜索：同时搜历史 + 片段 -->
-    <section class="home-search">
-      <UiInput v-model="keyword" label="快捷搜索" placeholder="搜索剪贴板历史或片段…">
-        <template #leading><Search :size="15" :stroke-width="1.6" /></template>
-      </UiInput>
+    <!-- 数据概览 -->
+    <section class="home-stats">
+      <div class="stat stat--lavender">
+        <div class="stat__num num">{{ historyCount }}</div>
+        <div class="stat__label">历史记录</div>
+      </div>
+      <div class="stat stat--mint">
+        <div class="stat__num num">{{ snippetCount }}</div>
+        <div class="stat__label">片段</div>
+      </div>
+      <div class="stat stat--yellow">
+        <div class="stat__num num">{{ categoryCount }}</div>
+        <div class="stat__label">分类</div>
+      </div>
     </section>
 
-    <!-- 搜索态：分组结果 -->
-    <section v-if="searching" class="home-scroll">
-      <div
-        v-if="!searchResults.history.length && !searchResults.snippets.length"
-        class="home-empty"
+    <!-- 快捷入口 -->
+    <section class="home-entries">
+      <button
+        v-for="entry in entries"
+        :key="entry.label"
+        type="button"
+        class="entry"
+        @click="entry.action"
       >
-        <UiEmptyState title="无匹配结果" hint="换个关键词试试" />
-      </div>
-      <div v-else class="search-groups">
-        <div v-if="searchResults.history.length" class="search-group">
-          <div class="search-group__label">剪贴板历史</div>
-          <button
-            v-for="(item, index) in searchResults.history"
-            :key="'h' + item.id"
-            type="button"
-            class="row"
-            :class="{ 'is-copied': copiedKey === 'history-' + item.id }"
-            :style="rowDelay(index)"
-            @click="handleCopy(item, 'history')"
-          >
-            <img
-              v-if="item.type === 'image'"
-              :src="imageCache[item.content]"
-              class="row__thumb"
-              alt="剪贴板图片"
-            />
-            <span v-else class="row__text">{{ item.content }}</span>
-            <span v-if="copiedKey === 'history-' + item.id" class="row__copied">
-              <Check :size="12" :stroke-width="3" /> 已复制
-            </span>
-          </button>
-        </div>
-        <div v-if="searchResults.snippets.length" class="search-group">
-          <div class="search-group__label">片段</div>
-          <button
-            v-for="(item, index) in searchResults.snippets"
-            :key="'s' + item.id"
-            type="button"
-            class="row"
-            :class="{ 'is-copied': copiedKey === 'snippet-' + item.id }"
-            :style="rowDelay(index)"
-            @click="handleCopy(item, 'snippet')"
-          >
-            <Star :size="14" :stroke-width="1.6" class="row__cat-icon" />
-            <span class="row__text">{{ item.content }}</span>
-            <span v-if="item.category" class="row__cat">{{ item.category }}</span>
-            <span v-if="copiedKey === 'snippet-' + item.id" class="row__copied">
-              <Check :size="12" :stroke-width="3" /> 已复制
-            </span>
-          </button>
-        </div>
-      </div>
+        <component :is="entry.icon" :size="18" :stroke-width="1.6" class="entry__icon" />
+        <span class="entry__label">{{ entry.label }}</span>
+      </button>
     </section>
 
-    <!-- 默认态 -->
-    <template v-else>
-      <!-- 数据概览 -->
-      <section class="home-stats">
-        <div class="stat stat--lavender">
-          <div class="stat__num num">{{ historyCount }}</div>
-          <div class="stat__label">历史记录</div>
+    <!-- 画布：可拖拽 widget（合并记录框 + 贴到主页的便利贴） -->
+    <section ref="canvasRef" class="home-canvas">
+      <!-- 合并记录框：左=剪贴板，右=片段，框顶跨两类全搜 -->
+      <div
+        ref="boxEl"
+        class="recent-box"
+        :class="{ 'is-dragging': boxDragging }"
+        :style="{ left: `${boxX}px`, top: `${boxY}px` }"
+      >
+        <div class="recent-box__head" :title="'拖动以调整位置'" @pointerdown="startBoxDrag">
+          <GripVertical :size="14" :stroke-width="1.6" class="recent-box__grip" />
+          <span class="recent-box__title"><History :size="14" :stroke-width="1.6" /> 最近记录</span>
+          <RouterLink
+            to="/mainPage/clipboard"
+            class="recent-box__more"
+            @pointerdown.stop
+            >全部 ›</RouterLink
+          >
         </div>
-        <div class="stat stat--mint">
-          <div class="stat__num num">{{ snippetCount }}</div>
-          <div class="stat__label">片段</div>
+        <div class="recent-box__search" @pointerdown.stop>
+          <UiInput v-model="keyword" placeholder="跨两类搜索剪贴板与片段…">
+            <template #leading><Search :size="14" :stroke-width="1.6" /></template>
+          </UiInput>
         </div>
-        <div class="stat stat--yellow">
-          <div class="stat__num num">{{ categoryCount }}</div>
-          <div class="stat__label">分类</div>
+        <div class="recent-box__body">
+          <div class="recent-box__col">
+            <div class="recent-box__col-title">剪贴板</div>
+            <div v-if="!historyRows.length" class="recent-box__empty">暂无记录</div>
+            <div v-else class="recent-box__list">
+              <button
+                v-for="(item, index) in historyRows"
+                :key="item.id"
+                type="button"
+                class="row"
+                :class="{ 'is-copied': copiedKey === 'history-' + item.id }"
+                :style="rowDelay(index)"
+                @click="handleCopy(item, 'history')"
+              >
+                <img
+                  v-if="item.type === 'image'"
+                  :src="imageCache[item.content]"
+                  class="row__thumb"
+                  alt="剪贴板图片"
+                />
+                <span v-else class="row__text">{{ item.content }}</span>
+                <span class="row__time">{{ formatTime(item.created_at) }}</span>
+                <span v-if="copiedKey === 'history-' + item.id" class="row__copied">
+                  <Check :size="12" :stroke-width="3" /> 已复制
+                </span>
+                <span class="row__actions" @click.stop>
+                  <button class="row-btn" title="收藏" @click="quickFavorite(item)">
+                    <Star :size="13" :stroke-width="1.6" />
+                  </button>
+                  <button
+                    class="row-btn row-btn--danger"
+                    title="删除"
+                    @click="requestDelete(item, 'history')"
+                  >
+                    <Trash2 :size="13" :stroke-width="1.6" />
+                  </button>
+                </span>
+              </button>
+            </div>
+          </div>
+          <div class="recent-box__col">
+            <div class="recent-box__col-title">片段</div>
+            <div v-if="!snippetRows.length" class="recent-box__empty">暂无片段</div>
+            <div v-else class="recent-box__list">
+              <button
+                v-for="(item, index) in snippetRows"
+                :key="item.id"
+                type="button"
+                class="row"
+                :class="{ 'is-copied': copiedKey === 'snippet-' + item.id }"
+                :style="rowDelay(index)"
+                @click="handleCopy(item, 'snippet')"
+              >
+                <Star :size="14" :stroke-width="1.6" class="row__cat-icon" />
+                <span class="row__text">{{ item.content }}</span>
+                <span v-if="item.category" class="row__cat">{{ item.category }}</span>
+                <span v-if="copiedKey === 'snippet-' + item.id" class="row__copied">
+                  <Check :size="12" :stroke-width="3" /> 已复制
+                </span>
+                <span class="row__actions" @click.stop>
+                  <button
+                    class="row-btn row-btn--danger"
+                    title="删除"
+                    @click="requestDelete(item, 'snippet')"
+                  >
+                    <Trash2 :size="13" :stroke-width="1.6" />
+                  </button>
+                </span>
+              </button>
+            </div>
+          </div>
         </div>
-      </section>
+      </div>
 
-      <!-- 快捷入口 -->
-      <section class="home-entries">
-        <button
-          v-for="entry in entries"
-          :key="entry.label"
-          type="button"
-          class="entry"
-          @click="entry.action"
-        >
-          <component :is="entry.icon" :size="18" :stroke-width="1.6" class="entry__icon" />
-          <span class="entry__label">{{ entry.label }}</span>
-        </button>
-      </section>
-
-      <!-- 最近记录两栏 -->
-      <section class="home-recent">
-        <div class="recent-card">
-          <div class="recent-head">
-            <span class="recent-title"><History :size="14" :stroke-width="1.6" /> 最近剪贴板</span>
-            <RouterLink to="/mainPage/clipboard" class="recent-more">全部 ›</RouterLink>
-          </div>
-          <div v-if="!recentHistory.length" class="recent-empty">暂无历史记录</div>
-          <div v-else class="recent-list">
-            <button
-              v-for="(item, index) in recentHistory"
-              :key="item.id"
-              type="button"
-              class="row"
-              :class="{ 'is-copied': copiedKey === 'history-' + item.id }"
-              :style="rowDelay(index)"
-              @click="handleCopy(item, 'history')"
-            >
-              <img
-                v-if="item.type === 'image'"
-                :src="imageCache[item.content]"
-                class="row__thumb"
-                alt="剪贴板图片"
-              />
-              <span v-else class="row__text">{{ item.content }}</span>
-              <span class="row__time">{{ formatTime(item.created_at) }}</span>
-              <span v-if="copiedKey === 'history-' + item.id" class="row__copied">
-                <Check :size="12" :stroke-width="3" /> 已复制
-              </span>
-              <span class="row__actions" @click.stop>
-                <button class="row-btn" title="收藏" @click="quickFavorite(item)">
-                  <Star :size="13" :stroke-width="1.6" />
-                </button>
-                <button
-                  class="row-btn row-btn--danger"
-                  title="删除"
-                  @click="requestDelete(item, 'history')"
-                >
-                  <Trash2 :size="13" :stroke-width="1.6" />
-                </button>
-              </span>
-            </button>
-          </div>
-        </div>
-
-        <div class="recent-card">
-          <div class="recent-head">
-            <span class="recent-title"><Star :size="14" :stroke-width="1.6" /> 最近片段</span>
-            <RouterLink to="/mainPage/clipboard" class="recent-more">全部 ›</RouterLink>
-          </div>
-          <div v-if="!recentSnippets.length" class="recent-empty">暂无片段</div>
-          <div v-else class="recent-list">
-            <button
-              v-for="(item, index) in recentSnippets"
-              :key="item.id"
-              type="button"
-              class="row"
-              :class="{ 'is-copied': copiedKey === 'snippet-' + item.id }"
-              :style="rowDelay(index)"
-              @click="handleCopy(item, 'snippet')"
-            >
-              <Star :size="14" :stroke-width="1.6" class="row__cat-icon" />
-              <span class="row__text">{{ item.content }}</span>
-              <span v-if="item.category" class="row__cat">{{ item.category }}</span>
-              <span v-if="copiedKey === 'snippet-' + item.id" class="row__copied">
-                <Check :size="12" :stroke-width="3" /> 已复制
-              </span>
-              <span class="row__actions" @click.stop>
-                <button
-                  class="row-btn row-btn--danger"
-                  title="删除"
-                  @click="requestDelete(item, 'snippet')"
-                >
-                  <Trash2 :size="13" :stroke-width="1.6" />
-                </button>
-              </span>
-            </button>
-          </div>
-        </div>
-      </section>
-    </template>
+      <!-- 贴到主页的便利贴（可拖拽定位） -->
+      <HomeNoteCard
+        v-for="(note, index) in pinnedNotes"
+        :key="note.id"
+        :note="note"
+        :canvas="getCanvas"
+        :fallback-pos="noteFallbackPos(index)"
+        @copy="copyNote"
+        @unpin="unpinNote"
+        @delete="requestDeleteNote"
+        @drag-end="persistNotePos"
+      />
+    </section>
 
     <!-- 清空历史确认 -->
     <UiDialog
@@ -203,11 +170,11 @@
     <!-- 单条删除确认 -->
     <UiDialog
       :model-value="deleteConfirm"
-      :title="deleteTarget?.kind === 'snippet' ? '删除片段' : '删除记录'"
+      :title="deleteDialogTitle"
       @update:model-value="deleteConfirm = false"
     >
       <p class="confirm-text">
-        确定删除这条{{ deleteTarget?.kind === 'snippet' ? '片段' : '记录' }}吗？此操作不可恢复。
+        确定删除这条{{ deleteTarget?.kind === 'snippet' ? '片段' : deleteTarget?.kind === 'note' ? '便利贴' : '记录' }}吗？此操作不可恢复。
       </p>
       <template #footer>
         <UiButton variant="ghost" @click="deleteConfirm = false">取消</UiButton>
@@ -224,29 +191,79 @@ import {
   Search,
   Command,
   ClipboardList,
-  StickyNote,
+  StickyNote as StickyNoteIcon,
   Settings2,
   Trash2,
   Download,
   Star,
   History,
-  Check
+  Check,
+  GripVertical
 } from '@lucide/vue'
 import type { Component } from 'vue'
 import UiButton from '@renderer/components/ui/UiButton.vue'
 import UiInput from '@renderer/components/ui/UiInput.vue'
-import UiEmptyState from '@renderer/components/ui/UiEmptyState.vue'
 import UiDialog from '@renderer/components/ui/UiDialog.vue'
+import HomeNoteCard from '@renderer/components/HomeNoteCard.vue'
 import { subscribeOnUnmounted } from '@renderer/composables/useIpcListener'
 import { useToast } from '@renderer/composables/useToast'
 import { useFeatureSearch } from '@renderer/composables/useFeatureSearch'
-import type { HistoryItem, FavoriteItem } from '@preload/ipc'
+import { useDrag } from '@renderer/composables/useDrag'
+import type { HistoryItem, FavoriteItem, StickyNote } from '@preload/ipc'
 
 const router = useRouter()
 const toast = useToast()
 const { open: openFeatureSearch } = useFeatureSearch()
 
-/** 快捷搜索关键词与分组结果 */
+/** 合并记录框位置的 localStorage 键（纯渲染端布局偏好） */
+const BOX_POS_KEY = 'prism.home.recentBox'
+
+// ---------------------------------------------------------------------------
+// 画布 + 合并记录框（可拖拽）
+// ---------------------------------------------------------------------------
+const canvasRef = ref<HTMLElement | null>(null)
+const boxEl = ref<HTMLElement | null>(null)
+
+function getCanvas(): HTMLElement | null {
+  return canvasRef.value
+}
+
+function loadBoxPos(): { x: number; y: number } {
+  try {
+    const raw = localStorage.getItem(BOX_POS_KEY)
+    if (raw) {
+      const p = JSON.parse(raw) as { x?: unknown; y?: unknown }
+      if (typeof p?.x === 'number' && typeof p?.y === 'number') return { x: p.x, y: p.y }
+    }
+  } catch {
+    // 忽略损坏的缓存
+  }
+  return { x: 8, y: 8 }
+}
+
+const boxPos = ref(loadBoxPos())
+const boxDrag = useDrag({
+  container: getCanvas,
+  element: () => boxEl.value,
+  initial: () => boxPos.value,
+  onEnd: (pos) => {
+    boxPos.value = pos
+    try {
+      localStorage.setItem(BOX_POS_KEY, JSON.stringify(pos))
+    } catch {
+      // 忽略持久化失败
+    }
+  }
+})
+const boxX = boxDrag.x
+const boxY = boxDrag.y
+const boxDragging = boxDrag.dragging
+const startBoxDrag = boxDrag.startDrag
+
+// ---------------------------------------------------------------------------
+// 快捷搜索与最近数据
+// ---------------------------------------------------------------------------
+/** 跨两类搜索关键词（合并记录框顶部输入） */
 const keyword = ref('')
 const searchResults = ref<{ history: HistoryItem[]; snippets: FavoriteItem[] }>({
   history: [],
@@ -268,18 +285,37 @@ let copiedTimer: ReturnType<typeof setTimeout> | null = null
 let searchTimer: ReturnType<typeof setTimeout> | null = null
 /** 清空 / 单条删除确认 */
 const clearConfirm = ref(false)
-const deleteTarget = ref<{ kind: 'history' | 'snippet'; item: HistoryItem | FavoriteItem } | null>(
-  null
-)
+const deleteTarget = ref<{
+  kind: 'history' | 'snippet' | 'note'
+  item: HistoryItem | FavoriteItem | StickyNote
+} | null>(null)
 const deleteConfirm = ref(false)
 
 const searching = computed(() => keyword.value.trim().length > 0)
+/** 左列 / 右列行数据：搜索态用结果，否则用最近前 10 */
+const historyRows = computed(() =>
+  searching.value ? searchResults.value.history : recentHistory.value
+)
+const snippetRows = computed(() =>
+  searching.value ? searchResults.value.snippets : recentSnippets.value
+)
+
+/** 贴到主页的便利贴 */
+const pinnedNotes = ref<StickyNote[]>([])
+
+const deleteDialogTitle = computed(() =>
+  deleteTarget.value?.kind === 'snippet'
+    ? '删除片段'
+    : deleteTarget.value?.kind === 'note'
+      ? '删除便利贴'
+      : '删除记录'
+)
 
 /** 快捷入口卡（图标 + 名称 + 动作） */
 const entries: Array<{ label: string; icon: Component; action: () => void }> = [
   {
     label: '便利贴',
-    icon: StickyNote,
+    icon: StickyNoteIcon,
     action: () => void router.push('/mainPage/notes')
   },
   {
@@ -361,7 +397,7 @@ async function refreshAll(): Promise<void> {
   await Promise.all([fetchRecent(), fetchStats()])
 }
 
-/** 快捷搜索：200ms 防抖后并行搜历史 + 片段 */
+/** 快捷搜索：200ms 防抖后并行搜历史 + 片段（结果分别过滤左/右列） */
 async function runSearch(q: string): Promise<void> {
   const trimmed = q.trim()
   if (!trimmed) {
@@ -388,10 +424,46 @@ async function quickFavorite(item: HistoryItem): Promise<void> {
   toast.success('已收藏')
 }
 
-function requestDelete(
-  item: HistoryItem | FavoriteItem,
-  kind: 'history' | 'snippet'
-): void {
+// ---------------------------------------------------------------------------
+// 贴到主页的便利贴
+// ---------------------------------------------------------------------------
+
+/** 未定位过（home_x/home_y 为 null）时的默认位置：画布右上角起始，按索引错位下落 */
+function noteFallbackPos(index: number): { x: number; y: number } {
+  const w = canvasRef.value?.clientWidth ?? 400
+  return { x: Math.max(0, w - 240 - index * 8), y: 8 + index * 28 }
+}
+
+async function fetchPinnedNotes(): Promise<void> {
+  const all = await window.electronAPI.stickyNotes.getNotes()
+  pinnedNotes.value = all.filter((n) => n.pinned)
+}
+
+async function copyNote(note: StickyNote): Promise<void> {
+  await window.electronAPI.clipboard.clickItem({ content: note.content, type: 'text' })
+  toast.success('已复制')
+}
+
+async function unpinNote(note: StickyNote): Promise<void> {
+  await window.electronAPI.stickyNotes.togglePin(note.id)
+  await fetchPinnedNotes()
+  toast.success('已取消贴主页')
+}
+
+function requestDeleteNote(note: StickyNote): void {
+  deleteTarget.value = { kind: 'note', item: note }
+  deleteConfirm.value = true
+}
+
+async function persistNotePos(payload: { id: number; x: number; y: number }): Promise<void> {
+  await window.electronAPI.stickyNotes.setNotePosition(payload.id, payload.x, payload.y)
+}
+
+// ---------------------------------------------------------------------------
+// 删除 / 清空
+// ---------------------------------------------------------------------------
+
+function requestDelete(item: HistoryItem | FavoriteItem, kind: 'history' | 'snippet'): void {
   deleteTarget.value = { kind, item }
   deleteConfirm.value = true
 }
@@ -405,10 +477,14 @@ async function confirmDelete(): Promise<void> {
     await window.electronAPI.clipboard.deleteHistory(target.item.id)
     recentHistory.value = recentHistory.value.filter((h) => h.id !== target.item!.id)
     toast.success('已删除记录')
-  } else {
+  } else if (target.kind === 'snippet') {
     await window.electronAPI.clipboard.deleteFavorite(target.item.id)
     recentSnippets.value = recentSnippets.value.filter((f) => f.id !== target.item!.id)
     toast.success('已删除片段')
+  } else {
+    await window.electronAPI.stickyNotes.deleteNote(target.item.id)
+    pinnedNotes.value = pinnedNotes.value.filter((n) => n.id !== target.item!.id)
+    toast.success('已删除便利贴')
   }
   await fetchStats()
 }
@@ -440,8 +516,9 @@ function formatTime(ts: number): string {
 
 onMounted(async () => {
   await refreshAll()
+  await fetchPinnedNotes()
 
-  // 新记录/置顶：插到最近列表最前（去重）
+  // 新记录/置顶：插到左列最近列表最前（去重）
   subscribeOnUnmounted(() =>
     window.electronAPI.clipboard.onNewItem((item) => {
       recentHistory.value = recentHistory.value.filter((h) => h.id !== item.id)
@@ -462,6 +539,7 @@ onMounted(async () => {
   subscribeOnUnmounted(() =>
     window.electronAPI.window.onWindowEvent('reShow', () => {
       void refreshAll()
+      void fetchPinnedNotes()
     })
   )
 })
@@ -484,6 +562,7 @@ onBeforeUnmount(() => {
   flex-direction: column;
   height: 100%;
   background: transparent;
+  overflow: hidden;
 }
 
 .home-header {
@@ -517,40 +596,6 @@ onBeforeUnmount(() => {
   background: var(--bg-hover);
 }
 
-.home-search {
-  padding: var(--sp-2) var(--sp-5) var(--sp-3);
-  animation: fade-up var(--duration-enter) var(--ease-out-soft) backwards;
-  animation-delay: 40ms;
-}
-
-/* 滚动容器 */
-.home-scroll {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  padding: var(--sp-2) var(--sp-5) var(--sp-5);
-}
-
-.home-empty {
-  display: flex;
-  justify-content: center;
-  padding-top: var(--sp-8);
-}
-
-/* 搜索分组 */
-.search-groups {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-4);
-}
-
-.search-group__label {
-  padding: 0 var(--sp-1) var(--sp-2);
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-secondary);
-}
-
 /* 数据概览 */
 .home-stats {
   display: grid;
@@ -558,7 +603,7 @@ onBeforeUnmount(() => {
   gap: var(--sp-3);
   padding: var(--sp-2) var(--sp-5);
   animation: fade-up var(--duration-enter) var(--ease-out-soft) backwards;
-  animation-delay: 80ms;
+  animation-delay: 60ms;
 }
 
 .stat {
@@ -598,7 +643,7 @@ onBeforeUnmount(() => {
   gap: var(--sp-3);
   padding: var(--sp-3) var(--sp-5);
   animation: fade-up var(--duration-enter) var(--ease-out-soft) backwards;
-  animation-delay: 120ms;
+  animation-delay: 100ms;
 }
 
 .entry {
@@ -633,56 +678,108 @@ onBeforeUnmount(() => {
   color: var(--text-primary);
 }
 
-/* 最近记录两栏 */
-.home-recent {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--sp-3);
+/* 画布：可拖拽 widget 区 */
+.home-canvas {
+  position: relative;
   flex: 1;
   min-height: 0;
+  overflow: auto;
   padding: var(--sp-2) var(--sp-5) var(--sp-5);
-  animation: fade-up var(--duration-enter) var(--ease-out-soft) backwards;
-  animation-delay: 160ms;
 }
 
-.recent-card {
+/* 合并记录框 */
+.recent-box {
+  position: absolute;
+  width: 560px;
   display: flex;
   flex-direction: column;
-  min-height: 0;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   background: var(--bg-surface);
+  box-shadow: var(--shadow-sm);
   overflow: hidden;
+  z-index: 10;
 }
 
-.recent-head {
+.recent-box.is-dragging {
+  box-shadow: var(--shadow-lg);
+  outline: 1px solid var(--brand);
+}
+
+.recent-box__head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: var(--sp-3) var(--sp-4);
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
   border-bottom: 1px solid var(--border);
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
 }
 
-.recent-title {
+.recent-box.is-dragging .recent-box__head {
+  cursor: grabbing;
+}
+
+.recent-box__grip {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.recent-box__title {
   display: inline-flex;
   align-items: center;
   gap: var(--sp-2);
+  flex: 1;
+  min-width: 0;
   font-size: 13px;
   font-weight: 600;
   color: var(--text-primary);
 }
 
-.recent-more {
+.recent-box__more {
+  flex-shrink: 0;
   font-size: 12px;
   color: var(--text-muted);
   text-decoration: none;
 }
 
-.recent-more:hover {
+.recent-box__more:hover {
   color: var(--brand);
 }
 
-.recent-empty {
+.recent-box__search {
+  padding: var(--sp-2) var(--sp-3);
+  border-bottom: 1px solid var(--border);
+}
+
+.recent-box__body {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  height: 300px;
+  min-height: 0;
+}
+
+.recent-box__col {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border-right: 1px solid var(--border);
+}
+
+.recent-box__col:last-child {
+  border-right: none;
+}
+
+.recent-box__col-title {
+  padding: var(--sp-2) var(--sp-3);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.recent-box__empty {
   flex: 1;
   display: flex;
   align-items: center;
@@ -692,14 +789,14 @@ onBeforeUnmount(() => {
   color: var(--text-muted);
 }
 
-.recent-list {
+.recent-box__list {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: var(--sp-2);
+  padding: 0 var(--sp-2) var(--sp-2);
 }
 
-/* 通用行（搜索/最近共用） */
+/* 通用行（左右列共用） */
 .row {
   display: flex;
   align-items: center;

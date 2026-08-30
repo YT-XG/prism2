@@ -36,10 +36,21 @@ class StickyNotesService extends SqliteStore {
          content TEXT NOT NULL,
          color TEXT NOT NULL DEFAULT 'lavender',
          pinned INTEGER NOT NULL DEFAULT 0,
+         home_x INTEGER,
+         home_y INTEGER,
          created_at INTEGER NOT NULL,
          updated_at INTEGER NOT NULL
        )`
     )
+    // 旧库迁移：补充 home_x/home_y 列（贴主页拖拽位置，未定位过为 NULL）
+    const columns = this.all<{ name: string }>('PRAGMA table_info(sticky_notes)')
+    if (!columns.some((c) => c.name === 'home_x')) {
+      this.run('ALTER TABLE sticky_notes ADD COLUMN home_x INTEGER')
+    }
+    if (!columns.some((c) => c.name === 'home_y')) {
+      this.run('ALTER TABLE sticky_notes ADD COLUMN home_y INTEGER')
+    }
+
     this.run('CREATE INDEX IF NOT EXISTS idx_notes_pin_created ON sticky_notes(pinned DESC, created_at DESC)')
 
     this.save()
@@ -81,9 +92,22 @@ class StickyNotesService extends SqliteStore {
     this.save()
   }
 
-  /** 翻转置顶状态 */
+  /** 翻转置顶（贴到主页）状态 */
   togglePin(id: number): void {
     this.run('UPDATE sticky_notes SET pinned = 1 - pinned, updated_at = ? WHERE id = ?', [
+      Date.now(),
+      id
+    ])
+    this.save()
+  }
+
+  /** 记录便利贴在主页画布上的位置（钳制非负整数） */
+  setPosition(id: number, x: number, y: number): void {
+    const px = Number.isFinite(x) ? Math.max(0, Math.floor(x)) : 0
+    const py = Number.isFinite(y) ? Math.max(0, Math.floor(y)) : 0
+    this.run('UPDATE sticky_notes SET home_x = ?, home_y = ?, updated_at = ? WHERE id = ?', [
+      px,
+      py,
       Date.now(),
       id
     ])
@@ -102,6 +126,9 @@ class StickyNotesService extends SqliteStore {
     )
     ipcMain.handle(N.deleteNote, (_e, id: number) => this.delete(Number(id)))
     ipcMain.handle(N.togglePin, (_e, id: number) => this.togglePin(Number(id)))
+    ipcMain.handle(N.setNotePosition, (_e, id: number, x: number, y: number) =>
+      this.setPosition(Number(id), Number(x), Number(y))
+    )
   }
 }
 

@@ -46,7 +46,11 @@ export interface StickyNote {
   id: number
   content: string
   color: StickyNoteColor
+  /** true = 贴到主页（与旧「置顶」合并）；贴主页的便签以可拖拽卡片浮在主页画布 */
   pinned: boolean
+  /** 主页画布内位置（px，相对画布内容区左上角）；未定位过为 null */
+  home_x: number | null
+  home_y: number | null
   created_at: number
   updated_at: number
 }
@@ -191,7 +195,8 @@ export const SERVICE_CHANNELS = {
     addNote: 'to-service-StickyNotesService:addNote',
     updateNote: 'to-service-StickyNotesService:updateNote',
     deleteNote: 'to-service-StickyNotesService:deleteNote',
-    togglePin: 'to-service-StickyNotesService:togglePin'
+    togglePin: 'to-service-StickyNotesService:togglePin',
+    setNotePosition: 'to-service-StickyNotesService:setNotePosition'
   }
 } as const
 
@@ -278,5 +283,7 @@ export interface ElectronAPI {
     updateNote: (id: number, content: string, color: StickyNoteColor) => Promise<void>
     deleteNote: (id: number) => Promise<void>
     togglePin: (id: number) => Promise<void>
+    /** 记录便利贴在主页画布上的位置（px） */
+    setNotePosition: (id: number, x: number, y: number) => Promise<void>
   }
 }
