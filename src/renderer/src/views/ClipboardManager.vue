@@ -213,33 +213,12 @@
     </div>
 
     <!-- 添加/编辑片段 -->
-    <UiDialog
-      :model-value="showDialog"
-      :title="editing ? '编辑片段' : '添加片段'"
-      @update:model-value="closeDialog"
-    >
-      <div class="form-group">
-        <label>内容 <span class="required">*</span></label>
-        <textarea v-model="form.content" class="form-textarea" rows="4" placeholder="输入片段内容..."></textarea>
-      </div>
-      <div class="form-group">
-        <label>分类</label>
-        <input v-model="form.category" class="form-input" placeholder="如：Linux 命令" list="categoryList" />
-        <datalist id="categoryList">
-          <option v-for="cat in categories" :key="cat.name" :value="cat.name" />
-        </datalist>
-      </div>
-      <div class="form-group">
-        <label>描述（可选）</label>
-        <input v-model="form.description" class="form-input" placeholder="添加备注..." />
-      </div>
-      <template #footer>
-        <UiButton variant="ghost" @click="closeDialog()">取消</UiButton>
-        <UiButton variant="primary" :disabled="!form.content" @click="saveFavorite">
-          {{ editing ? '保存' : '添加' }}
-        </UiButton>
-      </template>
-    </UiDialog>
+    <SnippetEditorDialog
+      v-model="showDialog"
+      :favorite="editing"
+      :categories="categories"
+      @save="saveFavorite"
+    />
 
     <!-- 清空确认 -->
     <UiDialog :model-value="clearConfirm" title="清空全部历史记录" @update:model-value="clearConfirm = false">
@@ -283,6 +262,7 @@ import UiButton from '@renderer/components/ui/UiButton.vue'
 import UiEmptyState from '@renderer/components/ui/UiEmptyState.vue'
 import UiDialog from '@renderer/components/ui/UiDialog.vue'
 import UiSwitch from '@renderer/components/ui/UiSwitch.vue'
+import SnippetEditorDialog from '@renderer/components/SnippetEditorDialog.vue'
 import { subscribeOnUnmounted } from '@renderer/composables/useIpcListener'
 import { useToast } from '@renderer/composables/useToast'
 import type { HistoryItem, FavoriteItem, CategoryItem, ClipboardRetention } from '@preload/ipc'
@@ -304,7 +284,6 @@ const retentionLoaded = ref(false)
 const RETENTION_VALUES = Array.from({ length: 30 }, (_, i) => i + 1)
 const showDialog = ref(false)
 const editing = ref<FavoriteItem | null>(null)
-const form = ref({ content: '', category: '', description: '' })
 const clearConfirm = ref(false)
 /** 批量选择模式 */
 const selectMode = ref(false)
@@ -458,38 +437,36 @@ async function quickFavorite(item: HistoryItem): Promise<void> {
 
 function openAdd(): void {
   editing.value = null
-  form.value = { content: '', category: '', description: '' }
   showDialog.value = true
 }
 
 function editFavorite(item: FavoriteItem): void {
   editing.value = item
-  form.value = { content: item.content, category: item.category, description: item.description }
   showDialog.value = true
 }
 
-function closeDialog(): void {
-  showDialog.value = false
-  editing.value = null
-  form.value = { content: '', category: '', description: '' }
-}
-
-async function saveFavorite(): Promise<void> {
-  if (!form.value.content) return
-  if (editing.value) {
+async function saveFavorite(payload: {
+  content: string
+  category: string
+  description: string
+}): Promise<void> {
+  if (!payload.content) return
+  const target = editing.value
+  if (target) {
     await window.electronAPI.clipboard.updateFavorite(
-      editing.value.id,
-      form.value.content,
-      form.value.category,
-      form.value.description
+      target.id,
+      payload.content,
+      payload.category,
+      payload.description
     )
   } else {
-    await window.electronAPI.clipboard.addFavorite(form.value.content, form.value.category, form.value.description)
+    await window.electronAPI.clipboard.addFavorite(payload.content, payload.category, payload.description)
   }
-  closeDialog()
+  showDialog.value = false
+  editing.value = null
   await fetchFavorites()
   await fetchCategories()
-  toast.success(editing.value ? '片段已更新' : '片段已添加')
+  toast.success(target ? '片段已更新' : '片段已添加')
 }
 
 /** 单条删除：先弹确认，确认后执行 */
@@ -1002,39 +979,6 @@ onBeforeUnmount(() => {
   color: var(--danger);
 }
 
-.form-group {
-  margin-bottom: var(--sp-4);
-}
-.form-group label {
-  display: block;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--text-secondary);
-  margin-bottom: var(--sp-2);
-}
-.required {
-  color: var(--danger);
-}
-.form-input,
-.form-textarea {
-  width: 100%;
-  padding: var(--sp-2) var(--sp-3);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  font-size: 13px;
-  color: var(--text-primary);
-  background: var(--bg-surface);
-  outline: none;
-}
-.form-input:focus,
-.form-textarea:focus {
-  border-color: var(--brand);
-  box-shadow: var(--ring);
-}
-.form-textarea {
-  resize: vertical;
-  min-height: 80px;
-}
 .confirm-text {
   margin: 0;
   font-size: 14px;

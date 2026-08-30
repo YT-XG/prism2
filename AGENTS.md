@@ -46,7 +46,8 @@ src/
     ├── components/FeatureSearchPanel.vue  # 功能搜索命令面板（Ctrl/Cmd+K）
     ├── components/HomeNoteCard.vue        # 贴到主页的便利贴可拖拽卡片
     ├── components/StickyNoteEditorDialog.vue # 便利贴大编辑框（富文本 + 颜色，主页/便利贴页共用）
-    ├── composables/useIpcListener.ts  useToast.ts  useTheme.ts  useFeatureSearch.ts  useDrag.ts
+    ├── components/SnippetEditorDialog.vue # 片段添加/编辑弹窗（剪贴板页/主页共用）
+    ├── composables/useIpcListener.ts  useToast.ts  useTheme.ts  useFeatureSearch.ts  useDrag.ts  useHomeModules.ts
     ├── views/                    # MainPage / Home / ClipboardManager / StickyNotes / QuickPaste / Settings
     └── router/  types.d.ts
 scripts/import-legacy-db.mjs      # 旧剪贴板数据一次性导入
@@ -73,7 +74,7 @@ scripts/import-legacy-db.mjs      # 旧剪贴板数据一次性导入
 |------|------|
 | 骨架（入口/托盘/主页/设置/设计系统/契约层） | ✅ |
 | 剪贴板管理（历史/收藏/搜索/保留期/导入） | ✅ |
-| 主页（可拖拽合并记录框：剪贴板+片段跨类全搜 + 概览 + 入口卡） | ✅ |
+| 主页（可拖拽合并记录框：剪贴板+片段跨类全搜 + 自定义尺寸 + 概览 + 入口卡（新增便利贴/新增片段） + 模块显隐开关） | ✅ |
 | 便利贴（本地便签，增删改 + 富文本大编辑框 + 贴到主页可拖拽定位/自由缩放 + 主页点击编辑/一键创建默认贴主页） | ✅ |
 | 功能搜索（命令面板，Ctrl/Cmd+K） | ✅ |
 | 翻译、Markdown 预览、下载、文件互传、弹窗族、OCR | ⬜ 见 ../docs/prism2/migration-roadmap.md |

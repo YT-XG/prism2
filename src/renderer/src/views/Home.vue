@@ -1,15 +1,8 @@
 <template>
   <div class="home">
-    <!-- 头部：标题 + 功能搜索按钮 -->
+    <!-- 头部 -->
     <header class="home-header">
-      <div>
-        <h1 class="home-title">主页</h1>
-        <p class="home-subtitle">快捷操作与最近记录，常用功能一键直达</p>
-      </div>
-      <UiButton variant="secondary" @click="openFeatureSearch">
-        <Command :size="14" :stroke-width="1.6" /> 功能搜索
-        <kbd class="home-kbd">Ctrl&nbsp;K</kbd>
-      </UiButton>
+      <h1 class="home-title">主页</h1>
     </header>
 
     <!-- 数据概览 -->
@@ -44,12 +37,13 @@
 
     <!-- 画布：可拖拽 widget（合并记录框 + 贴到主页的便利贴） -->
     <section ref="canvasRef" class="home-canvas">
-      <!-- 合并记录框：左=剪贴板，右=片段，框顶跨两类全搜 -->
+      <!-- 合并记录框：左=剪贴板，右=片段，框顶跨两类全搜（模块显隐开关控制显示） -->
       <div
+        v-if="modules.compactClipboard"
         ref="boxEl"
         class="recent-box"
         :class="{ 'is-dragging': boxDragging }"
-        :style="{ left: `${boxX}px`, top: `${boxY}px` }"
+        :style="{ left: `${boxX}px`, top: `${boxY}px`, width: boxW, height: boxH }"
       >
         <div class="recent-box__head" :title="'拖动以调整位置'" @pointerdown="startBoxDrag">
           <GripVertical :size="14" :stroke-width="1.6" class="recent-box__grip" />
@@ -138,6 +132,12 @@
             </div>
           </div>
         </div>
+        <!-- 右下角缩放手柄（自定义大小） -->
+        <div
+          class="recent-box__resize"
+          title="拖动以调整大小"
+          @pointerdown.stop.prevent="startBoxResize"
+        ></div>
       </div>
 
       <!-- 贴到主页的便利贴（可拖拽定位、可缩放尺寸） -->
@@ -154,19 +154,6 @@
         @resize-end="persistNoteSize"
       />
     </section>
-
-    <!-- 清空历史确认 -->
-    <UiDialog
-      :model-value="clearConfirm"
-      title="清空全部历史记录"
-      @update:model-value="clearConfirm = false"
-    >
-      <p class="confirm-text">确定清空所有历史记录吗？此操作不可恢复。</p>
-      <template #footer>
-        <UiButton variant="ghost" @click="clearConfirm = false">取消</UiButton>
-        <UiButton variant="danger" @click="confirmClearAll">确定清空</UiButton>
-      </template>
-    </UiDialog>
 
     <!-- 单条删除确认 -->
     <UiDialog
@@ -185,20 +172,23 @@
 
     <!-- 便利贴大编辑框（主页创建 / 点击编辑共用，富文本） -->
     <StickyNoteEditorDialog v-model="noteDialog" :note="editingNote" @save="saveNote" />
+
+    <!-- 片段编辑弹窗（新增片段） -->
+    <SnippetEditorDialog
+      v-model="snippetDialog"
+      :favorite="null"
+      :categories="snippetCategories"
+      @save="saveSnippet"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
-import { useRouter } from 'vue-router'
 import {
   Search,
-  Command,
-  ClipboardList,
   StickyNote as StickyNoteIcon,
-  Settings2,
   Trash2,
-  Download,
   Star,
   History,
   Check,
@@ -210,15 +200,15 @@ import UiInput from '@renderer/components/ui/UiInput.vue'
 import UiDialog from '@renderer/components/ui/UiDialog.vue'
 import HomeNoteCard from '@renderer/components/HomeNoteCard.vue'
 import StickyNoteEditorDialog from '@renderer/components/StickyNoteEditorDialog.vue'
+import SnippetEditorDialog from '@renderer/components/SnippetEditorDialog.vue'
 import { subscribeOnUnmounted } from '@renderer/composables/useIpcListener'
 import { useToast } from '@renderer/composables/useToast'
-import { useFeatureSearch } from '@renderer/composables/useFeatureSearch'
+import { useHomeModules } from '@renderer/composables/useHomeModules'
 import { useDrag } from '@renderer/composables/useDrag'
-import type { HistoryItem, FavoriteItem, StickyNote, StickyNoteColor } from '@preload/ipc'
+import type { HistoryItem, FavoriteItem, StickyNote, StickyNoteColor, CategoryItem } from '@preload/ipc'
 
-const router = useRouter()
 const toast = useToast()
-const { open: openFeatureSearch } = useFeatureSearch()
+const { modules } = useHomeModules()
 
 /** 合并记录框位置的 localStorage 键（纯渲染端布局偏好） */
 const BOX_POS_KEY = 'prism.home.recentBox'
@@ -270,6 +260,65 @@ const boxDragging = boxDrag.dragging
 const startBoxDrag = boxDrag.startDrag
 
 // ---------------------------------------------------------------------------
+// 合并记录框（精简剪贴板）自定义尺寸
+// ---------------------------------------------------------------------------
+const BOX_SIZE_KEY = 'prism.home.recentBoxSize'
+const BOX_MIN_W = 360
+const BOX_MIN_H = 260
+const BOX_MAX_W = 960
+const BOX_MAX_H = 640
+
+function loadBoxSize(): { w: number; h: number } {
+  try {
+    const raw = localStorage.getItem(BOX_SIZE_KEY)
+    if (raw) {
+      const p = JSON.parse(raw) as { w?: unknown; h?: unknown }
+      if (typeof p?.w === 'number' && typeof p?.h === 'number') return { w: p.w, h: p.h }
+    }
+  } catch {
+    // 忽略损坏的缓存
+  }
+  return { w: 560, h: 380 }
+}
+
+const boxSize = ref(loadBoxSize())
+const boxW = computed(() => `${boxSize.value.w}px`)
+const boxH = computed(() => `${boxSize.value.h}px`)
+
+let resizeStartX = 0
+let resizeStartY = 0
+let startW = 0
+let startH = 0
+
+function onBoxResizeMove(e: PointerEvent): void {
+  boxSize.value.w = Math.min(BOX_MAX_W, Math.max(BOX_MIN_W, startW + (e.clientX - resizeStartX)))
+  boxSize.value.h = Math.min(BOX_MAX_H, Math.max(BOX_MIN_H, startH + (e.clientY - resizeStartY)))
+}
+
+function onBoxResizeUp(e: PointerEvent): void {
+  ;(e.target as Element | null)?.releasePointerCapture?.(e.pointerId)
+  window.removeEventListener('pointermove', onBoxResizeMove)
+  window.removeEventListener('pointerup', onBoxResizeUp)
+  boxSize.value = { w: Math.round(boxSize.value.w), h: Math.round(boxSize.value.h) }
+  try {
+    localStorage.setItem(BOX_SIZE_KEY, JSON.stringify(boxSize.value))
+  } catch {
+    // 忽略持久化失败
+  }
+}
+
+function startBoxResize(e: PointerEvent): void {
+  if (e.button !== 0) return
+  e.preventDefault()
+  resizeStartX = e.clientX
+  resizeStartY = e.clientY
+  startW = boxSize.value.w
+  startH = boxSize.value.h
+  window.addEventListener('pointermove', onBoxResizeMove)
+  window.addEventListener('pointerup', onBoxResizeUp)
+}
+
+// ---------------------------------------------------------------------------
 // 快捷搜索与最近数据
 // ---------------------------------------------------------------------------
 /** 跨两类搜索关键词（合并记录框顶部输入） */
@@ -285,6 +334,8 @@ const recentSnippets = ref<FavoriteItem[]>([])
 const historyCount = ref(0)
 const snippetCount = ref(0)
 const categoryCount = ref(0)
+/** 分类建议（新增片段弹窗的 datalist 联想） */
+const snippetCategories = ref<CategoryItem[]>([])
 /** 图片记录 data URL 缓存 */
 const imageCache = ref<Record<string, string>>({})
 /** 最近复制反馈（kind-id 复合键，区分历史/片段 id 同值） */
@@ -292,8 +343,7 @@ const copiedKey = ref<string | null>(null)
 let copiedTimer: ReturnType<typeof setTimeout> | null = null
 /** 搜索防抖定时器 */
 let searchTimer: ReturnType<typeof setTimeout> | null = null
-/** 清空 / 单条删除确认 */
-const clearConfirm = ref(false)
+/** 单条删除确认 */
 const deleteTarget = ref<{
   kind: 'history' | 'snippet' | 'note'
   item: HistoryItem | FavoriteItem | StickyNote
@@ -314,6 +364,8 @@ const pinnedNotes = ref<StickyNote[]>([])
 /** 便利贴大编辑框：打开状态 + 编辑目标（null = 新建） */
 const noteDialog = ref(false)
 const editingNote = ref<StickyNote | null>(null)
+/** 片段编辑弹窗（新增片段入口） */
+const snippetDialog = ref(false)
 
 const deleteDialogTitle = computed(() =>
   deleteTarget.value?.kind === 'snippet'
@@ -326,36 +378,14 @@ const deleteDialogTitle = computed(() =>
 /** 快捷入口卡（图标 + 名称 + 动作） */
 const entries: Array<{ label: string; icon: Component; action: () => void }> = [
   {
-    label: '便利贴',
+    label: '新增便利贴',
     icon: StickyNoteIcon,
     action: openCreateNote
   },
   {
-    label: '功能搜索',
-    icon: Command,
-    action: openFeatureSearch
-  },
-  {
-    label: '剪贴板',
-    icon: ClipboardList,
-    action: () => void router.push('/mainPage/clipboard')
-  },
-  {
-    label: '设置',
-    icon: Settings2,
-    action: () => void router.push('/mainPage/settings')
-  },
-  {
-    label: '清空历史',
-    icon: Trash2,
-    action: () => {
-      clearConfirm.value = true
-    }
-  },
-  {
-    label: '导出备份',
-    icon: Download,
-    action: () => void exportBackup()
+    label: '新增片段',
+    icon: Star,
+    action: openCreateSnippet
   }
 ]
 
@@ -401,7 +431,9 @@ async function fetchStats(): Promise<void> {
   historyCount.value = await window.electronAPI.clipboard.getHistoryCount()
   const favorites = await window.electronAPI.clipboard.getFavorites()
   snippetCount.value = favorites.length
-  categoryCount.value = (await window.electronAPI.clipboard.getCategories()).length
+  const cats = await window.electronAPI.clipboard.getCategories()
+  snippetCategories.value = cats
+  categoryCount.value = cats.length
 }
 
 /** 权威刷新：最近列表 + 概览统计 */
@@ -480,6 +512,23 @@ async function persistNoteSize(payload: { id: number; w: number; h: number }): P
 function openCreateNote(): void {
   editingNote.value = null
   noteDialog.value = true
+}
+
+/** 打开主页片段编辑弹窗（新建） */
+function openCreateSnippet(): void {
+  snippetDialog.value = true
+}
+
+/** 新增片段：写库 → 刷新最近列表与概览 */
+async function saveSnippet(payload: {
+  content: string
+  category: string
+  description: string
+}): Promise<void> {
+  await window.electronAPI.clipboard.addFavorite(payload.content, payload.category, payload.description)
+  snippetDialog.value = false
+  await refreshAll()
+  toast.success('片段已添加')
 }
 
 /**
@@ -582,21 +631,6 @@ async function confirmDelete(): Promise<void> {
   await fetchStats()
 }
 
-async function confirmClearAll(): Promise<void> {
-  clearConfirm.value = false
-  await window.electronAPI.clipboard.clearHistory()
-  recentHistory.value = []
-  await fetchStats()
-  toast.success('已清空全部历史记录')
-}
-
-async function exportBackup(): Promise<void> {
-  const result = await window.electronAPI.clipboard.exportBackup()
-  if (result.canceled) return
-  if (result.ok) toast.success('备份已导出')
-  else toast.error(result.error || '导出失败')
-}
-
 function formatTime(ts: number): string {
   const d = new Date(ts)
   const diff = Date.now() - ts
@@ -646,6 +680,8 @@ onBeforeUnmount(() => {
     clearTimeout(searchTimer)
     searchTimer = null
   }
+  window.removeEventListener('pointermove', onBoxResizeMove)
+  window.removeEventListener('pointerup', onBoxResizeUp)
 })
 </script>
 
@@ -671,22 +707,6 @@ onBeforeUnmount(() => {
   margin: 0;
   font-size: 20px;
   font-weight: 600;
-}
-
-.home-subtitle {
-  margin: 2px 0 0;
-  font-size: 12px;
-  color: var(--text-secondary);
-}
-
-.home-kbd {
-  padding: 1px 6px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  font-family: var(--font-sans);
-  font-size: 11px;
-  color: var(--text-muted);
-  background: var(--bg-hover);
 }
 
 /* 数据概览 */
@@ -731,8 +751,7 @@ onBeforeUnmount(() => {
 
 /* 快捷入口 */
 .home-entries {
-  display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  display: flex;
   gap: var(--sp-3);
   padding: var(--sp-3) var(--sp-5);
   animation: fade-up var(--duration-enter) var(--ease-out-soft) backwards;
@@ -745,6 +764,7 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   gap: var(--sp-2);
+  width: 120px;
   min-height: 76px;
   padding: var(--sp-3);
   border: 1px solid var(--border);
@@ -783,7 +803,6 @@ onBeforeUnmount(() => {
 /* 合并记录框 */
 .recent-box {
   position: absolute;
-  width: 560px;
   display: flex;
   flex-direction: column;
   border: 1px solid var(--border);
@@ -812,6 +831,25 @@ onBeforeUnmount(() => {
 
 .recent-box.is-dragging .recent-box__head {
   cursor: grabbing;
+}
+
+/* 右下角缩放手柄（hover 时浮现） */
+.recent-box__resize {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 14px;
+  height: 14px;
+  cursor: nwse-resize;
+  touch-action: none;
+  opacity: 0;
+  background: linear-gradient(135deg, transparent 50%, rgba(0, 0, 0, 0.35) 50%);
+  transition: opacity var(--duration-fast) var(--ease-out-soft);
+}
+
+.recent-box:hover .recent-box__resize,
+.recent-box.is-dragging .recent-box__resize {
+  opacity: 1;
 }
 
 .recent-box__grip {
@@ -849,7 +887,7 @@ onBeforeUnmount(() => {
 .recent-box__body {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  height: 300px;
+  flex: 1;
   min-height: 0;
 }
 
