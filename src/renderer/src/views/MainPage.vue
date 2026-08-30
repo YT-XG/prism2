@@ -8,6 +8,16 @@
           </Transition>
           <RouterLink
             class="nav-item"
+            :title="collapsed ? '主页' : undefined"
+            to="/mainPage/home"
+          >
+            <House :size="16" :stroke-width="1.6" />
+            <Transition name="nav-fade">
+              <span v-if="!collapsed" class="nav-item__label">主页</span>
+            </Transition>
+          </RouterLink>
+          <RouterLink
+            class="nav-item"
             :title="collapsed ? '剪贴板' : undefined"
             to="/mainPage/clipboard"
           >
@@ -17,6 +27,16 @@
             </Transition>
             <span v-if="count && !collapsed" :key="count" class="nav-badge num">{{ count > 99 ? '99+' : count }}</span>
             <span v-else-if="count && collapsed" class="nav-dot" />
+          </RouterLink>
+          <RouterLink
+            class="nav-item"
+            :title="collapsed ? '便利贴' : undefined"
+            to="/mainPage/notes"
+          >
+            <StickyNote :size="16" :stroke-width="1.6" />
+            <Transition name="nav-fade">
+              <span v-if="!collapsed" class="nav-item__label">便利贴</span>
+            </Transition>
           </RouterLink>
         </div>
 
@@ -56,7 +76,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { ClipboardList, Settings2, ChevronsLeft, ChevronsRight } from '@lucide/vue'
+import { House, ClipboardList, StickyNote, Settings2, ChevronsLeft, ChevronsRight } from '@lucide/vue'
 import { subscribeOnUnmounted } from '@renderer/composables/useIpcListener'
 
 /** 侧栏折叠态：预留图标竖栏模式（参考图），后续模块增多后仍保持轻量导航 */

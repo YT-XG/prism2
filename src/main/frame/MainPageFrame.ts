@@ -11,8 +11,8 @@ import appIcon from '../../../resources/icon.png?asset'
 const { mainPage } = WINDOW_CHANNELS
 
 export default class MainPageFrame extends BaseFrame {
-  static readonly WIDTH = 800
-  static readonly HEIGHT = 600
+  static readonly WIDTH = 1200
+  static readonly HEIGHT = 800
   static readonly MIN_WIDTH = 760
   static readonly MIN_HEIGHT = 540
 

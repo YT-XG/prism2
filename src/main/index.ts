@@ -9,6 +9,7 @@ import { windowFactory } from './frame/WindowFactory'
 import { TrayService } from './services/trayService'
 import { settingsService } from './services/settingsService'
 import { clipboardService } from './services/clipboardService'
+import { stickyNotesService } from './services/stickyNotesService'
 
 let trayService: TrayService | null = null
 let isQuitting = false
@@ -49,6 +50,7 @@ app.whenReady().then(async () => {
   trayService.init()
   settingsService.init()
   await clipboardService.init()
+  await stickyNotesService.init()
 
   // 启动后显示主界面（首次可见）
   windowFactory.getMainPageFrame().showCentered()
@@ -71,6 +73,7 @@ app.on('before-quit', () => {
   isQuitting = true
   log.info('[App] 退出，清理资源...')
   clipboardService.stop()
+  stickyNotesService.stop()
   settingsService.destroy()
   trayService?.destroy()
   globalShortcut.unregisterAll()

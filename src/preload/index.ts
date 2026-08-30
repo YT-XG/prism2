@@ -15,12 +15,15 @@ import type {
   ElectronAPI,
   HistoryItem,
   MainWindowEvent,
-  SetPagePayload
+  SetPagePayload,
+  StickyNote,
+  StickyNoteColor
 } from './ipc'
 
 const { mainPage, baseFrame } = WINDOW_CHANNELS
 const C = SERVICE_CHANNELS.clipboard
 const S = SERVICE_CHANNELS.settings
+const N = SERVICE_CHANNELS.stickyNotes
 
 /** 供 vm 上下文判定的渲染进程受控 flag（可选） */
 function subscribe(channel: string, cb: (...args: unknown[]) => void): () => void {
@@ -95,6 +98,16 @@ const electronAPI: ElectronAPI = {
       ipcRenderer.invoke(C.importBackup, mode) as Promise<BackupImportResult>,
     onNewItem: (cb: (item: HistoryItem) => void) => subscribe(BROADCAST.clipboardNew, (item) => cb(item as HistoryItem)),
     onHistoryChanged: (cb: () => void) => subscribe(BROADCAST.clipboardHistoryChanged, cb),
+  },
+
+  stickyNotes: {
+    getNotes: () => ipcRenderer.invoke(N.getNotes) as Promise<StickyNote[]>,
+    addNote: (content: string, color: StickyNoteColor) =>
+      ipcRenderer.invoke(N.addNote, content, color) as Promise<number>,
+    updateNote: (id: number, content: string, color: StickyNoteColor) =>
+      ipcRenderer.invoke(N.updateNote, id, content, color) as Promise<void>,
+    deleteNote: (id: number) => ipcRenderer.invoke(N.deleteNote, id) as Promise<void>,
+    togglePin: (id: number) => ipcRenderer.invoke(N.togglePin, id) as Promise<void>,
   }
 }
 

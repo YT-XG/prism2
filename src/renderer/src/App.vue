@@ -30,16 +30,21 @@
       </Transition>
     </main>
 
+    <!-- 功能搜索命令面板：仅主界面可见（快捷粘贴小窗不挂载） -->
+    <FeatureSearchPanel v-if="!isQuickPaste" />
+
     <UiToast />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { Minus, X, Square, Minimize2 } from '@lucide/vue'
 import UiToast from '@renderer/components/ui/UiToast.vue'
+import FeatureSearchPanel from '@renderer/components/FeatureSearchPanel.vue'
 import { subscribeOnUnmounted } from '@renderer/composables/useIpcListener'
+import { useFeatureSearch } from '@renderer/composables/useFeatureSearch'
 import { applyTheme } from '@renderer/composables/useTheme'
 
 const router = useRouter()
@@ -48,9 +53,18 @@ const exiting = ref(false)
 const version = ref('')
 const isMaximized = ref(false)
 const shellRef = ref<HTMLElement | null>(null)
+const { toggle } = useFeatureSearch()
 
 /** 快捷粘贴窗口：无标题栏的轻量视图 */
 const isQuickPaste = computed(() => route.path.startsWith('/quickPaste'))
+
+/** Ctrl+K / Cmd+K：呼出/关闭功能搜索命令面板 */
+function onGlobalKeydown(e: KeyboardEvent): void {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+    e.preventDefault()
+    toggle()
+  }
+}
 
 /** 入场：窗口 mount / reShow 时由渲染端触发，播 page-enter 动画 */
 function playEnter(): void {
@@ -95,6 +109,8 @@ function hideWindow(): void {
 onMounted(() => {
   window.electronAPI.window.notifyReady()
 
+  window.addEventListener('keydown', onGlobalKeydown)
+
   // 应用持久化的主题（启动时）
   void window.electronAPI.settings.get().then((s) => {
     applyTheme(s.theme)
@@ -127,6 +143,10 @@ onMounted(() => {
   )
 
   playEnter()
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onGlobalKeydown)
 })
 </script>
 

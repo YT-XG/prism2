@@ -38,6 +38,19 @@ export interface CategoryItem {
   count: number
 }
 
+/** 便利贴颜色（对应粉彩强调 token） */
+export type StickyNoteColor = 'lavender' | 'mint' | 'yellow' | 'blue' | 'violet'
+
+/** 便利贴 */
+export interface StickyNote {
+  id: number
+  content: string
+  color: StickyNoteColor
+  pinned: boolean
+  created_at: number
+  updated_at: number
+}
+
 /**
  * 剪贴板历史自动清除策略。
  * 滑动窗口：每次触发清理时以当下为基准，删除早于「value 个 unit」的历史记录。
@@ -172,6 +185,13 @@ export const SERVICE_CHANNELS = {
     writeText: 'to-service-ClipboardService:writeText',
     exportBackup: 'to-service-ClipboardService:exportBackup',
     importBackup: 'to-service-ClipboardService:importBackup'
+  },
+  stickyNotes: {
+    getNotes: 'to-service-StickyNotesService:getNotes',
+    addNote: 'to-service-StickyNotesService:addNote',
+    updateNote: 'to-service-StickyNotesService:updateNote',
+    deleteNote: 'to-service-StickyNotesService:deleteNote',
+    togglePin: 'to-service-StickyNotesService:togglePin'
   }
 } as const
 
@@ -251,5 +271,12 @@ export interface ElectronAPI {
     onNewItem: (cb: (item: HistoryItem) => void) => () => void
     /** 历史变更（新增/删除/清空/导入）通知，用于侧栏计数等 UI 刷新 */
     onHistoryChanged: (cb: () => void) => () => void
+  }
+  stickyNotes: {
+    getNotes: () => Promise<StickyNote[]>
+    addNote: (content: string, color: StickyNoteColor) => Promise<number>
+    updateNote: (id: number, content: string, color: StickyNoteColor) => Promise<void>
+    deleteNote: (id: number) => Promise<void>
+    togglePin: (id: number) => Promise<void>
   }
 }
