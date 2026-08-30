@@ -5,6 +5,24 @@
       <h1 class="home-title">主页</h1>
     </header>
 
+    <!-- 旧版数据引导导入横幅（检测到 v1 剪贴板数据库且未处理时显示） -->
+    <div
+      v-if="legacyImport?.legacyDbExists && !legacyImport.done"
+      class="legacy-banner"
+    >
+      <div class="legacy-banner__info">
+        <div class="legacy-banner__title">检测到旧版 Prism 数据</div>
+        <div class="legacy-banner__desc">
+          发现 {{ legacyImport.historyCount ?? 0 }} 条历史、{{ legacyImport.favoriteCount ?? 0 }}
+          个片段，可一键合并导入（按 id 去重，不覆盖现有数据）。
+        </div>
+      </div>
+      <div class="legacy-banner__actions">
+        <button class="legacy-banner__btn" type="button" @click="doLegacyImport">一键导入</button>
+        <button class="legacy-banner__link" type="button" @click="dismissLegacyImport">暂不</button>
+      </div>
+    </div>
+
     <!-- 数据概览 -->
     <section class="home-stats">
       <div class="stat stat--lavender">
@@ -205,7 +223,14 @@ import { subscribeOnUnmounted } from '@renderer/composables/useIpcListener'
 import { useToast } from '@renderer/composables/useToast'
 import { useHomeModules } from '@renderer/composables/useHomeModules'
 import { useDrag } from '@renderer/composables/useDrag'
-import type { HistoryItem, FavoriteItem, StickyNote, StickyNoteColor, CategoryItem } from '@preload/ipc'
+import type {
+  HistoryItem,
+  FavoriteItem,
+  StickyNote,
+  StickyNoteColor,
+  CategoryItem,
+  LegacyImportState
+} from '@preload/ipc'
 
 const toast = useToast()
 const { modules } = useHomeModules()
@@ -641,9 +666,38 @@ function formatTime(ts: number): string {
   return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
 }
 
+// ---------------------------------------------------------------------------
+// 旧版数据引导导入
+// ---------------------------------------------------------------------------
+const legacyImport = ref<LegacyImportState | null>(null)
+
+/** 刷新旧版数据导入状态（检测到 v1 数据库且未处理时主页顶部显示横幅） */
+async function refreshLegacyImport(): Promise<void> {
+  legacyImport.value = await window.electronAPI.legacyImport.getState()
+}
+
+/** 一键合并导入旧版数据（按 id 去重，不覆盖现有数据） */
+async function doLegacyImport(): Promise<void> {
+  const r = await window.electronAPI.legacyImport.import()
+  if (r.ok) {
+    toast.success(`已导入旧版数据：历史 +${r.importedHistory}、片段 +${r.importedFavorites}`)
+  } else {
+    toast.error(`导入失败：${r.error ?? '未知错误'}`)
+  }
+  await refreshLegacyImport()
+  await refreshAll()
+}
+
+/** 暂不导入：标记完成，不再提示 */
+async function dismissLegacyImport(): Promise<void> {
+  await window.electronAPI.legacyImport.dismiss()
+  await refreshLegacyImport()
+}
+
 onMounted(async () => {
   await refreshAll()
   await fetchPinnedNotes()
+  await refreshLegacyImport()
 
   // 新记录/置顶：插到左列最近列表最前（去重）
   subscribeOnUnmounted(() =>
@@ -707,6 +761,69 @@ onBeforeUnmount(() => {
   margin: 0;
   font-size: 20px;
   font-weight: 600;
+}
+
+/* 旧版数据引导导入横幅 */
+.legacy-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  margin: 0 var(--sp-5) var(--sp-2);
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid color-mix(in srgb, var(--brand) 30%, transparent);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--brand) 6%, var(--bg-surface));
+  animation: fade-up var(--duration-enter) var(--ease-out-soft) backwards;
+  animation-delay: 40ms;
+}
+
+.legacy-banner__title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.legacy-banner__desc {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.legacy-banner__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex-shrink: 0;
+}
+
+.legacy-banner__btn {
+  border: 1px solid var(--brand);
+  border-radius: var(--radius-md);
+  padding: 5px 14px;
+  font-size: 12px;
+  font-weight: 500;
+  background: var(--brand);
+  color: var(--text-on-brand, #fff);
+  cursor: pointer;
+  transition: filter var(--duration-fast) var(--ease-out-soft);
+}
+
+.legacy-banner__btn:hover {
+  filter: brightness(1.06);
+}
+
+.legacy-banner__link {
+  border: none;
+  background: transparent;
+  padding: 5px 4px;
+  font-size: 12px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.legacy-banner__link:hover {
+  color: var(--text-primary);
 }
 
 /* 数据概览 */

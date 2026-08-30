@@ -81,17 +81,42 @@
           </div>
         </div>
       </section>
+      <section class="setting-group">
+        <h3 class="group-title">更新</h3>
+        <div class="setting-row">
+          <div class="row-info">
+            <div class="row-name">检查更新</div>
+            <div class="row-desc">当前版本 v{{ updateStatus.currentVersion }}，从 GitHub Releases 自动检查</div>
+          </div>
+          <button class="btn" type="button" :disabled="updateBusy" @click="checkUpdate">
+            {{ updateStatus.status === 'checking' ? '检查中…' : '检查更新' }}
+          </button>
+        </div>
+        <div v-if="updateMessage" class="update-status">{{ updateMessage }}</div>
+        <div v-if="updateStatus.status === 'downloading'" class="update-progress">
+          <div class="update-progress__bar" :style="{ width: `${updateStatus.progress ?? 0}%` }"></div>
+          <span class="update-progress__text">{{ updateStatus.progress ?? 0 }}%</span>
+        </div>
+        <div v-if="updateStatus.status === 'downloaded'" class="setting-row">
+          <div class="row-info">
+            <div class="row-name">新版本已就绪</div>
+            <div class="row-desc">v{{ updateStatus.version }} 已下载，重启后生效</div>
+          </div>
+          <button class="btn btn--primary" type="button" @click="installUpdate">安装并重启</button>
+        </div>
+      </section>
       </template>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import UiPillTab from '@renderer/components/ui/UiPillTab.vue'
 import { useToast } from '@renderer/composables/useToast'
 import { applyTheme } from '@renderer/composables/useTheme'
-import type { AppSettings, BackupImportMode } from '@preload/ipc'
+import { subscribeOnUnmounted } from '@renderer/composables/useIpcListener'
+import type { AppSettings, BackupImportMode, UpdateStatusInfo } from '@preload/ipc'
 
 const toast = useToast()
 
@@ -173,9 +198,51 @@ async function importBackup(): Promise<void> {
 /** 设置是否已从主进程加载完成：加载前不渲染设置项，避免默认值闪现 */
 const settingsLoaded = ref(false)
 
+// ---------------------------------------------------------------------------
+// 更新
+// ---------------------------------------------------------------------------
+const updateStatus = ref<UpdateStatusInfo>({ status: 'idle', currentVersion: '' })
+
+const updateBusy = computed(
+  () => updateStatus.value.status === 'checking' || updateStatus.value.status === 'downloading'
+)
+
+/** 状态行文案（downloaded 时由下方独立区块展示，返回空串） */
+const updateMessage = computed(() => {
+  const s = updateStatus.value
+  switch (s.status) {
+    case 'idle':
+      return s.message ?? ''
+    case 'up-to-date':
+      return '已是最新版本'
+    case 'available':
+      return `发现新版本 v${s.version}，正在下载…`
+    case 'error':
+      return `更新失败：${s.error ?? '未知错误'}`
+    default:
+      return ''
+  }
+})
+
+async function checkUpdate(): Promise<void> {
+  updateStatus.value = await window.electronAPI.update.check()
+}
+
+function installUpdate(): void {
+  void window.electronAPI.update.quitAndInstall()
+}
+
 onMounted(async () => {
   settings.value = await window.electronAPI.settings.get()
   settingsLoaded.value = true
+
+  // 同步当前更新状态并订阅后续变化
+  updateStatus.value = await window.electronAPI.update.getStatus()
+  subscribeOnUnmounted(() =>
+    window.electronAPI.update.onStatus((info) => {
+      updateStatus.value = info
+    })
+  )
 })
 </script>
 
@@ -349,5 +416,51 @@ onMounted(async () => {
 .btn:hover {
   border-color: var(--brand);
   color: var(--brand);
+}
+
+.btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn--primary {
+  border-color: var(--brand);
+  background: var(--brand);
+  color: var(--text-on-brand, #fff);
+}
+
+.btn--primary:hover {
+  color: var(--text-on-brand, #fff);
+  filter: brightness(1.05);
+}
+
+.update-status {
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 0 0 var(--sp-3);
+}
+
+.update-progress {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  height: 18px;
+  padding: 0 0 var(--sp-3);
+}
+
+.update-progress__bar {
+  flex: 1;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--brand);
+  overflow: hidden;
+  transition: width var(--duration-fast) var(--ease-out-soft);
+}
+
+.update-progress__text {
+  font-size: 11px;
+  color: var(--text-muted);
+  width: 36px;
+  text-align: right;
 }
 </style>

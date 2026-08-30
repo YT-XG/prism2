@@ -34,6 +34,8 @@ src/
 │   │   ├── clipboardService.ts
 │   │   ├── stickyNotesService.ts # 便利贴（sql.js 持久化，无广播）
 │   │   ├── inputService.ts       # 模拟粘贴（平台分支）
+│   │   ├── updateService.ts      # 应用更新（electron-updater + GitHub provider，dev 返回提示）
+│   │   ├── legacyImportService.ts # 旧版 v1 剪贴板数据一键导入（读 v1 userData/Prism/clipboard.db 合并）
 │   │   └── trayService.ts
 │   └── utils/platform.ts         # broadcast()
 ├── preload/
@@ -50,7 +52,9 @@ src/
     ├── composables/useIpcListener.ts  useToast.ts  useTheme.ts  useFeatureSearch.ts  useDrag.ts  useHomeModules.ts
     ├── views/                    # MainPage / Home / ClipboardManager / StickyNotes / QuickPaste / Settings
     └── router/  types.d.ts
-scripts/import-legacy-db.mjs      # 旧剪贴板数据一次性导入
+scripts/import-legacy-db.mjs      # 旧剪贴板数据一次性导入（已由应用内 legacyImportService 承接）
+.github/workflows/release.yml     # 打 v* tag 时三平台自动打包并发 GitHub Release
+dev-app-update.yml                # 开发模式 electron-updater 配置（打包时被排除）
 ../docs/prism2/                     # 文档已集中到工作区根 docs/prism2/（含 design-ref/ 参考图）
 ```
 
@@ -66,7 +70,14 @@ scripts/import-legacy-db.mjs      # 旧剪贴板数据一次性导入
 
 - 独立 git 仓库（父仓库已 ignore `prism2/`）。
 - `package.json` name = `prism2`，userData 与旧版（`Prism`）不同，互不干扰数据/全局快捷键/托盘。
-- 旧版数据迁移用 `scripts/import-legacy-db.mjs`。
+- 旧版数据迁移：应用内 `legacyImportService`（主页横幅一键导入）已承接，`scripts/import-legacy-db.mjs` 作为 CLI 兜底保留。
+
+## 更新与发版
+
+- **自动打包**：`.github/workflows/release.yml` 在打 `v*` tag 时于三平台构建并 `electron-builder --publish always` 发布到 GitHub Release。
+- **自动更新**：`updateService`（electron-updater + GitHub provider）→ 设置页「检查更新」；发现新版本后自动下载，UI 展示进度与「安装并重启」。
+- **旧版升级到 v2**：v1 的 `githubRepo` 默认指向本仓库，v1 用户检查更新会看到 v2 并下载安装；两者并存，v2 内一键导入 v1 数据。
+- ⚠️ 仓库地址占位：`electron-builder.yml`、`.github/workflows/release.yml`、`dev-app-update.yml` 与 v1 `settingsService.ts` 的 githubRepo 均为 `YT-XG/prism2` 占位，建好新仓库后需统一替换。
 
 ## 迁移进度
 
@@ -77,4 +88,6 @@ scripts/import-legacy-db.mjs      # 旧剪贴板数据一次性导入
 | 主页（可拖拽合并记录框：剪贴板+片段跨类全搜 + 自定义尺寸 + 概览 + 入口卡（新增便利贴/新增片段） + 模块显隐开关） | ✅ |
 | 便利贴（本地便签，增删改 + 富文本大编辑框 + 贴到主页可拖拽定位/自由缩放 + 主页点击编辑/一键创建默认贴主页） | ✅ |
 | 功能搜索（命令面板，Ctrl/Cmd+K） | ✅ |
+| 自动更新（electron-updater + GitHub CI 自动发版 + 设置页检查更新） | ✅（接入就绪，待建仓库替换占位地址后实际发版） |
+| 旧版数据引导导入（主页横幅一键合并 v1 剪贴板数据） | ✅ |
 | 翻译、Markdown 预览、下载、文件互传、弹窗族、OCR | ⬜ 见 ../docs/prism2/migration-roadmap.md |

@@ -10,6 +10,8 @@ import { TrayService } from './services/trayService'
 import { settingsService } from './services/settingsService'
 import { clipboardService } from './services/clipboardService'
 import { stickyNotesService } from './services/stickyNotesService'
+import { updateService } from './services/updateService'
+import { legacyImportService } from './services/legacyImportService'
 
 let trayService: TrayService | null = null
 let isQuitting = false
@@ -51,6 +53,8 @@ app.whenReady().then(async () => {
   settingsService.init()
   await clipboardService.init()
   await stickyNotesService.init()
+  updateService.init()
+  legacyImportService.init()
 
   // 启动后显示主界面（首次可见）
   windowFactory.getMainPageFrame().showCentered()

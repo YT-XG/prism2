@@ -14,16 +14,21 @@ import type {
   ClipboardRetention,
   ElectronAPI,
   HistoryItem,
+  LegacyImportResult,
+  LegacyImportState,
   MainWindowEvent,
   SetPagePayload,
   StickyNote,
-  StickyNoteColor
+  StickyNoteColor,
+  UpdateStatusInfo
 } from './ipc'
 
 const { mainPage, baseFrame } = WINDOW_CHANNELS
 const C = SERVICE_CHANNELS.clipboard
 const S = SERVICE_CHANNELS.settings
 const N = SERVICE_CHANNELS.stickyNotes
+const U = SERVICE_CHANNELS.update
+const L = SERVICE_CHANNELS.legacyImport
 
 /** 供 vm 上下文判定的渲染进程受控 flag（可选） */
 function subscribe(channel: string, cb: (...args: unknown[]) => void): () => void {
@@ -112,6 +117,20 @@ const electronAPI: ElectronAPI = {
       ipcRenderer.invoke(N.setNotePosition, id, x, y) as Promise<void>,
     setNoteSize: (id: number, w: number, h: number) =>
       ipcRenderer.invoke(N.setNoteSize, id, w, h) as Promise<void>,
+  },
+
+  update: {
+    getStatus: () => ipcRenderer.invoke(U.getStatus) as Promise<UpdateStatusInfo>,
+    check: () => ipcRenderer.invoke(U.check) as Promise<UpdateStatusInfo>,
+    quitAndInstall: () => ipcRenderer.invoke(U.quitAndInstall) as Promise<void>,
+    onStatus: (cb: (info: UpdateStatusInfo) => void) =>
+      subscribe(BROADCAST.updateStatus, (info) => cb(info as UpdateStatusInfo))
+  },
+
+  legacyImport: {
+    getState: () => ipcRenderer.invoke(L.getState) as Promise<LegacyImportState>,
+    import: () => ipcRenderer.invoke(L.import) as Promise<LegacyImportResult>,
+    dismiss: () => ipcRenderer.invoke(L.dismiss) as Promise<void>
   }
 }
 

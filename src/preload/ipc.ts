@@ -133,6 +133,60 @@ export interface AppSettings {
   clipboardRetentionUnit: 'day' | 'week' | 'month' | 'year'
   /** 主题：light / lavender（参考图）/ mint（白绿参考图）/ dark（预留） */
   theme: 'light' | 'dark' | 'lavender' | 'mint'
+  /** 是否已完成旧版（v1）数据导入（true=已导入或用户选择暂不导入，不再提示） */
+  legacyImportDone?: boolean
+}
+
+/** 应用更新状态（electron-updater 事件驱动） */
+export type UpdateStatus =
+  | 'idle' // 尚未检查
+  | 'checking' // 正在检查更新
+  | 'up-to-date' // 已是最新
+  | 'available' // 发现新版本（自动开始下载）
+  | 'downloading' // 正在下载
+  | 'downloaded' // 已下载，可安装
+  | 'error' // 检查/下载出错
+
+/** 更新状态载荷（广播 + getStatus 返回） */
+export interface UpdateStatusInfo {
+  status: UpdateStatus
+  /** 当前应用版本 */
+  currentVersion: string
+  /** 目标版本（available/downloading/downloaded 时有值） */
+  version?: string
+  /** 发布说明（downloaded 时有值） */
+  releaseNotes?: string
+  /** 发布日期 */
+  releaseDate?: string
+  /** 下载进度 0-100（downloading 时有值） */
+  progress?: number
+  /** 错误信息（error 时有值） */
+  error?: string
+  /** 补充说明（如开发模式提示） */
+  message?: string
+}
+
+/** 旧版（v1）数据导入状态 */
+export interface LegacyImportState {
+  /** v1 剪贴板数据库是否存在 */
+  legacyDbExists: boolean
+  /** 是否已完成（导入过或用户选择暂不） */
+  done: boolean
+  /** v1 数据库路径（不存在时为 undefined） */
+  legacyDbPath?: string
+  /** 历史/收藏数量预览（只读 v1 库得到） */
+  historyCount?: number
+  favoriteCount?: number
+}
+
+/** 旧版数据导入结果 */
+export interface LegacyImportResult {
+  ok: boolean
+  importedHistory: number
+  importedFavorites: number
+  skippedHistory: number
+  skippedFavorites: number
+  error?: string
 }
 
 // ---------------------------------------------------------------------------
@@ -202,6 +256,16 @@ export const SERVICE_CHANNELS = {
     togglePin: 'to-service-StickyNotesService:togglePin',
     setNotePosition: 'to-service-StickyNotesService:setNotePosition',
     setNoteSize: 'to-service-StickyNotesService:setNoteSize'
+  },
+  update: {
+    getStatus: 'to-service-UpdateService:getStatus',
+    check: 'to-service-UpdateService:check',
+    quitAndInstall: 'to-service-UpdateService:quitAndInstall'
+  },
+  legacyImport: {
+    getState: 'to-service-LegacyImportService:getState',
+    import: 'to-service-LegacyImportService:import',
+    dismiss: 'to-service-LegacyImportService:dismiss'
   }
 } as const
 
@@ -211,7 +275,8 @@ export const BACKUP_EXTENSION = '.prismbackup'
 /** 服务广播（服务 → 所有窗口） */
 export const BROADCAST = {
   clipboardNew: 'broadcast:clipboard-new',
-  clipboardHistoryChanged: 'broadcast:clipboard-history-changed'
+  clipboardHistoryChanged: 'broadcast:clipboard-history-changed',
+  updateStatus: 'broadcast:update-status'
 } as const
 
 // ---------------------------------------------------------------------------
@@ -293,5 +358,23 @@ export interface ElectronAPI {
     setNotePosition: (id: number, x: number, y: number) => Promise<void>
     /** 记录便利贴在主页画布上的尺寸（px） */
     setNoteSize: (id: number, w: number, h: number) => Promise<void>
+  }
+  update: {
+    /** 获取当前更新状态 */
+    getStatus: () => Promise<UpdateStatusInfo>
+    /** 检查更新（发现新版本后自动开始下载） */
+    check: () => Promise<UpdateStatusInfo>
+    /** 安装已下载的更新并重启 */
+    quitAndInstall: () => Promise<void>
+    /** 订阅更新状态变化（返回取消函数） */
+    onStatus: (cb: (info: UpdateStatusInfo) => void) => () => void
+  }
+  legacyImport: {
+    /** 获取旧版数据导入状态（是否检测到 v1 数据库、是否已完成） */
+    getState: () => Promise<LegacyImportState>
+    /** 执行旧版数据导入（合并到当前剪贴板库） */
+    import: () => Promise<LegacyImportResult>
+    /** 用户选择暂不导入（标记 done，不再提示） */
+    dismiss: () => Promise<void>
   }
 }

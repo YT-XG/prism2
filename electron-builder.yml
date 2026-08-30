@@ -13,6 +13,11 @@ files:
   - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
 asarUnpack:
   - resources/**
+publish:
+  provider: github
+  # GitHub Release 发布目标：https://github.com/YT-XG/prism2
+  owner: YT-XG
+  repo: prism2
 win:
   target: nsis
   icon: build/icon.ico
@@ -21,6 +26,8 @@ nsis:
   uninstallerIcon: build/icon.ico
   oneClick: false
   allowToChangeInstallationDirectory: true
+  # 产物名带 -setup 后缀，旧版（v1）更新逻辑按 `*-setup.exe` 精确匹配安装包
+  artifactName: ${name}-${version}-setup.${ext}
 mac:
   target: dmg
   icon: build/icon.png

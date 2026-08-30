@@ -762,6 +762,57 @@ class ClipboardService extends SqliteStore {
   }
 
   // -------------------------------------------------------------------------
+  // 旧版（v1）数据一次性合并导入
+  // -------------------------------------------------------------------------
+
+  /**
+   * 合并导入旧版剪贴板数据（INSERT OR IGNORE 按主键 id 去重，不覆盖 v2 已有记录）。
+   * @param history - 旧版历史行（type 缺失时按 'text' 处理）
+   * @param favorites - 旧版收藏行
+   * @returns 导入/跳过计数
+   */
+  importLegacyData(
+    history: Array<{ id: number; content: string; created_at: number; type?: string }>,
+    favorites: Array<{
+      id: number
+      content: string
+      category?: string
+      description?: string
+      created_at: number
+    }>
+  ): { importedHistory: number; importedFavorites: number; skippedHistory: number; skippedFavorites: number } {
+    let importedHistory = 0
+    let importedFavorites = 0
+    let skippedHistory = 0
+    let skippedFavorites = 0
+    for (const row of history) {
+      this.db?.run(
+        'INSERT OR IGNORE INTO clipboard_history (id, content, created_at, type) VALUES (?, ?, ?, ?)',
+        [row.id, row.content, row.created_at, row.type === 'image' ? 'image' : 'text']
+      )
+      if ((this.db?.getRowsModified() ?? 0) > 0) {
+        importedHistory++
+      } else {
+        skippedHistory++
+      }
+    }
+    for (const row of favorites) {
+      this.db?.run(
+        'INSERT OR IGNORE INTO favorites (id, content, category, description, created_at) VALUES (?, ?, ?, ?, ?)',
+        [row.id, row.content, row.category ?? '', row.description ?? '', row.created_at]
+      )
+      if ((this.db?.getRowsModified() ?? 0) > 0) {
+        importedFavorites++
+      } else {
+        skippedFavorites++
+      }
+    }
+    this.save()
+    this.#notifyHistoryChanged()
+    return { importedHistory, importedFavorites, skippedHistory, skippedFavorites }
+  }
+
+  // -------------------------------------------------------------------------
   // IPC
   // -------------------------------------------------------------------------
 

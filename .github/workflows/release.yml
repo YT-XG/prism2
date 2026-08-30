@@ -1,0 +1,52 @@
+# 自动打包发版：打 `v*` tag（如 v2.0.0）或手动触发时，
+# 在三平台分别构建安装包并发布到 GitHub Release（electron-builder --publish always）。
+#
+# 前置要求：
+#   1. 仓库设置 Settings → Actions → General → Workflow permissions 勾选 Read and write permissions；
+#   2. 无需额外 secret：使用内置的 GITHUB_TOKEN（权限见下 permissions 声明）。
+#   3. 发版流程：git tag v2.0.0 && git push origin v2.0.0
+
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            args: --win
+          - os: macos-latest
+            args: --mac
+          - os: ubuntu-latest
+            args: --linux
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Build & publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx electron-builder --publish always ${{ matrix.args }}
