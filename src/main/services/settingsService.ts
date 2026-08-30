@@ -19,7 +19,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   snippetShortcut: 'CommandOrControl+Shift+V',
   searchBoxShortcut: 'CommandOrControl+K',
   serverUrl: process.platform === 'darwin' ? '/Volumes/dist' : '\\\\10.15.8.28\\dist',
-  autoStart: false,
+  // 默认开启开机自启动（登录系统时自动运行）
+  autoStart: true,
   updateSource: 'github',
   githubRepo: 'YT-XG/electron-vite-learn',
   clipboardRetentionValue: 1,
@@ -32,10 +33,11 @@ class SettingsService {
   private settings: AppSettings = { ...DEFAULT_SETTINGS }
   private filePath = ''
 
-  /** 初始化：加载配置 + 注册全局快捷键 */
+  /** 初始化：加载配置 + 应用开机自启动 + 注册全局快捷键 */
   init(): void {
     this.filePath = join(app.getPath('userData'), 'settings.json')
     this.settings = this.#load()
+    this.#applyAutoStart()
     this.#registerIPC()
     this.#registerAllShortcuts()
     log.info('[SettingsService] 初始化完成')
@@ -50,6 +52,10 @@ class SettingsService {
     this.#save()
     if (partial.shortcut !== undefined || partial.snippetShortcut !== undefined || partial.searchBoxShortcut !== undefined) {
       this.#registerAllShortcuts()
+    }
+    // 仅 autoStart 变化时重写系统登录启动项
+    if (partial.autoStart !== undefined) {
+      this.#applyAutoStart()
     }
     log.info('[SettingsService] 设置已更新')
   }
@@ -75,6 +81,19 @@ class SettingsService {
       log.warn('[SettingsService] 配置损坏，使用默认值:', err)
       return { ...DEFAULT_SETTINGS }
     }
+  }
+
+  /**
+   * 应用开机自启动设置
+   * @description 调用 Electron 的 app.setLoginItemSettings 写入系统登录启动项。
+   * name 为 Windows 注册表启动项值名（默认 AppUserModelId），设为 'Prism' 便于用户识别。
+   */
+  #applyAutoStart(): void {
+    app.setLoginItemSettings({
+      openAtLogin: this.settings.autoStart,
+      name: 'Prism'
+    })
+    log.info('[SettingsService] 开机自启:', this.settings.autoStart ? '已开启' : '已关闭')
   }
 
   #registerIPC(): void {
