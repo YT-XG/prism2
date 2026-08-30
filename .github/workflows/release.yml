@@ -46,7 +46,11 @@ jobs:
       - name: Type check
         run: npm run typecheck
 
-      - name: Build & publish
+      # electron-vite 项目必须先编译出 out/main|preload|renderer，再交给 electron-builder 打包
+      - name: Build (electron-vite)
+        run: npm run build
+
+      - name: Package & publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npx electron-builder --publish always ${{ matrix.args }}
