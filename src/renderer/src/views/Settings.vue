@@ -5,7 +5,9 @@
     </header>
 
     <div class="settings-body">
-      <section class="setting-group">
+      <!-- 加载完成前不渲染，避免开关/快捷键等按默认值先渲染再跳到真实值 -->
+      <template v-if="settingsLoaded">
+        <section class="setting-group">
         <h3 class="group-title">通用</h3>
         <div class="setting-row">
           <div class="row-info">
@@ -23,14 +25,13 @@
         <div class="setting-row">
           <div class="row-info">
             <div class="row-name">主题</div>
-            <div class="row-desc">浅色 / 薰衣草 / 白绿（参考图）；深色将在后续版本提供</div>
+            <div class="row-desc">浅色 / 薰衣草 / 白绿（参考图）/ 深色</div>
           </div>
           <div class="cm-pills">
             <UiPillTab
               v-for="t in THEMES"
               :key="t.value"
               :active="settings.theme === t.value"
-              :class="{ 'is-disabled': t.disabled }"
               @click="setTheme(t.value)"
             >
               {{ t.label }}
@@ -79,8 +80,8 @@
             <button class="btn" type="button" @click="importBackup">导入</button>
           </div>
         </div>
-        <p v-if="status" class="backup-status">{{ status }}</p>
       </section>
+      </template>
     </div>
   </div>
 </template>
@@ -88,7 +89,11 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import UiPillTab from '@renderer/components/ui/UiPillTab.vue'
+import { useToast } from '@renderer/composables/useToast'
+import { applyTheme } from '@renderer/composables/useTheme'
 import type { AppSettings, BackupImportMode } from '@preload/ipc'
+
+const toast = useToast()
 
 const settings = ref<AppSettings>({
   shortcut: '',
@@ -101,7 +106,8 @@ const settings = ref<AppSettings>({
   clipboardRetentionValue: 1,
   clipboardAutoClean: true,
   clipboardRetentionUnit: 'month',
-  theme: 'light'
+  // 主题从当前 DOM 即时取（App 已同步），避免进入设置页等待 settings.get() 期间误显示「浅色」被选中
+  theme: (document.documentElement.dataset.theme ?? 'light') as AppSettings['theme']
 })
 
 async function toggle(key: 'autoStart'): Promise<void> {
@@ -112,17 +118,16 @@ async function toggle(key: 'autoStart'): Promise<void> {
 
 type ThemeValue = 'light' | 'lavender' | 'mint' | 'dark'
 
-const THEMES: { value: ThemeValue; label: string; disabled?: boolean }[] = [
+const THEMES: { value: ThemeValue; label: string }[] = [
   { value: 'light', label: '浅色' },
   { value: 'lavender', label: '薰衣草（参考图）' },
   { value: 'mint', label: '白绿（参考图）' },
-  { value: 'dark', label: '深色', disabled: true }
+  { value: 'dark', label: '深色' }
 ]
 
 function setTheme(theme: ThemeValue): void {
-  if (theme === 'dark') return // 深色尚未实现
   settings.value.theme = theme
-  document.documentElement.dataset.theme = theme
+  applyTheme(theme)
   void window.electronAPI.settings.update({ theme })
 }
 
@@ -139,33 +144,38 @@ const IMPORT_MODES: { value: BackupImportMode; label: string }[] = [
 /** 当前选择的导入合并方式 */
 const importMode = ref<BackupImportMode>('merge')
 
-/** 最近一次备份操作的反馈信息 */
-const status = ref('')
-
 /** 导出剪贴板记录备份 */
 async function exportBackup(): Promise<void> {
-  status.value = ''
   const r = await window.electronAPI.clipboard.exportBackup()
   if (r.canceled) return
-  status.value = r.ok
-    ? `已导出：${r.path}（历史 ${r.historyCount}、收藏 ${r.favoriteCount}、图片 ${r.imageCount}）`
-    : `导出失败：${r.error ?? '未知错误'}`
+  if (r.ok) {
+    toast.success(`已导出：${r.path}（历史 ${r.historyCount}、收藏 ${r.favoriteCount}、图片 ${r.imageCount}）`)
+  } else {
+    toast.error(`导出失败：${r.error ?? '未知错误'}`)
+  }
 }
 
 /** 导入剪贴板记录备份（按所选合并方式） */
 async function importBackup(): Promise<void> {
-  status.value = ''
   const r = await window.electronAPI.clipboard.importBackup(importMode.value)
   if (r.canceled) return
-  status.value = r.ok
-    ? importMode.value === 'replace'
-      ? `已替换导入：历史 ${r.importedHistory}、收藏 ${r.importedFavorites}、图片 ${r.importedImages}`
-      : `已合并导入：历史 +${r.importedHistory}（跳过 ${r.skippedHistory}）、收藏 +${r.importedFavorites}（跳过 ${r.skippedFavorites}）、图片 +${r.importedImages}（跳过 ${r.skippedImages}）`
-    : `导入失败：${r.error ?? '未知错误'}`
+  if (r.ok) {
+    toast.success(
+      importMode.value === 'replace'
+        ? `已替换导入：历史 ${r.importedHistory}、收藏 ${r.importedFavorites}、图片 ${r.importedImages}`
+        : `已合并导入：历史 +${r.importedHistory}（跳过 ${r.skippedHistory}）、收藏 +${r.importedFavorites}（跳过 ${r.skippedFavorites}）、图片 +${r.importedImages}（跳过 ${r.skippedImages}）`
+    )
+  } else {
+    toast.error(`导入失败：${r.error ?? '未知错误'}`)
+  }
 }
+
+/** 设置是否已从主进程加载完成：加载前不渲染设置项，避免默认值闪现 */
+const settingsLoaded = ref(false)
 
 onMounted(async () => {
   settings.value = await window.electronAPI.settings.get()
+  settingsLoaded.value = true
 })
 </script>
 
@@ -289,12 +299,6 @@ onMounted(async () => {
   gap: var(--sp-2);
 }
 
-.cm-pills :deep(.ui-pill.is-disabled) {
-  opacity: 0.45;
-  cursor: default;
-  pointer-events: none;
-}
-
 .keycaps {
   display: flex;
   gap: 4px;
@@ -345,13 +349,5 @@ onMounted(async () => {
 .btn:hover {
   border-color: var(--brand);
   color: var(--brand);
-}
-
-.backup-status {
-  margin: 0 0 var(--sp-2);
-  font-size: 12px;
-  line-height: 1.5;
-  color: var(--text-muted);
-  word-break: break-all;
 }
 </style>

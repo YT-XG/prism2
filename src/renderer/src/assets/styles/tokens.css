@@ -1,6 +1,11 @@
 /*
  * 设计 Token（来源：前端样式参考图 + docs/AI前端样式重构提示词.md）
  * 全应用唯一取值来源，禁止在组件里散落魔法值。
+ *
+ * 对比度约定（WCAG AA）：
+ *   - 正文/小字 ≥ 4.5:1（--text-primary/secondary/muted 均满足）
+ *   - 品牌色底上的白字 ≥ 4.5:1（各主题 --brand 已校准）
+ *   - 语义状态色：--*-soft 浅底 + --on-* 深字（浅色/深色各一套）
  */
 :root {
   /* 颜色（浅色） */
@@ -10,8 +15,8 @@
   --bg-selected: #111111;
   --bg-selected-subtle: #f4f4f5;
   --text-primary: #171717;
-  --text-secondary: #8a8a8f;
-  --text-muted: #b3b3b8;
+  --text-secondary: #64646b;
+  --text-muted: #75757d;
   --text-on-primary: #ffffff;
 
   --border: #e6e6e8;
@@ -32,7 +37,22 @@
 
   /* 品牌色：聚焦/高亮用，克制使用 */
   --brand: #6c5ce7;
-  --danger: #e5484d;
+  --danger: #dc2626;
+  /* danger 实底按钮背景（白字需 ≥4.5:1） */
+  --danger-bg: #dc2626;
+
+  /* 语义状态色（状态徽标/反馈）：--*-soft 浅底 + --on-* 文字 */
+  --success: #16a34a;
+  --success-soft: #dcfce7;
+  --on-success: #166534;
+  --warning: #b45309;
+  --warning-soft: #fef3c7;
+  --on-warning: #92400e;
+  --info: #2563eb;
+  --info-soft: #dbeafe;
+  --on-info: #1e40af;
+  --danger-soft: #fee2e2;
+  --on-danger: #b91c1c;
 
   /* 焦点光环（各主题随 --brand 覆盖）：输入/按钮/卡片焦点统一使用 */
   --ring: 0 0 0 3px rgba(108, 92, 231, 0.12);
@@ -42,6 +62,23 @@
     'Microsoft YaHei', sans-serif;
   --font-mono: ui-monospace, 'SF Mono', 'SFMono-Regular', Menlo, Consolas, 'Liberation Mono',
     monospace;
+
+  /* 字号刻度（正文基础 14px；Markdown 等长文阅读另用 --text-lg + 1.6 行高） */
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-md: 13px;
+  --text-base: 14px;
+  --text-lg: 16px;
+  --text-xl: 20px;
+  --font-medium: 500;
+  --font-semibold: 600;
+
+  /* 图标尺寸刻度（Lucide 细线） */
+  --icon-xs: 12px;
+  --icon-sm: 14px;
+  --icon-md: 16px;
+  --icon-lg: 20px;
+  --icon-xl: 28px;
 
   /* 间距刻度 */
   --sp-1: 4px;
@@ -95,8 +132,8 @@
   --sidebar-header-border: transparent;
   --avatar-bg: #e7dff8;
   --avatar-text: #4a3a78;
-  --brand: #7b7af0;
-  --ring: 0 0 0 3px rgba(123, 122, 240, 0.14);
+  --brand: #655fd9; /* 白字 ≥4.5:1 */
+  --ring: 0 0 0 3px rgba(101, 95, 217, 0.14);
   --bg-hover: #f1eefb;
   --bg-selected-subtle: #f3effc;
   --border: #e7e3f2;
@@ -113,9 +150,60 @@
   --sidebar-header-border: transparent;
   --avatar-bg: #ddf3e7;
   --avatar-text: #1e6b3a;
-  --brand: #2f9e6e;
-  --ring: 0 0 0 3px rgba(47, 158, 110, 0.14);
+  --brand: #1f7a52; /* 白字 ≥4.5:1 */
+  --ring: 0 0 0 3px rgba(31, 122, 82, 0.14);
   --bg-hover: #eaf8f1;
   --bg-selected-subtle: #edf9f2;
   --border: #e0efe6;
+}
+
+/*
+ * 深色主题：语义 token 整套覆盖，激活态仍为品牌色胶囊 + 白字（--brand 已校准）。
+ * 粉彩卡与语义状态色提供深色变体，保证对比度不亚于浅色。
+ */
+[data-theme='dark'] {
+  --bg-page: #131316;
+  --bg-surface: #1b1b20;
+  --bg-hover: #26262c;
+  --bg-selected: #e8e8ec; /* 预留：深色下激活胶囊改为浅色 */
+  --bg-selected-subtle: #24242a;
+  --text-primary: #ededf0;
+  --text-secondary: #a7a7b0;
+  --text-muted: #83838c;
+  --border: #2d2d34;
+
+  --accent-lavender: #2b2442;
+  --accent-mint: #143327;
+  --accent-yellow: #352a10;
+  --accent-blue: #162440;
+  --accent-violet: #2d1f40;
+  --text-on-accent-lavender: #c9bdf0;
+  --text-on-accent-mint: #9fdcc0;
+  --text-on-accent-yellow: #f3d491;
+  --text-on-accent-blue: #b9caf2;
+  --text-on-accent-violet: #d3b9ef;
+
+  --brand: #665ce0; /* 白字 ≥4.5:1 */
+  --danger: #f87171; /* 作文字色在深底上 ≥4.5:1 */
+  --danger-bg: #b91c1c; /* 实底按钮背景 + 白字 */
+
+  --success: #4ade80;
+  --success-soft: #143026;
+  --on-success: #86efac;
+  --warning: #fbbf24;
+  --warning-soft: #33280f;
+  --on-warning: #fcd34d;
+  --info: #60a5fa;
+  --info-soft: #17283f;
+  --on-info: #93c5fd;
+  --danger-soft: #3c1517;
+  --on-danger: #fca5a5;
+
+  --ring: 0 0 0 3px rgba(102, 92, 224, 0.28);
+  --page-bg: #131316;
+
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.35);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.55);
 }

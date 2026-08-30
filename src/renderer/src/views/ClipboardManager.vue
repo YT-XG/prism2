@@ -5,6 +5,7 @@
       <div class="cm-titlebar">
         <h1 class="cm-title">剪贴板</h1>
         <div
+          v-if="retentionLoaded"
           class="cm-auto-clean"
           :class="{ 'is-off': !retention.autoClean }"
           title="开启后自动删除超出保留期的历史记录"
@@ -45,7 +46,7 @@
 
     <!-- 工具栏 -->
     <div v-if="activeTab === 'history'" class="cm-toolbar">
-      <UiInput v-model="keyword" placeholder="搜索历史记录...">
+      <UiInput v-model="keyword" label="搜索历史记录" placeholder="搜索历史记录...">
         <template #leading><Search :size="15" :stroke-width="1.6" /></template>
       </UiInput>
       <template v-if="!selectMode">
@@ -62,7 +63,7 @@
         </UiButton>
       </template>
       <template v-else>
-        <span class="cm-select-count">已选 {{ selectedIds.size }} 项</span>
+        <span class="cm-select-count num">已选 {{ selectedIds.size }} 项</span>
         <UiButton
           variant="danger"
           :disabled="!selectedIds.size"
@@ -78,7 +79,7 @@
 
     <div v-else class="cm-toolbar cm-toolbar--col">
       <div class="cm-toolbar-row">
-        <UiInput v-model="favKeyword" placeholder="搜索片段内容或描述...">
+        <UiInput v-model="favKeyword" label="搜索片段" placeholder="搜索片段内容或描述...">
           <template #leading><Search :size="15" :stroke-width="1.6" /></template>
         </UiInput>
         <UiButton variant="primary" @click="openAdd">
@@ -93,7 +94,7 @@
           :active="selectedCategory === cat.name"
           @click="selectedCategory = cat.name"
         >
-          {{ cat.name || '未分类' }}<span class="cat-count">{{ cat.count }}</span>
+          {{ cat.name || '未分类' }}<span class="cat-count num">{{ cat.count }}</span>
         </UiPillTab>
       </div>
     </div>
@@ -283,7 +284,10 @@ import UiEmptyState from '@renderer/components/ui/UiEmptyState.vue'
 import UiDialog from '@renderer/components/ui/UiDialog.vue'
 import UiSwitch from '@renderer/components/ui/UiSwitch.vue'
 import { subscribeOnUnmounted } from '@renderer/composables/useIpcListener'
+import { useToast } from '@renderer/composables/useToast'
 import type { HistoryItem, FavoriteItem, CategoryItem, ClipboardRetention } from '@preload/ipc'
+
+const toast = useToast()
 
 const activeTab = ref<'history' | 'favorites'>('history')
 const historyList = ref<HistoryItem[]>([])
@@ -294,6 +298,8 @@ const selectedCategory = ref('')
 const keyword = ref('')
 const favKeyword = ref('')
 const retention = ref<ClipboardRetention>({ autoClean: true, value: 1, unit: 'month' })
+/** 保留策略是否已从主进程加载完成：加载前不渲染开关，避免默认值「开」先闪现再跳到真实值 */
+const retentionLoaded = ref(false)
 /** 清理数量下拉可选值：1-30 */
 const RETENTION_VALUES = Array.from({ length: 30 }, (_, i) => i + 1)
 const showDialog = ref(false)
@@ -447,6 +453,7 @@ async function quickFavorite(item: HistoryItem): Promise<void> {
   await window.electronAPI.clipboard.addFavorite(item.content, '', '')
   await fetchFavorites()
   await fetchCategories()
+  toast.success('已收藏')
 }
 
 function openAdd(): void {
@@ -482,6 +489,7 @@ async function saveFavorite(): Promise<void> {
   closeDialog()
   await fetchFavorites()
   await fetchCategories()
+  toast.success(editing.value ? '片段已更新' : '片段已添加')
 }
 
 /** 单条删除：先弹确认，确认后执行 */
@@ -498,10 +506,12 @@ async function confirmDeleteItem(): Promise<void> {
   if (activeTab.value === 'history') {
     await window.electronAPI.clipboard.deleteHistory(target.id)
     historyList.value = historyList.value.filter((h) => h.id !== target.id)
+    toast.success('已删除记录')
   } else {
     await window.electronAPI.clipboard.deleteFavorite(target.id)
     favoritesList.value = favoritesList.value.filter((f) => f.id !== target.id)
     await fetchCategories()
+    toast.success('已删除片段')
   }
 }
 
@@ -538,12 +548,14 @@ async function confirmBatchDelete(): Promise<void> {
   await window.electronAPI.clipboard.deleteHistoryBatch(ids)
   historyList.value = historyList.value.filter((h) => !ids.includes(h.id))
   exitSelectMode()
+  toast.success(`已删除 ${ids.length} 条记录`)
 }
 
 async function clearAllHistory(): Promise<void> {
   await window.electronAPI.clipboard.clearHistory()
   historyList.value = []
   clearConfirm.value = false
+  toast.success('已清空全部历史记录')
 }
 
 async function onAutoCleanToggle(value: boolean): Promise<void> {
@@ -579,6 +591,7 @@ function formatTime(ts: number): string {
 onMounted(async () => {
   await fetchHistory()
   retention.value = await window.electronAPI.clipboard.getRetentionState()
+  retentionLoaded.value = true
 
   subscribeOnUnmounted(() =>
     window.electronAPI.clipboard.onNewItem((item) => {
@@ -723,14 +736,17 @@ onBeforeUnmount(() => {
   padding: var(--sp-3) var(--sp-5) var(--sp-5);
 }
 
-/* Tab 切换的整块过渡容器 */
+/* Tab 切换过渡（P5）：只作用于列表区；出场更快（exit faster than enter） */
 .cm-view {
   height: 100%;
 }
 
-.view-enter-active,
-.view-leave-active {
+.view-enter-active {
   transition: opacity var(--duration-base) var(--ease-out-soft);
+}
+
+.view-leave-active {
+  transition: opacity 130ms var(--ease-out-soft);
 }
 
 .view-enter-from,
@@ -906,7 +922,7 @@ onBeforeUnmount(() => {
   font-weight: 500;
   padding: 2px var(--sp-2);
   border-radius: var(--radius-pill);
-  background: rgba(17, 17, 17, 0.06);
+  background: var(--bg-selected-subtle);
   color: var(--text-secondary);
 }
 

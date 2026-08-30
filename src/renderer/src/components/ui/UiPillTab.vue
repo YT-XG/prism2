@@ -33,9 +33,13 @@ defineEmits<{ (e: 'click'): void }>()
   color: var(--text-primary);
 }
 
+/* 激活时品牌色立即落位：去掉 background 过渡，避免从透明淡入造成
+   「从浅色闪到主题色」（切 Tab / 切分类 / 切主题都会触发）；入场由 pop 动画完成 */
 .ui-pill.is-active {
   background: var(--brand);
-  color: #fff;
+  color: var(--text-on-primary);
+  transition: color var(--duration-fast) var(--ease-out-soft),
+    border-color var(--duration-fast) var(--ease-out-soft);
   animation: pop var(--duration-base) var(--ease-spring);
 }
 </style>

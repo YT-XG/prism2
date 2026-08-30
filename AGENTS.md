@@ -42,7 +42,7 @@ src/
 └── renderer/src/
     ├── assets/styles/            # tokens.css / animations.css / main.css
     ├── components/ui/            # 设计系统组件层
-    ├── composables/useIpcListener.ts
+    ├── composables/useIpcListener.ts  useToast.ts  useTheme.ts
     ├── views/                    # MainPage / ClipboardManager / QuickPaste / Settings
     └── router/  types.d.ts
 scripts/import-legacy-db.mjs      # 旧剪贴板数据一次性导入

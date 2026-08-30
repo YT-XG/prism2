@@ -1,8 +1,13 @@
 <template>
   <Teleport to="body">
     <Transition name="dialog">
-      <div v-if="modelValue" class="ui-dialog__overlay" @click.self="$emit('update:modelValue', false)">
-        <div class="ui-dialog">
+      <div
+        v-if="modelValue"
+        ref="overlayRef"
+        class="ui-dialog__overlay"
+        @click.self="$emit('update:modelValue', false)"
+      >
+        <div class="ui-dialog" role="dialog" aria-modal="true" :aria-label="title" tabindex="-1">
           <header v-if="title" class="ui-dialog__header">
             <h3>{{ title }}</h3>
           </header>
@@ -19,14 +24,66 @@
 </template>
 
 <script setup lang="ts">
-defineProps<{
+import { ref, watch, nextTick, onBeforeUnmount } from 'vue'
+
+const props = defineProps<{
   modelValue: boolean
   title?: string
 }>()
 
-defineEmits<{
+const emit = defineEmits<{
   (e: 'update:modelValue', value: boolean): void
 }>()
+
+const overlayRef = ref<HTMLElement | null>(null)
+/** 打开前拥有焦点的元素，关闭后归还 */
+let lastFocused: HTMLElement | null = null
+
+/** 焦点陷阱：Tab / Shift+Tab 在对话框内循环，Esc 关闭 */
+function onKeydown(e: KeyboardEvent): void {
+  if (e.key === 'Escape') {
+    e.preventDefault()
+    emit('update:modelValue', false)
+    return
+  }
+  if (e.key !== 'Tab') return
+  const dialog = overlayRef.value?.querySelector<HTMLElement>('.ui-dialog')
+  if (!dialog) return
+  const focusables = dialog.querySelectorAll<HTMLElement>(
+    'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+  )
+  if (!focusables.length) return
+  const first = focusables[0]
+  const last = focusables[focusables.length - 1]
+  if (e.shiftKey && document.activeElement === first) {
+    e.preventDefault()
+    last.focus()
+  } else if (!e.shiftKey && document.activeElement === last) {
+    e.preventDefault()
+    first.focus()
+  }
+}
+
+watch(
+  () => props.modelValue,
+  (open) => {
+    if (open) {
+      lastFocused = document.activeElement as HTMLElement | null
+      document.addEventListener('keydown', onKeydown)
+      nextTick(() => {
+        overlayRef.value?.querySelector<HTMLElement>('.ui-dialog')?.focus()
+      })
+    } else {
+      document.removeEventListener('keydown', onKeydown)
+      lastFocused?.focus()
+      lastFocused = null
+    }
+  }
+)
+
+onBeforeUnmount(() => {
+  document.removeEventListener('keydown', onKeydown)
+})
 </script>
 
 <style scoped>
@@ -49,6 +106,7 @@ defineEmits<{
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-lg);
   overflow: hidden;
+  outline: none;
 }
 
 .ui-dialog__header {

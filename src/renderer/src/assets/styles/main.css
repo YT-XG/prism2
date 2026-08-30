@@ -48,6 +48,17 @@ textarea {
   -webkit-app-region: no-drag;
 }
 
+/* 数字排版：等宽数字，避免计数/时间在跳变时宽度抖动（角标、列表数量等） */
+.num {
+  font-variant-numeric: tabular-nums;
+}
+
+/* 主题切换瞬间：临时关闭全局过渡，避免 --brand 等 token 变更被动画化（如主题按钮闪色） */
+.theme-transition-off,
+.theme-transition-off * {
+  transition: none !important;
+}
+
 /* 细滚动条 */
 ::-webkit-scrollbar {
   width: 6px;

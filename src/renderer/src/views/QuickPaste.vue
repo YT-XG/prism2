@@ -13,7 +13,7 @@
           @focus="inputFocused = true"
           @blur="inputFocused = false"
         />
-        <span class="qp-input__count">{{ results.length }}</span>
+        <span class="qp-input__count num">{{ results.length }}</span>
       </div>
 
       <!-- 结果列表 -->

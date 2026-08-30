@@ -8,6 +8,7 @@
       :placeholder="placeholder"
       :type="type"
       :autofocus="autofocus"
+      :aria-label="label"
       @input="$emit('update:modelValue', ($event.target as HTMLInputElement).value)"
     />
   </div>
@@ -19,6 +20,8 @@ defineProps<{
   placeholder?: string
   type?: string
   autofocus?: boolean
+  /** 无障碍标签：placeholder 不应作为唯一标签，搜索框等必须提供 */
+  label?: string
 }>()
 
 defineEmits<{

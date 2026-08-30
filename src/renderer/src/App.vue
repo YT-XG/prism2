@@ -29,6 +29,8 @@
         <RouterView />
       </Transition>
     </main>
+
+    <UiToast />
   </div>
 </template>
 
@@ -36,7 +38,9 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { Minus, X, Square, Minimize2 } from '@lucide/vue'
+import UiToast from '@renderer/components/ui/UiToast.vue'
 import { subscribeOnUnmounted } from '@renderer/composables/useIpcListener'
+import { applyTheme } from '@renderer/composables/useTheme'
 
 const router = useRouter()
 const route = useRoute()
@@ -93,7 +97,7 @@ onMounted(() => {
 
   // 应用持久化的主题（启动时）
   void window.electronAPI.settings.get().then((s) => {
-    document.documentElement.dataset.theme = s.theme
+    applyTheme(s.theme)
   })
 
   subscribeOnUnmounted(() =>

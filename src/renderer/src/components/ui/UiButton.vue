@@ -39,7 +39,7 @@ defineProps<{
 
 .ui-btn--primary {
   background: var(--brand);
-  color: #fff;
+  color: var(--text-on-primary);
   box-shadow: var(--shadow-sm);
 }
 
@@ -69,11 +69,11 @@ defineProps<{
 }
 
 .ui-btn--danger {
-  background: var(--danger);
-  color: #fff;
+  background: var(--danger-bg);
+  color: var(--text-on-primary);
 }
 
 .ui-btn--danger:hover {
-  background: #d33f44;
+  background: color-mix(in srgb, var(--danger-bg) 88%, #000);
 }
 </style>
