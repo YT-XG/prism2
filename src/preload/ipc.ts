@@ -44,6 +44,7 @@ export type StickyNoteColor = 'lavender' | 'mint' | 'yellow' | 'blue' | 'violet'
 /** 便利贴 */
 export interface StickyNote {
   id: number
+  /** 便利贴内容：富文本 HTML（卡片经 v-html 渲染） */
   content: string
   color: StickyNoteColor
   /** true = 贴到主页（与旧「置顶」合并）；贴主页的便签以可拖拽卡片浮在主页画布 */
@@ -51,6 +52,9 @@ export interface StickyNote {
   /** 主页画布内位置（px，相对画布内容区左上角）；未定位过为 null */
   home_x: number | null
   home_y: number | null
+  /** 主页画布内尺寸（px）；未调整过为 null（默认 200×104） */
+  home_w: number | null
+  home_h: number | null
   created_at: number
   updated_at: number
 }
@@ -196,7 +200,8 @@ export const SERVICE_CHANNELS = {
     updateNote: 'to-service-StickyNotesService:updateNote',
     deleteNote: 'to-service-StickyNotesService:deleteNote',
     togglePin: 'to-service-StickyNotesService:togglePin',
-    setNotePosition: 'to-service-StickyNotesService:setNotePosition'
+    setNotePosition: 'to-service-StickyNotesService:setNotePosition',
+    setNoteSize: 'to-service-StickyNotesService:setNoteSize'
   }
 } as const
 
@@ -279,11 +284,14 @@ export interface ElectronAPI {
   }
   stickyNotes: {
     getNotes: () => Promise<StickyNote[]>
-    addNote: (content: string, color: StickyNoteColor) => Promise<number>
+    /** 新增便利贴；pinned=true 表示创建后即贴主页（默认 false） */
+    addNote: (content: string, color: StickyNoteColor, pinned?: boolean) => Promise<number>
     updateNote: (id: number, content: string, color: StickyNoteColor) => Promise<void>
     deleteNote: (id: number) => Promise<void>
     togglePin: (id: number) => Promise<void>
     /** 记录便利贴在主页画布上的位置（px） */
     setNotePosition: (id: number, x: number, y: number) => Promise<void>
+    /** 记录便利贴在主页画布上的尺寸（px） */
+    setNoteSize: (id: number, w: number, h: number) => Promise<void>
   }
 }

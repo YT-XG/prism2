@@ -29,7 +29,7 @@
           :style="cardDelay(index)"
           @click="openEdit(note)"
         >
-          <p class="note__content">{{ note.content }}</p>
+          <div class="note__content" v-html="note.content"></div>
           <div class="note__footer">
             <span v-if="note.pinned" class="note__pinned">
               <Pin :size="12" :stroke-width="1.75" /> 已置顶
@@ -56,42 +56,8 @@
       </TransitionGroup>
     </div>
 
-    <!-- 添加 / 编辑 -->
-    <UiDialog
-      :model-value="showDialog"
-      :title="editing ? '编辑便利贴' : '添加便利贴'"
-      @update:model-value="closeDialog"
-    >
-      <div class="form-group">
-        <label>内容</label>
-        <textarea
-          v-model="form.content"
-          class="form-textarea"
-          rows="5"
-          placeholder="写点什么…"
-        ></textarea>
-      </div>
-      <div class="form-group">
-        <label>颜色</label>
-        <div class="swatches">
-          <button
-            v-for="c in COLORS"
-            :key="c"
-            type="button"
-            class="swatch"
-            :class="[`swatch--${c}`, { 'is-active': form.color === c }]"
-            :title="c"
-            @click="form.color = c"
-          />
-        </div>
-      </div>
-      <template #footer>
-        <UiButton variant="ghost" @click="closeDialog">取消</UiButton>
-        <UiButton variant="primary" :disabled="!form.content" @click="save">
-          {{ editing ? '保存' : '添加' }}
-        </UiButton>
-      </template>
-    </UiDialog>
+    <!-- 添加 / 编辑：大编辑框（富文本） -->
+    <StickyNoteEditorDialog v-model="dialogOpen" :note="editing" @save="save" />
 
     <!-- 删除确认 -->
     <UiDialog
@@ -114,18 +80,16 @@ import { Plus, StickyNote as StickyNoteIcon, Pin, Trash2 } from '@lucide/vue'
 import UiButton from '@renderer/components/ui/UiButton.vue'
 import UiEmptyState from '@renderer/components/ui/UiEmptyState.vue'
 import UiDialog from '@renderer/components/ui/UiDialog.vue'
+import StickyNoteEditorDialog from '@renderer/components/StickyNoteEditorDialog.vue'
 import { useToast } from '@renderer/composables/useToast'
 import type { StickyNote, StickyNoteColor } from '@preload/ipc'
 
 const toast = useToast()
 
-/** 可选颜色（对应粉彩强调 token） */
-const COLORS: readonly StickyNoteColor[] = ['lavender', 'mint', 'yellow', 'blue', 'violet']
-
 const notes = ref<StickyNote[]>([])
-const showDialog = ref(false)
+/** 大编辑框开关 + 编辑目标（null = 新建） */
+const dialogOpen = ref(false)
 const editing = ref<StickyNote | null>(null)
-const form = ref<{ content: string; color: StickyNoteColor }>({ content: '', color: 'lavender' })
 const deleteTarget = ref<StickyNote | null>(null)
 const deleteConfirm = ref(false)
 
@@ -135,29 +99,21 @@ async function fetchNotes(): Promise<void> {
 
 function openAdd(): void {
   editing.value = null
-  form.value = { content: '', color: 'lavender' }
-  showDialog.value = true
+  dialogOpen.value = true
 }
 
 function openEdit(note: StickyNote): void {
   editing.value = note
-  form.value = { content: note.content, color: note.color }
-  showDialog.value = true
+  dialogOpen.value = true
 }
 
-function closeDialog(): void {
-  showDialog.value = false
-  editing.value = null
-}
-
-async function save(): Promise<void> {
-  if (!form.value.content) return
+async function save(payload: { content: string; color: StickyNoteColor }): Promise<void> {
   if (editing.value) {
-    await window.electronAPI.stickyNotes.updateNote(editing.value.id, form.value.content, form.value.color)
+    await window.electronAPI.stickyNotes.updateNote(editing.value.id, payload.content, payload.color)
   } else {
-    await window.electronAPI.stickyNotes.addNote(form.value.content, form.value.color)
+    await window.electronAPI.stickyNotes.addNote(payload.content, payload.color)
   }
-  closeDialog()
+  dialogOpen.value = false
   await fetchNotes()
   toast.success(editing.value ? '便利贴已更新' : '便利贴已添加')
 }
@@ -371,77 +327,6 @@ onMounted(() => {
 
 .note-move {
   transition: transform var(--duration-base) var(--ease-out-soft);
-}
-
-/* 表单 */
-.form-group {
-  margin-bottom: var(--sp-4);
-}
-
-.form-group label {
-  display: block;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--text-secondary);
-  margin-bottom: var(--sp-2);
-}
-
-.form-textarea {
-  width: 100%;
-  padding: var(--sp-2) var(--sp-3);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  font-size: 13px;
-  line-height: 1.5;
-  color: var(--text-primary);
-  background: var(--bg-surface);
-  outline: none;
-  resize: vertical;
-  min-height: 80px;
-}
-
-.form-textarea:focus {
-  border-color: var(--brand);
-  box-shadow: var(--ring);
-}
-
-.swatches {
-  display: flex;
-  gap: var(--sp-2);
-}
-
-.swatch {
-  width: 24px;
-  height: 24px;
-  border: 2px solid transparent;
-  border-radius: 50%;
-  cursor: pointer;
-  transition: transform 80ms var(--ease-out-soft), border-color var(--duration-fast) var(--ease-out-soft);
-}
-
-.swatch:hover {
-  transform: scale(1.1);
-}
-
-.swatch.is-active {
-  border-color: var(--brand);
-  box-shadow: var(--ring);
-}
-
-.swatch--lavender {
-  background: var(--accent-lavender);
-}
-.swatch--mint {
-  background: var(--accent-mint);
-}
-.swatch--yellow {
-  background: var(--accent-yellow);
-}
-.swatch--blue {
-  background: var(--accent-blue);
-}
-.swatch--violet {
-  background: var(--accent-violet);
 }
 
 .confirm-text {

@@ -7,7 +7,14 @@
         class="ui-dialog__overlay"
         @click.self="$emit('update:modelValue', false)"
       >
-        <div class="ui-dialog" role="dialog" aria-modal="true" :aria-label="title" tabindex="-1">
+        <div
+          class="ui-dialog"
+          :class="`ui-dialog--${size}`"
+          role="dialog"
+          aria-modal="true"
+          :aria-label="title"
+          tabindex="-1"
+        >
           <header v-if="title" class="ui-dialog__header">
             <h3>{{ title }}</h3>
           </header>
@@ -26,10 +33,15 @@
 <script setup lang="ts">
 import { ref, watch, nextTick, onBeforeUnmount } from 'vue'
 
-const props = defineProps<{
-  modelValue: boolean
-  title?: string
-}>()
+const props = withDefaults(
+  defineProps<{
+    modelValue: boolean
+    title?: string
+    /** 弹窗尺寸：md 默认 420px；lg 大编辑框 720px */
+    size?: 'md' | 'lg'
+  }>(),
+  { size: 'md' }
+)
 
 const emit = defineEmits<{
   (e: 'update:modelValue', value: boolean): void
@@ -107,6 +119,12 @@ onBeforeUnmount(() => {
   box-shadow: var(--shadow-lg);
   overflow: hidden;
   outline: none;
+}
+
+/* 大编辑框（富文本便利贴等） */
+.ui-dialog--lg {
+  width: 96%;
+  max-width: 720px;
 }
 
 .ui-dialog__header {

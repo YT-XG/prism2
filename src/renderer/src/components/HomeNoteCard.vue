@@ -2,13 +2,19 @@
   <div
     ref="el"
     class="home-note"
-    :class="[`note--${note.color}`, { 'is-dragging': dragging }]"
-    :style="{ left: `${x}px`, top: `${y}px`, zIndex: dragging ? 30 : 20 }"
+    :class="[`home-note--${note.color}`, { 'is-dragging': dragging }]"
+    :style="{
+      left: `${x}px`,
+      top: `${y}px`,
+      width: `${w}px`,
+      height: `${h}px`,
+      zIndex: dragging ? 30 : 20
+    }"
     role="button"
-    :title="note.content"
+    :title="stripHtml(note.content)"
     @pointerdown="startDrag"
   >
-    <p class="home-note__content">{{ note.content }}</p>
+    <div class="home-note__content" v-html="note.content"></div>
     <div class="home-note__footer">
       <span class="home-note__pinned"><Pin :size="11" :stroke-width="1.75" /> 已贴主页</span>
       <div class="home-note__actions" @pointerdown.stop @click.stop>
@@ -20,14 +26,28 @@
         </button>
       </div>
     </div>
+    <!-- 右下角缩放手柄 -->
+    <div
+      class="home-note__resize"
+      title="拖动以调整大小"
+      @pointerdown.stop.prevent="startResize"
+    ></div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onBeforeUnmount } from 'vue'
 import { Pin, Trash2 } from '@lucide/vue'
 import { useDrag } from '@renderer/composables/useDrag'
 import type { StickyNote } from '@preload/ipc'
+
+/** 便利贴默认尺寸与缩放钳制范围（px） */
+const DEFAULT_W = 200
+const DEFAULT_H = 104
+const MIN_W = 160
+const MIN_H = 96
+const MAX_W = 480
+const MAX_H = 360
 
 const props = defineProps<{
   note: StickyNote
@@ -38,13 +58,22 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  (e: 'copy', note: StickyNote): void
+  (e: 'edit', note: StickyNote): void
   (e: 'unpin', note: StickyNote): void
   (e: 'delete', note: StickyNote): void
   (e: 'drag-end', payload: { id: number; x: number; y: number }): void
+  (e: 'resize-end', payload: { id: number; w: number; h: number }): void
 }>()
 
+/** 去除 HTML 标签得到纯文本（提示条展示用） */
+function stripHtml(html: string): string {
+  return html.replace(/<[^>]*>/g, ' ')
+}
+
 const el = ref<HTMLElement | null>(null)
+/** 卡片尺寸（随缩放实时变化，松手持久化） */
+const w = ref(props.note.home_w ?? DEFAULT_W)
+const h = ref(props.note.home_h ?? DEFAULT_H)
 
 const { x, y, dragging, startDrag } = useDrag({
   container: props.canvas,
@@ -55,8 +84,48 @@ const { x, y, dragging, startDrag } = useDrag({
   }),
   onEnd: (pos, moved) => {
     if (moved) emit('drag-end', { id: props.note.id, x: pos.x, y: pos.y })
-    else emit('copy', props.note)
+    else emit('edit', props.note)
   }
+})
+
+// ---------------------------------------------------------------------------
+// 缩放：右下角手柄指针事件（独立于整卡拖拽，仿 useDrag 模式）
+// ---------------------------------------------------------------------------
+let resizeStartX = 0
+let resizeStartY = 0
+let startW = 0
+let startH = 0
+
+function onResizeMove(e: PointerEvent): void {
+  w.value = Math.min(MAX_W, Math.max(MIN_W, startW + (e.clientX - resizeStartX)))
+  h.value = Math.min(MAX_H, Math.max(MIN_H, startH + (e.clientY - resizeStartY)))
+}
+
+function onResizeUp(e: PointerEvent): void {
+  ;(e.target as Element | null)?.releasePointerCapture?.(e.pointerId)
+  window.removeEventListener('pointermove', onResizeMove)
+  window.removeEventListener('pointerup', onResizeUp)
+  emit('resize-end', {
+    id: props.note.id,
+    w: Math.round(w.value),
+    h: Math.round(h.value)
+  })
+}
+
+function startResize(e: PointerEvent): void {
+  if (e.button !== 0) return
+  e.preventDefault()
+  resizeStartX = e.clientX
+  resizeStartY = e.clientY
+  startW = w.value
+  startH = h.value
+  window.addEventListener('pointermove', onResizeMove)
+  window.addEventListener('pointerup', onResizeUp)
+}
+
+onBeforeUnmount(() => {
+  window.removeEventListener('pointermove', onResizeMove)
+  window.removeEventListener('pointerup', onResizeUp)
 })
 </script>
 
@@ -67,15 +136,13 @@ const { x, y, dragging, startDrag } = useDrag({
   flex-direction: column;
   justify-content: space-between;
   gap: var(--sp-3);
-  width: 200px;
-  min-height: 104px;
-  max-height: 180px;
   padding: var(--sp-3);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-sm);
   cursor: grab;
   user-select: none;
   touch-action: none;
+  overflow: hidden;
   transition: box-shadow var(--duration-fast) var(--ease-out-soft);
 }
 
@@ -169,5 +236,24 @@ const { x, y, dragging, startDrag } = useDrag({
 
 .home-note-btn--danger:hover {
   color: var(--danger);
+}
+
+/* 右下角缩放手柄（hover 时浮现） */
+.home-note__resize {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 14px;
+  height: 14px;
+  cursor: nwse-resize;
+  touch-action: none;
+  opacity: 0;
+  background: linear-gradient(135deg, transparent 50%, rgba(0, 0, 0, 0.35) 50%);
+  transition: opacity var(--duration-fast) var(--ease-out-soft);
+}
+
+.home-note:hover .home-note__resize,
+.home-note.is-dragging .home-note__resize {
+  opacity: 1;
 }
 </style>

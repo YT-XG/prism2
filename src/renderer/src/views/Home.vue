@@ -140,17 +140,18 @@
         </div>
       </div>
 
-      <!-- 贴到主页的便利贴（可拖拽定位） -->
+      <!-- 贴到主页的便利贴（可拖拽定位、可缩放尺寸） -->
       <HomeNoteCard
         v-for="(note, index) in pinnedNotes"
         :key="note.id"
         :note="note"
         :canvas="getCanvas"
         :fallback-pos="noteFallbackPos(index)"
-        @copy="copyNote"
+        @edit="editNote"
         @unpin="unpinNote"
         @delete="requestDeleteNote"
         @drag-end="persistNotePos"
+        @resize-end="persistNoteSize"
       />
     </section>
 
@@ -181,6 +182,9 @@
         <UiButton variant="danger" @click="confirmDelete">删除</UiButton>
       </template>
     </UiDialog>
+
+    <!-- 便利贴大编辑框（主页创建 / 点击编辑共用，富文本） -->
+    <StickyNoteEditorDialog v-model="noteDialog" :note="editingNote" @save="saveNote" />
   </div>
 </template>
 
@@ -205,11 +209,12 @@ import UiButton from '@renderer/components/ui/UiButton.vue'
 import UiInput from '@renderer/components/ui/UiInput.vue'
 import UiDialog from '@renderer/components/ui/UiDialog.vue'
 import HomeNoteCard from '@renderer/components/HomeNoteCard.vue'
+import StickyNoteEditorDialog from '@renderer/components/StickyNoteEditorDialog.vue'
 import { subscribeOnUnmounted } from '@renderer/composables/useIpcListener'
 import { useToast } from '@renderer/composables/useToast'
 import { useFeatureSearch } from '@renderer/composables/useFeatureSearch'
 import { useDrag } from '@renderer/composables/useDrag'
-import type { HistoryItem, FavoriteItem, StickyNote } from '@preload/ipc'
+import type { HistoryItem, FavoriteItem, StickyNote, StickyNoteColor } from '@preload/ipc'
 
 const router = useRouter()
 const toast = useToast()
@@ -217,6 +222,10 @@ const { open: openFeatureSearch } = useFeatureSearch()
 
 /** 合并记录框位置的 localStorage 键（纯渲染端布局偏好） */
 const BOX_POS_KEY = 'prism.home.recentBox'
+
+/** 新建便利贴默认尺寸（与 HomeNoteCard 默认一致，供避让计算用） */
+const NOTE_DEFAULT_W = 200
+const NOTE_DEFAULT_H = 104
 
 // ---------------------------------------------------------------------------
 // 画布 + 合并记录框（可拖拽）
@@ -302,6 +311,9 @@ const snippetRows = computed(() =>
 
 /** 贴到主页的便利贴 */
 const pinnedNotes = ref<StickyNote[]>([])
+/** 便利贴大编辑框：打开状态 + 编辑目标（null = 新建） */
+const noteDialog = ref(false)
+const editingNote = ref<StickyNote | null>(null)
 
 const deleteDialogTitle = computed(() =>
   deleteTarget.value?.kind === 'snippet'
@@ -316,7 +328,7 @@ const entries: Array<{ label: string; icon: Component; action: () => void }> = [
   {
     label: '便利贴',
     icon: StickyNoteIcon,
-    action: () => void router.push('/mainPage/notes')
+    action: openCreateNote
   },
   {
     label: '功能搜索',
@@ -439,9 +451,10 @@ async function fetchPinnedNotes(): Promise<void> {
   pinnedNotes.value = all.filter((n) => n.pinned)
 }
 
-async function copyNote(note: StickyNote): Promise<void> {
-  await window.electronAPI.clipboard.clickItem({ content: note.content, type: 'text' })
-  toast.success('已复制')
+/** 点击贴到主页的便利贴 → 打开大编辑框（不再"点击即粘贴"） */
+function editNote(note: StickyNote): void {
+  editingNote.value = note
+  noteDialog.value = true
 }
 
 async function unpinNote(note: StickyNote): Promise<void> {
@@ -457,6 +470,86 @@ function requestDeleteNote(note: StickyNote): void {
 
 async function persistNotePos(payload: { id: number; x: number; y: number }): Promise<void> {
   await window.electronAPI.stickyNotes.setNotePosition(payload.id, payload.x, payload.y)
+}
+
+async function persistNoteSize(payload: { id: number; w: number; h: number }): Promise<void> {
+  await window.electronAPI.stickyNotes.setNoteSize(payload.id, payload.w, payload.h)
+}
+
+/** 打开主页便利贴大编辑框（新建，创建后默认贴主页） */
+function openCreateNote(): void {
+  editingNote.value = null
+  noteDialog.value = true
+}
+
+/**
+ * 计算新建便利贴的落点：从画布右上角向右下扫描，
+ * 返回第一个既不与「最近记录框」相交、也不与现有已贴便利贴相交的位置。
+ */
+function nextNotePos(): { x: number; y: number } {
+  const canvas = canvasRef.value
+  const cw = canvas?.clientWidth ?? 400
+  const ch = canvas?.clientHeight ?? 400
+  const boxRect = boxEl.value
+    ? {
+        left: boxX.value,
+        top: boxY.value,
+        right: boxX.value + (boxEl.value.offsetWidth || 560),
+        bottom: boxY.value + (boxEl.value.offsetHeight || 360)
+      }
+    : null
+  const noteRects = pinnedNotes.value.map((n, i) => {
+    const nx = n.home_x ?? noteFallbackPos(i).x
+    const ny = n.home_y ?? noteFallbackPos(i).y
+    const nw = n.home_w ?? NOTE_DEFAULT_W
+    const nh = n.home_h ?? NOTE_DEFAULT_H
+    return { left: nx, top: ny, right: nx + nw, bottom: ny + nh }
+  })
+  const overlaps = (r: { left: number; top: number; right: number; bottom: number }): boolean =>
+    (boxRect !== null &&
+      r.left < boxRect.right &&
+      r.right > boxRect.left &&
+      r.top < boxRect.bottom &&
+      r.bottom > boxRect.top) ||
+    noteRects.some(
+      (o) => r.left < o.right && r.right > o.left && r.top < o.bottom && r.bottom > o.top
+    )
+  const COL_W = 216
+  const ROW_H = 40
+  for (let col = 0; col < 6; col++) {
+    const x = Math.max(0, cw - NOTE_DEFAULT_W - 8 - col * COL_W)
+    if (x < 0) break
+    for (let row = 0; row < 14; row++) {
+      const y = 8 + row * ROW_H
+      if (y + NOTE_DEFAULT_H > ch + 200) break
+      const rect = {
+        left: x,
+        top: y,
+        right: x + NOTE_DEFAULT_W,
+        bottom: y + NOTE_DEFAULT_H
+      }
+      if (!overlaps(rect)) return { x, y }
+    }
+  }
+  return { x: Math.max(0, cw - NOTE_DEFAULT_W - 8), y: 8 }
+}
+
+/** 保存便利贴：编辑则更新；新建则创建即贴主页，并持久化避让后的位置 */
+async function saveNote(payload: { content: string; color: StickyNoteColor }): Promise<void> {
+  const target = editingNote.value
+  if (target) {
+    await window.electronAPI.stickyNotes.updateNote(target.id, payload.content, payload.color)
+    noteDialog.value = false
+    await fetchPinnedNotes()
+    toast.success('便利贴已更新')
+    return
+  }
+  const pos = nextNotePos()
+  const id = await window.electronAPI.stickyNotes.addNote(payload.content, payload.color, true)
+  await window.electronAPI.stickyNotes.setNotePosition(id, pos.x, pos.y)
+  noteDialog.value = false
+  await fetchPinnedNotes()
+  toast.success('便利贴已添加')
 }
 
 // ---------------------------------------------------------------------------

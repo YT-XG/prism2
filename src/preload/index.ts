@@ -102,14 +102,16 @@ const electronAPI: ElectronAPI = {
 
   stickyNotes: {
     getNotes: () => ipcRenderer.invoke(N.getNotes) as Promise<StickyNote[]>,
-    addNote: (content: string, color: StickyNoteColor) =>
-      ipcRenderer.invoke(N.addNote, content, color) as Promise<number>,
+    addNote: (content: string, color: StickyNoteColor, pinned?: boolean) =>
+      ipcRenderer.invoke(N.addNote, content, color, pinned) as Promise<number>,
     updateNote: (id: number, content: string, color: StickyNoteColor) =>
       ipcRenderer.invoke(N.updateNote, id, content, color) as Promise<void>,
     deleteNote: (id: number) => ipcRenderer.invoke(N.deleteNote, id) as Promise<void>,
     togglePin: (id: number) => ipcRenderer.invoke(N.togglePin, id) as Promise<void>,
     setNotePosition: (id: number, x: number, y: number) =>
       ipcRenderer.invoke(N.setNotePosition, id, x, y) as Promise<void>,
+    setNoteSize: (id: number, w: number, h: number) =>
+      ipcRenderer.invoke(N.setNoteSize, id, w, h) as Promise<void>,
   }
 }
 

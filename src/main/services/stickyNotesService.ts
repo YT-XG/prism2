@@ -38,17 +38,25 @@ class StickyNotesService extends SqliteStore {
          pinned INTEGER NOT NULL DEFAULT 0,
          home_x INTEGER,
          home_y INTEGER,
+         home_w INTEGER,
+         home_h INTEGER,
          created_at INTEGER NOT NULL,
          updated_at INTEGER NOT NULL
        )`
     )
-    // 旧库迁移：补充 home_x/home_y 列（贴主页拖拽位置，未定位过为 NULL）
+    // 旧库迁移：补充 home_x/home_y（贴主页拖拽位置）与 home_w/home_h（尺寸）列，未设置过为 NULL
     const columns = this.all<{ name: string }>('PRAGMA table_info(sticky_notes)')
     if (!columns.some((c) => c.name === 'home_x')) {
       this.run('ALTER TABLE sticky_notes ADD COLUMN home_x INTEGER')
     }
     if (!columns.some((c) => c.name === 'home_y')) {
       this.run('ALTER TABLE sticky_notes ADD COLUMN home_y INTEGER')
+    }
+    if (!columns.some((c) => c.name === 'home_w')) {
+      this.run('ALTER TABLE sticky_notes ADD COLUMN home_w INTEGER')
+    }
+    if (!columns.some((c) => c.name === 'home_h')) {
+      this.run('ALTER TABLE sticky_notes ADD COLUMN home_h INTEGER')
     }
 
     this.run('CREATE INDEX IF NOT EXISTS idx_notes_pin_created ON sticky_notes(pinned DESC, created_at DESC)')
@@ -67,11 +75,11 @@ class StickyNotesService extends SqliteStore {
     return this.all<StickyNote>('SELECT * FROM sticky_notes ORDER BY pinned DESC, created_at DESC')
   }
 
-  add(content: string, color: unknown): number {
+  add(content: string, color: unknown, pinned?: unknown): number {
     const now = Date.now()
     this.run(
-      'INSERT INTO sticky_notes (content, color, pinned, created_at, updated_at) VALUES (?, ?, 0, ?, ?)',
-      [content, normalizeColor(color), now, now]
+      'INSERT INTO sticky_notes (content, color, pinned, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
+      [content, normalizeColor(color), pinned ? 1 : 0, now, now]
     )
     this.save()
     return this.lastInsertId()
@@ -114,12 +122,25 @@ class StickyNotesService extends SqliteStore {
     this.save()
   }
 
+  /** 记录便利贴在主页画布上的尺寸（钳制非负整数） */
+  setSize(id: number, w: number, h: number): void {
+    const pw = Number.isFinite(w) ? Math.max(0, Math.floor(w)) : 0
+    const ph = Number.isFinite(h) ? Math.max(0, Math.floor(h)) : 0
+    this.run('UPDATE sticky_notes SET home_w = ?, home_h = ?, updated_at = ? WHERE id = ?', [
+      pw,
+      ph,
+      Date.now(),
+      id
+    ])
+    this.save()
+  }
+
   private registerIPC(): void {
     const N = SERVICE_CHANNELS.stickyNotes
 
     ipcMain.handle(N.getNotes, () => this.getAll())
-    ipcMain.handle(N.addNote, (_e, content: string, color?: string) =>
-      this.add(String(content ?? ''), color)
+    ipcMain.handle(N.addNote, (_e, content: string, color?: string, pinned?: boolean) =>
+      this.add(String(content ?? ''), color, pinned)
     )
     ipcMain.handle(N.updateNote, (_e, id: number, content: string, color?: string) =>
       this.update(Number(id), String(content ?? ''), color)
@@ -128,6 +149,9 @@ class StickyNotesService extends SqliteStore {
     ipcMain.handle(N.togglePin, (_e, id: number) => this.togglePin(Number(id)))
     ipcMain.handle(N.setNotePosition, (_e, id: number, x: number, y: number) =>
       this.setPosition(Number(id), Number(x), Number(y))
+    )
+    ipcMain.handle(N.setNoteSize, (_e, id: number, w: number, h: number) =>
+      this.setSize(Number(id), Number(w), Number(h))
     )
   }
 }
