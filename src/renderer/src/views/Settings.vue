@@ -335,7 +335,10 @@ async function uninstallLegacy(): Promise<void> {
   try {
     const r = await window.electronAPI.legacyCleanup.uninstall()
     if (r.ok) {
-      toast.success(r.launched ? '已启动旧版卸载，完成后可重新检测确认' : '旧版已移入废纸篓')
+      const extra = r.residue?.length ? `，已清理 ${r.residue.length} 处系统残留` : ''
+      toast.success(
+        (r.launched ? '已启动旧版卸载' : '旧版已移入废纸篓') + extra + '，完成后可重新检测确认'
+      )
     } else {
       toast.error(`卸载失败：${r.error ?? '未知错误'}`)
     }

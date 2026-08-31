@@ -1,5 +1,6 @@
 appId: com.prism.next
-productName: Prism
+# 打包名与 v1（productName: Prism）区分，避免安装目录/自启项/userData 目录（%APPDATA%\Prism 2）与 v1 冲突
+productName: Prism 2
 directories:
   output: dist
 files:
@@ -24,6 +25,8 @@ publish:
 win:
   target: nsis
   icon: build/icon.ico
+  # 可执行文件名用 prism2（productName 含空格，不直接用做 exe 名），与 v1 的 prism.exe 区分
+  executableName: prism2
 nsis:
   installerIcon: build/icon.ico
   uninstallerIcon: build/icon.ico

@@ -10,7 +10,7 @@
  *   且仅接受旧版数据目录内的路径（安全边界，拒绝候选目录之外/相对路径）。
  */
 import { app, ipcMain, shell } from 'electron'
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs'
 import { basename, dirname, join, resolve, sep } from 'node:path'
 import { exec, spawn } from 'node:child_process'
 import { promisify } from 'node:util'
@@ -28,6 +28,13 @@ const execAsync = promisify(exec)
 
 /** 旧版应用名（v1 userData 目录名候选：打包版大写 Prism、开发模式小写 prism） */
 const LEGACY_DIR_NAMES = ['Prism', 'prism'] as const
+
+/** Windows 开机自启注册表键（v1 由 app.setLoginItemSettings 写入 Run 值） */
+const WIN_RUN_KEY = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run'
+/** Windows 右键菜单集成注册表键（v1 shellIntegrationService 写入） */
+const WIN_SHELL_KEY = 'HKCU\\Software\\Classes\\*\\shell\\ShareWithPrism'
+/** macOS 右键菜单集成工作流（v1 shellIntegrationService 写入） */
+const MAC_SERVICES_WORKFLOW_NAME = '分享到妙妙屋.workflow'
 
 /** 解析注册表 UninstallString：剥离引号得到 exe 路径与其余参数 */
 interface UninstallCommand {
@@ -229,6 +236,74 @@ class LegacyCleanupService {
     return { install: await this.#detectInstall(), dataDirs: this.#scanDataDirs() }
   }
 
+  /** 卸载旧版前清理 v1 运行时写入系统的残留（win 自启 + 右键菜单；mac 右键菜单），返回已清理项 */
+  async #cleanupWindowsResidue(installPath: string): Promise<string[]> {
+    const cleaned: string[] = []
+    // 开机自启：删除 Run 下指向旧安装目录的值（按路径匹配，避免误删 v2 自身同名启动项）
+    cleaned.push(...(await this.#cleanupWinAutoStart(installPath)))
+    // 右键菜单集成
+    if (await this.#removeWinShellIntegration()) cleaned.push(WIN_SHELL_KEY)
+    if (cleaned.length) log.info('[LegacyCleanup] 已清理旧版系统残留:', cleaned.join('；'))
+    return cleaned
+  }
+
+  /** Windows：枚举 Run 值并删除指向旧安装目录的启动项，返回已删值名 */
+  async #cleanupWinAutoStart(installPath: string): Promise<string[]> {
+    const removed: string[] = []
+    const needle = installPath.toLowerCase()
+    try {
+      const { stdout } = await execAsync(`REG QUERY "${WIN_RUN_KEY}"`, { windowsHide: true })
+      // 值行形如：    Prism    REG_SZ    "C:\Program Files\Prism\prism.exe"
+      for (const line of stdout.split(/\r?\n/)) {
+        const m = line.match(/^\s*(\S+)\s+REG_\w+\s+(.+)$/)
+        if (!m) continue
+        const [, name, data] = m
+        if (data.toLowerCase().includes(needle)) {
+          await execAsync(`REG DELETE "${WIN_RUN_KEY}" /v "${name}" /f`, {
+            windowsHide: true
+          }).catch(() => {
+            log.warn('[LegacyCleanup] 删除自启项失败:', name)
+          })
+          removed.push(`Run\\${name}`)
+        }
+      }
+    } catch {
+      // Run 键不存在时忽略
+    }
+    return removed
+  }
+
+  /** Windows：删除旧版右键菜单集成注册表键，返回是否删除成功（键不存在也视为无需清理） */
+  async #removeWinShellIntegration(): Promise<boolean> {
+    try {
+      await execAsync(`REG QUERY "${WIN_SHELL_KEY}"`, { windowsHide: true })
+    } catch {
+      return false
+    }
+    try {
+      await execAsync(`REG DELETE "${WIN_SHELL_KEY}" /f`, { windowsHide: true })
+      return true
+    } catch (err) {
+      log.warn('[LegacyCleanup] 删除右键菜单集成失败:', err)
+      return false
+    }
+  }
+
+  /** macOS：删除旧版 Services 右键工作流（best-effort，登录项无法经 Electron API 移除） */
+  #cleanupMacResidue(): string[] {
+    const cleaned: string[] = []
+    const workflow = join(app.getPath('home'), 'Library', 'Services', MAC_SERVICES_WORKFLOW_NAME)
+    if (existsSync(workflow)) {
+      try {
+        rmSync(workflow, { recursive: true, force: true })
+        cleaned.push(workflow)
+      } catch (err) {
+        log.warn('[LegacyCleanup] 删除 macOS Services 工作流失败:', err)
+      }
+    }
+    return cleaned
+  }
+
   /** 卸载旧版本（win 静默卸载器 /S；mac 移入废纸篓） */
   async uninstall(): Promise<LegacyCleanupResult> {
     const info = await this.#detectInstall()
@@ -237,6 +312,8 @@ class LegacyCleanupService {
     }
     if (process.platform === 'win32') {
       if (!this.#winUninstall) return { ok: false, error: '未找到旧版卸载器' }
+      // 先清理运行期残留（卸载器不处理这些运行时写入的注册表项）
+      const residue = await this.#cleanupWindowsResidue(info.installPath)
       const { exe, args } = this.#winUninstall
       try {
         const child = spawn(exe, [...args, '/S'], {
@@ -246,18 +323,19 @@ class LegacyCleanupService {
         })
         child.unref()
         log.info('[LegacyCleanup] 已启动旧版静默卸载:', exe)
-        return { ok: true, launched: true }
+        return { ok: true, launched: true, residue: residue.length ? residue : undefined }
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err)
         log.error('[LegacyCleanup] 启动卸载器失败:', message)
-        return { ok: false, error: message }
+        return { ok: false, error: message, residue: residue.length ? residue : undefined }
       }
     }
     if (process.platform === 'darwin') {
+      const residue = this.#cleanupMacResidue()
       try {
         await shell.trashItem(info.installPath)
         log.info('[LegacyCleanup] 旧版已移入废纸篓:', info.installPath)
-        return { ok: true, trashed: [info.installPath] }
+        return { ok: true, trashed: [info.installPath], residue: residue.length ? residue : undefined }
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err)
         log.error('[LegacyCleanup] 移入废纸篓失败:', message)

@@ -238,6 +238,8 @@ export interface LegacyCleanupResult {
   launched?: boolean
   /** mac 卸载或删数据：已移入回收站的路径 */
   trashed?: string[]
+  /** 卸载时额外清理的 v1 运行期系统残留（开机自启项/右键菜单等），供 UI 提示 */
+  residue?: string[]
   error?: string
 }
 

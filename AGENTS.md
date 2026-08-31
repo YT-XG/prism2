@@ -36,7 +36,7 @@ src/
 │   │   ├── inputService.ts       # 模拟粘贴（平台分支）
 │   │   ├── updateService.ts      # 应用更新（electron-updater + GitHub provider，dev 返回提示）
 │   │   ├── legacyImportService.ts # 旧版 v1 剪贴板数据一键导入（读 v1 userData/Prism/clipboard.db 合并）
-│   │   ├── legacyCleanupService.ts # 旧版 v1 安装检测/静默卸载/旧数据选择性删除（注册表 + NSIS /S / shell.trashItem）
+│   │   ├── legacyCleanupService.ts # 旧版 v1 安装检测/静默卸载/旧数据选择性删除 + 运行期系统残留清理（注册表 + NSIS /S / shell.trashItem）
 │   │   └── trayService.ts
 │   └── utils/platform.ts         # broadcast()
 │   └── utils/windowState.ts      # 主窗口尺寸/最大化状态持久化（userData/window-state.json）
@@ -71,9 +71,9 @@ dev-app-update.yml                # 开发模式 electron-updater 配置（打�
 ## 与旧仓库的隔离
 
 - 独立 git 仓库（父仓库已 ignore `prism2/`）。
-- `package.json` name = `prism2`，userData 与旧版（`Prism`）不同，互不干扰数据/全局快捷键/托盘。
+- 命名隔离：`package.json` name = `prism2`（dev userData = `%APPDATA%\prism2`），打包 `productName` = `Prism 2`、exe = `prism2.exe`（打包 userData = `%APPDATA%\Prism 2`），与 v1（`Prism` / `prism.exe` / `%APPDATA%\Prism`）在安装目录、自启项、数据目录上全部错开，互不干扰。
 - 旧版数据迁移：应用内 `legacyImportService`（主页横幅一键导入）已承接，`scripts/import-legacy-db.mjs` 作为 CLI 兜底保留。
-- 旧版共存处理：`legacyCleanupService`（设置页「旧版本」+ 启动弹窗）检测 v1 安装 → 可选静默卸载 / 选择性删除旧数据（移入回收站，安全边界校验路径）。
+- 旧版共存处理：`legacyCleanupService`（设置页「旧版本」+ 启动弹窗）检测 v1 安装 → 可选静默卸载 / 选择性删除旧数据（移入回收站，安全边界校验路径）；卸载前按旧安装目录路径清理 v1 运行期系统残留（win 自启项 Run 值 + ShareWithPrism 右键菜单，mac Services 工作流，登录项受系统限制 best-effort）。
 
 ## 更新与发版
 

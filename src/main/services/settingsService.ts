@@ -86,12 +86,13 @@ class SettingsService {
   /**
    * 应用开机自启动设置
    * @description 调用 Electron 的 app.setLoginItemSettings 写入系统登录启动项。
-   * name 为 Windows 注册表启动项值名（默认 AppUserModelId），设为 'Prism' 便于用户识别。
+   * name 为 Windows 注册表启动项值名（默认 AppUserModelId），设为 'Prism 2' 与 v1（'Prism'）区分，
+   * 避免两代应用共用一个自启项值名导致互相覆盖。
    */
   #applyAutoStart(): void {
     app.setLoginItemSettings({
       openAtLogin: this.settings.autoStart,
-      name: 'Prism'
+      name: 'Prism 2'
     })
     log.info('[SettingsService] 开机自启:', this.settings.autoStart ? '已开启' : '已关闭')
   }
