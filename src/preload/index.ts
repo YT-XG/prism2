@@ -19,19 +19,22 @@ import type {
   LegacyImportResult,
   LegacyImportState,
   MainWindowEvent,
+  NotificationItem,
+  NotificationNewPayload,
   SetPagePayload,
   StickyNote,
   StickyNoteColor,
   UpdateStatusInfo
 } from './ipc'
 
-const { mainPage, baseFrame } = WINDOW_CHANNELS
+const { mainPage, baseFrame, notificationPopup } = WINDOW_CHANNELS
 const C = SERVICE_CHANNELS.clipboard
 const S = SERVICE_CHANNELS.settings
 const N = SERVICE_CHANNELS.stickyNotes
 const U = SERVICE_CHANNELS.update
 const L = SERVICE_CHANNELS.legacyImport
 const LC = SERVICE_CHANNELS.legacyCleanup
+const NT = SERVICE_CHANNELS.notification
 
 /** 供 vm 上下文判定的渲染进程受控 flag（可选） */
 function subscribe(channel: string, cb: (...args: unknown[]) => void): () => void {
@@ -65,7 +68,14 @@ const electronAPI: ElectronAPI = {
     ),
 
     onMaximizeState: (cb: (maximized: boolean) => void) =>
-      subscribe(mainPage.toRenderer.maximizeState, (m) => cb(Boolean(m)))
+      subscribe(mainPage.toRenderer.maximizeState, (m) => cb(Boolean(m))),
+
+    showPage: (page: string) => ipcRenderer.send(mainPage.toMain.showPage, page),
+
+    notificationPopupResize: (height: number) =>
+      ipcRenderer.send(notificationPopup.toMain.resize, height),
+
+    notificationPopupHide: () => ipcRenderer.send(notificationPopup.toMain.hide)
   },
 
   settings: {
@@ -141,6 +151,16 @@ const electronAPI: ElectronAPI = {
     uninstall: () => ipcRenderer.invoke(LC.uninstall) as Promise<LegacyCleanupResult>,
     deleteData: (paths: string[]) =>
       ipcRenderer.invoke(LC.deleteData, paths) as Promise<LegacyCleanupResult>
+  },
+
+  notification: {
+    getList: () => ipcRenderer.invoke(NT.getList) as Promise<NotificationItem[]>,
+    getUnread: () => ipcRenderer.invoke(NT.getUnread) as Promise<number>,
+    markRead: (id: number) => ipcRenderer.invoke(NT.markRead, id) as Promise<void>,
+    markAllRead: () => ipcRenderer.invoke(NT.markAllRead) as Promise<void>,
+    clear: () => ipcRenderer.invoke(NT.clear) as Promise<void>,
+    onNew: (cb: (payload: NotificationNewPayload) => void) =>
+      subscribe(BROADCAST.notificationNew, (p) => cb(p as NotificationNewPayload))
   }
 }
 

@@ -1,11 +1,11 @@
 <template>
   <div
     class="app-shell"
-    :class="{ 'is-exiting': exiting }"
+    :class="{ 'is-exiting': exiting, 'is-popup': isPopup }"
     ref="shellRef"
     @animationend="onAnimationEnd"
   >
-    <header v-if="!isQuickPaste" class="titlebar drag-region">
+    <header v-if="!isStandalone" class="titlebar drag-region">
       <div class="titlebar-brand">
         <span class="brand-dot" :class="{ 'has-update': hasUpdate }"></span>
         <span class="titlebar-title">
@@ -77,8 +77,8 @@
       </Transition>
     </main>
 
-    <!-- 功能搜索命令面板：仅主界面可见（快捷粘贴小窗不挂载） -->
-    <FeatureSearchPanel v-if="!isQuickPaste" />
+    <!-- 功能搜索命令面板：仅主界面（快捷粘贴/通知浮窗小窗不挂载） -->
+    <FeatureSearchPanel v-if="!isStandalone" />
 
     <UiToast />
   </div>
@@ -151,6 +151,10 @@ function onDocPointerDown(e: PointerEvent): void {
 
 /** 快捷粘贴窗口：无标题栏的轻量视图 */
 const isQuickPaste = computed(() => route.path.startsWith('/quickPaste'))
+/** 通知浮窗：透明小窗，只显示通知卡片栈 */
+const isPopup = computed(() => route.path.startsWith('/notificationPopup'))
+/** 独立小窗（快捷粘贴/通知浮窗）：隐藏标题栏与主界面专属面板 */
+const isStandalone = computed(() => isQuickPaste.value || isPopup.value)
 
 /** Ctrl+K / Cmd+K：呼出/关闭功能搜索命令面板；Esc：关闭主页显示面板 */
 function onGlobalKeydown(e: KeyboardEvent): void {
@@ -178,6 +182,12 @@ function playExit(): void {
   if (!el || exiting.value) return
   exiting.value = true
   el.classList.add('page-exit')
+  // 兜底：部分环境（透明窗口合成异常 / 系统关闭动画 / 动画被中断）下 animationend 可能不触发，
+  // 此时窗口停在"已淡出但未隐藏"态，主进程 isVisible() 恒为 true，托盘将永远无法再唤起窗口。
+  // 超时后强制走一次隐藏流程，保证窗口最终进入隐藏态、下次托盘点击能正常显示。
+  window.setTimeout(() => {
+    if (exiting.value) window.electronAPI.window.hideAfterAnimation()
+  }, 400)
 }
 
 function onAnimationEnd(e: AnimationEvent): void {
@@ -273,6 +283,21 @@ onBeforeUnmount(() => {
 .app-shell.is-exiting {
   animation: page-exit var(--duration-base) var(--ease-out-soft) forwards;
   pointer-events: none;
+}
+
+/* 通知浮窗：透明背景、去边框圆角阴影，让窗口只显示卡片本身；高度随内容由主进程缩放 */
+.app-shell.is-popup {
+  height: auto;
+  display: block;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  overflow: visible;
+}
+
+.app-shell.is-popup .app-content {
+  overflow: visible;
 }
 
 .titlebar {

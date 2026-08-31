@@ -1,6 +1,6 @@
 {
   "name": "prism2",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "description": "Prism v2 - 桌面效率工具（剪贴板/翻译/搜索，全新架构与设计系统）",
   "main": "./out/main/index.js",
   "author": "ytxg.com",

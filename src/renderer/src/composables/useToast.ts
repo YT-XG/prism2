@@ -1,6 +1,6 @@
 import { ref } from 'vue'
 
-export type ToastType = 'success' | 'error' | 'info'
+export type ToastType = 'success' | 'error' | 'info' | 'warning'
 
 export interface ToastItem {
   id: number
@@ -17,6 +17,7 @@ let nextId = 1
 const DURATION: Record<ToastType, number> = {
   success: 3000,
   info: 3000,
+  warning: 3500,
   error: 4500
 }
 

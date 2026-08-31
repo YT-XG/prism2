@@ -6,7 +6,7 @@
 
 ## 产品
 
-桌面效率工具集（剪贴板管理、翻译、Markdown 预览、多线程下载、局域网互传、全局搜索、JSON 工具、Claude Code 监控通知）。当前进度：**骨架 + 剪贴板 + 主页/便利贴/功能搜索**已落地。
+桌面效率工具集（剪贴板管理、翻译、Markdown 预览、多线程下载、局域网互传、全局搜索、JSON 工具、Claude Code 监控通知）。当前进度：**骨架 + 剪贴板 + 主页/便利贴/功能搜索 + 通知中心**已落地。
 
 ## 技术栈（创建时锁定，见 ../docs/prism2/migration-roadmap.md 的版本决策）
 
@@ -27,7 +27,7 @@ npm run build        # typecheck 后构建
 src/
 ├── main/                         # 主进程
 │   ├── index.ts                  # 入口：单实例、生命周期、服务初始化、托盘
-│   ├── frame/                    # BaseFrame v2 + WindowFactory + MainPageFrame + QuickPasteFrame
+│   ├── frame/                    # BaseFrame v2 + WindowFactory + MainPageFrame + QuickPasteFrame + NotificationFrame（自绘通知浮窗）
 │   ├── services/                 # services/ 复数；模块级单例 + 构造器注册 IPC
 │   │   ├── db/sqliteDatabase.ts  # SQLite 公共基类（init/save/run/all/one）
 │   │   ├── settingsService.ts
@@ -37,6 +37,7 @@ src/
 │   │   ├── updateService.ts      # 应用更新（electron-updater + GitHub provider，dev 返回提示）
 │   │   ├── legacyImportService.ts # 旧版 v1 剪贴板数据一键导入（读 v1 userData/Prism/clipboard.db 合并）
 │   │   ├── legacyCleanupService.ts # 旧版 v1 安装检测/静默卸载/旧数据选择性删除 + 运行期系统残留清理（注册表 + NSIS /S / shell.trashItem）
+│   │   ├── notificationService.ts # 通知中心（持久化通知 + 自绘通知浮窗统一呈现，不依赖系统通知）
 │   │   └── trayService.ts
 │   └── utils/platform.ts         # broadcast()
 │   └── utils/windowState.ts      # 主窗口尺寸/最大化状态持久化（userData/window-state.json）
@@ -51,8 +52,8 @@ src/
     ├── components/HomeNoteCard.vue        # 贴到主页的便利贴可拖拽卡片
     ├── components/StickyNoteEditorDialog.vue # 便利贴大编辑框（富文本 + 颜色，主页/便利贴页共用）
     ├── components/SnippetEditorDialog.vue # 片段添加/编辑弹窗（剪贴板页/主页共用）
-    ├── composables/useIpcListener.ts  useToast.ts  useTheme.ts  useFeatureSearch.ts  useDrag.ts  useHomeModules.ts
-    ├── views/                    # MainPage / Home / ClipboardManager / StickyNotes / QuickPaste / Settings
+    ├── composables/useIpcListener.ts  useToast.ts  useTheme.ts  useFeatureSearch.ts  useDrag.ts  useHomeModules.ts  useNotifications.ts  useNotificationPopups.ts
+    ├── views/                    # MainPage / Home / ClipboardManager / StickyNotes / Notifications / NotificationPopup（自绘通知浮窗页） / QuickPaste / Settings
     └── router/  types.d.ts
 scripts/import-legacy-db.mjs      # 旧剪贴板数据一次性导入（已由应用内 legacyImportService 承接）
 .github/workflows/release.yml     # 打 v* tag 时三平台自动打包并发 GitHub Release
@@ -92,6 +93,7 @@ dev-app-update.yml                # 开发模式 electron-updater 配置（打�
 | 便利贴（本地便签，增删改 + 富文本大编辑框 + 贴到主页可拖拽定位/自由缩放 + 主页点击编辑/一键创建默认贴主页） | ✅ |
 | 功能搜索（命令面板，Ctrl/Cmd+K） | ✅ |
 | 自动更新（electron-updater + GitHub CI 自动发版 + 设置页检查更新 + 启动静默检查与标题栏「有新版本」提示） | ✅（接入就绪，待建仓库替换占位地址后实际发版） |
+| 通知中心（持久化历史 + 未读/已读 + 自绘通知浮窗统一呈现（主窗口隐藏与否都弹，可承载链接/翻译等操作，不依赖系统通知）；剪贴板复制仅浮窗提醒不入中心，其余来源（更新等）落库 + 托盘未读 tooltip） | ✅ |
 | 旧版数据引导导入（主页横幅一键合并 v1 剪贴板数据） | ✅ |
 | 旧版本（v1）检测 / 卸载 / 旧数据选择性清理（启动弹窗 + 设置页） | ✅ |
 | 翻译、Markdown 预览、下载、文件互传、弹窗族、OCR | ⬜ 见 ../docs/prism2/migration-roadmap.md |

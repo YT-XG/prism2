@@ -53,6 +53,52 @@
       </section>
 
       <section class="setting-group">
+        <h3 class="group-title">通知</h3>
+        <div class="setting-row">
+          <div class="row-info">
+            <div class="row-name">通知中心</div>
+            <div class="row-desc">总开关：关闭后不再记录与提醒任何通知</div>
+          </div>
+          <button
+            class="switch"
+            :class="{ 'is-on': settings.notificationsEnabled }"
+            type="button"
+            @click="toggle('notificationsEnabled')"
+          >
+            <span class="switch-knob"></span>
+          </button>
+        </div>
+        <div class="setting-row">
+          <div class="row-info">
+            <div class="row-name">剪贴板新内容</div>
+            <div class="row-desc">复制新内容时右下角浮窗提醒（不入通知中心，剪贴板历史已有记录）</div>
+          </div>
+          <button
+            class="switch"
+            :class="{ 'is-on': settings.notifyClipboard }"
+            type="button"
+            @click="toggle('notifyClipboard')"
+          >
+            <span class="switch-knob"></span>
+          </button>
+        </div>
+        <div class="setting-row">
+          <div class="row-info">
+            <div class="row-name">更新通知</div>
+            <div class="row-desc">发现新版本 / 更新完成 / 检查失败时提醒</div>
+          </div>
+          <button
+            class="switch"
+            :class="{ 'is-on': settings.notifyUpdate }"
+            type="button"
+            @click="toggle('notifyUpdate')"
+          >
+            <span class="switch-knob"></span>
+          </button>
+        </div>
+      </section>
+
+      <section class="setting-group">
         <h3 class="group-title">数据备份</h3>
         <div class="setting-row">
           <div class="row-info">
@@ -200,11 +246,17 @@ const settings = ref<AppSettings>({
   clipboardRetentionValue: 1,
   clipboardAutoClean: true,
   clipboardRetentionUnit: 'month',
+  notificationsEnabled: true,
+  notifyClipboard: true,
+  notifyUpdate: true,
   // 主题从当前 DOM 即时取（App 已同步），避免进入设置页等待 settings.get() 期间误显示「浅色」被选中
   theme: (document.documentElement.dataset.theme ?? 'light') as AppSettings['theme']
 })
 
-async function toggle(key: 'autoStart'): Promise<void> {
+/** 布尔型开关设置键（通用/通知分组内的 switch） */
+type ToggleKey = 'autoStart' | 'notificationsEnabled' | 'notifyClipboard' | 'notifyUpdate'
+
+async function toggle(key: ToggleKey): Promise<void> {
   const next = !settings.value[key]
   settings.value[key] = next
   await window.electronAPI.settings.update({ [key]: next })

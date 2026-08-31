@@ -11,6 +11,7 @@ import { app, ipcMain } from 'electron'
 import log from 'electron-log'
 import { autoUpdater } from 'electron-updater'
 import { broadcast } from '../utils/platform'
+import { notificationService } from './notificationService'
 import { BROADCAST, SERVICE_CHANNELS } from '@preload/ipc'
 import type { UpdateStatusInfo } from '@preload/ipc'
 
@@ -93,6 +94,13 @@ class UpdateService {
         version: info.version,
         releaseDate: info.releaseDate
       })
+      // 通知：发现新版本（受「通知中心 / 更新通知」开关控制）
+      notificationService.notify({
+        type: 'info',
+        source: 'update',
+        title: '发现新版本',
+        message: `v${info.version} 已发布，正在后台下载…`
+      })
     })
     autoUpdater.on('update-not-available', () => {
       this.#setStatus({ status: 'up-to-date' })
@@ -112,10 +120,24 @@ class UpdateService {
         // electron-updater 的 releaseNotes 可能是数组（分平台 ReleaseNoteInfo[]），只取字符串形式
         releaseNotes: typeof info.releaseNotes === 'string' ? info.releaseNotes : undefined
       })
+      // 通知：更新已就绪
+      notificationService.notify({
+        type: 'success',
+        source: 'update',
+        title: '更新已就绪',
+        message: `v${info.version} 已下载，重启后生效`
+      })
     })
     autoUpdater.on('error', (err) => {
       log.error('[UpdateService] 更新错误:', err)
       this.#setStatus({ status: 'error', error: err.message })
+      // 通知：检查失败
+      notificationService.notify({
+        type: 'error',
+        source: 'update',
+        title: '更新检查失败',
+        message: err.message
+      })
     })
   }
 

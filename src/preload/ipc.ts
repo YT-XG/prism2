@@ -137,6 +137,36 @@ export interface AppSettings {
   legacyImportDone?: boolean
   /** 是否已处理旧版安装卸载提示（true=用户选择「不再提醒」，启动不再弹窗） */
   legacyUninstallPromptDone?: boolean
+  /** 通知中心总开关（false = 不记录、不提醒任何通知） */
+  notificationsEnabled: boolean
+  /** 剪贴板新内容通知 */
+  notifyClipboard: boolean
+  /** 更新通知（新版本/更新完成/检查失败） */
+  notifyUpdate: boolean
+}
+
+/** 通知类型：对应语义状态色 token */
+export type NotificationType = 'info' | 'success' | 'warning' | 'error'
+
+/** 通知来源：用于通知中心分组过滤 + 分来源开关 */
+export type NotificationSource = 'clipboard' | 'update'
+
+/** 通知记录（持久化到 userData/notifications.db） */
+export interface NotificationItem {
+  id: number
+  type: NotificationType
+  source: NotificationSource
+  title: string
+  message: string
+  created_at: number
+  /** 0 未读 / 1 已读 */
+  read: 0 | 1
+}
+
+/** onNew 广播载荷：新通知 + 最新未读数（渲染端据此刷新角标/列表） */
+export interface NotificationNewPayload {
+  item: NotificationItem
+  unread: number
 }
 
 /** 应用更新状态（electron-updater 事件驱动） */
@@ -261,6 +291,8 @@ export const WINDOW_CHANNELS = {
       hideAfterAnimation: 'to-main-MainPage:hideAfterAnimation',
       toggleMaximize: 'to-main-MainPage:toggleMaximize',
       ready: 'to-main-MainPage:ready',
+      /** 显示主窗口并跳转到指定页面（通知浮窗等外部入口用） */
+      showPage: 'to-main-MainPage:showPage',
       openTranslate: 'to-main-MainPage:openTranslate'
     },
     toRenderer: {
@@ -269,6 +301,15 @@ export const WINDOW_CHANNELS = {
       setPage: 'to-renderer-MainPage:setPage',
       version: 'to-renderer-MainPage:version',
       maximizeState: 'to-renderer-MainPage:maximizeState'
+    }
+  },
+  /** 通知浮窗（自绘通知浮窗：置顶、无边框、不抢焦点） */
+  notificationPopup: {
+    toMain: {
+      /** 渲染端上报内容高度，主进程据此缩放浮窗（保持右下角锚定） */
+      resize: 'to-main-NotificationPopup:resize',
+      /** 通知全部消失后请求隐藏浮窗 */
+      hide: 'to-main-NotificationPopup:hide'
     }
   }
 } as const
@@ -325,6 +366,13 @@ export const SERVICE_CHANNELS = {
     getState: 'to-service-LegacyCleanupService:getState',
     uninstall: 'to-service-LegacyCleanupService:uninstall',
     deleteData: 'to-service-LegacyCleanupService:deleteData'
+  },
+  notification: {
+    getList: 'to-service-NotificationService:getList',
+    getUnread: 'to-service-NotificationService:getUnread',
+    markRead: 'to-service-NotificationService:markRead',
+    markAllRead: 'to-service-NotificationService:markAllRead',
+    clear: 'to-service-NotificationService:clear'
   }
 } as const
 
@@ -335,7 +383,8 @@ export const BACKUP_EXTENSION = '.prismbackup'
 export const BROADCAST = {
   clipboardNew: 'broadcast:clipboard-new',
   clipboardHistoryChanged: 'broadcast:clipboard-history-changed',
-  updateStatus: 'broadcast:update-status'
+  updateStatus: 'broadcast:update-status',
+  notificationNew: 'broadcast:notification-new'
 } as const
 
 // ---------------------------------------------------------------------------
@@ -365,6 +414,12 @@ export interface ElectronAPI {
     onSetPage: (cb: (payload: SetPagePayload) => void) => () => void
     onVersion: (cb: (version: string) => void) => () => void
     onMaximizeState: (cb: (maximized: boolean) => void) => () => void
+    /** 显示主窗口并跳转到指定页面（页面不带前导斜杠，如 'notifications'） */
+    showPage: (page: string) => void
+    /** 通知浮窗：上报内容高度（主进程据此缩放，保持右下角锚定） */
+    notificationPopupResize: (height: number) => void
+    /** 通知浮窗：通知全部消失后请求隐藏 */
+    notificationPopupHide: () => void
   }
   settings: {
     get: () => Promise<AppSettings>
@@ -443,5 +498,19 @@ export interface ElectronAPI {
     uninstall: () => Promise<LegacyCleanupResult>
     /** 将选中的旧版数据条目移入回收站（仅限旧版数据目录内的路径） */
     deleteData: (paths: string[]) => Promise<LegacyCleanupResult>
+  }
+  notification: {
+    /** 获取全部通知记录（按时间倒序） */
+    getList: () => Promise<NotificationItem[]>
+    /** 获取未读数 */
+    getUnread: () => Promise<number>
+    /** 标记单条已读 */
+    markRead: (id: number) => Promise<void>
+    /** 全部标记已读 */
+    markAllRead: () => Promise<void>
+    /** 清空通知记录 */
+    clear: () => Promise<void>
+    /** 订阅新通知到达（返回取消函数） */
+    onNew: (cb: (payload: NotificationNewPayload) => void) => () => void
   }
 }

@@ -1,5 +1,6 @@
 <template>
-  <div class="ui-notif" :class="`ui-notif--${type}`" role="status">
+  <div class="ui-notif" :class="[`ui-notif--${type}`, { 'is-unread': unread }]" role="status">
+    <span v-if="unread" class="ui-notif__dot" aria-hidden="true" />
     <component :is="iconFor(type)" :size="18" :stroke-width="1.75" class="ui-notif__icon" />
     <div class="ui-notif__body">
       <div class="ui-notif__title">{{ title }}</div>
@@ -14,12 +15,13 @@
 
 <script setup lang="ts">
 import type { Component } from 'vue'
-import { CheckCircle2, AlertCircle, Info, X } from '@lucide/vue'
+import { CheckCircle2, AlertCircle, Info, AlertTriangle, X } from '@lucide/vue'
 import type { ToastType } from '@renderer/composables/useToast'
 
 /**
- * 通知卡片（P6 预留）：通知中心 / 托盘事件的统一卡片样式。
- * 使用语义状态色区分 info / success / error，深色主题自动生效。
+ * 通知卡片：通知中心 / 托盘事件 / 瞬时提示的统一卡片样式。
+ * 使用语义状态色区分 info / success / warning / error，深色主题自动生效。
+ * unread 用于通知中心列表标记未读（左侧品牌色圆点 + 浅色底）。
  */
 withDefaults(
   defineProps<{
@@ -28,8 +30,9 @@ withDefaults(
     message?: string
     time?: string
     closable?: boolean
+    unread?: boolean
   }>(),
-  { type: 'info', closable: true }
+  { type: 'info', closable: true, unread: false }
 )
 
 defineEmits<{ (e: 'close'): void }>()
@@ -37,6 +40,7 @@ defineEmits<{ (e: 'close'): void }>()
 function iconFor(type: ToastType): Component {
   if (type === 'success') return CheckCircle2
   if (type === 'error') return AlertCircle
+  if (type === 'warning') return AlertTriangle
   return Info
 }
 </script>
@@ -51,6 +55,20 @@ function iconFor(type: ToastType): Component {
   border-radius: var(--radius-md);
   background: var(--bg-surface);
   box-shadow: var(--shadow-md);
+}
+
+/* 未读：浅品牌底色 + 左侧品牌色圆点（通知中心列表用） */
+.ui-notif.is-unread {
+  background: var(--bg-selected-subtle);
+}
+
+.ui-notif__dot {
+  width: 8px;
+  height: 8px;
+  flex-shrink: 0;
+  margin-top: 5px;
+  border-radius: 50%;
+  background: var(--brand);
 }
 
 .ui-notif__icon {
@@ -111,6 +129,10 @@ function iconFor(type: ToastType): Component {
 
 .ui-notif--error .ui-notif__icon {
   color: var(--danger);
+}
+
+.ui-notif--warning .ui-notif__icon {
+  color: var(--warning);
 }
 
 .ui-notif--info .ui-notif__icon {

@@ -3,10 +3,12 @@
  */
 import MainPageFrame from './MainPageFrame'
 import QuickPasteFrame from './QuickPasteFrame'
+import NotificationFrame from './NotificationFrame'
 
 export class WindowFactory {
   #mainPageFrame: MainPageFrame | null = null
   #quickPasteFrame: QuickPasteFrame | null = null
+  #notificationFrame: NotificationFrame | null = null
 
   getMainPageFrame(): MainPageFrame {
     if (!this.#mainPageFrame) {
@@ -28,6 +30,16 @@ export class WindowFactory {
     return this.#quickPasteFrame
   }
 
+  getNotificationFrame(): NotificationFrame {
+    if (!this.#notificationFrame) {
+      this.#notificationFrame = new NotificationFrame()
+      this.#notificationFrame.onDestroyCallback = () => {
+        this.#notificationFrame = null
+      }
+    }
+    return this.#notificationFrame
+  }
+
   /** 隐藏快捷粘贴窗口（不存在时什么都不做，不触发创建） */
   hideQuickPaste(): void {
     this.#quickPasteFrame?.hideIfVisible()
@@ -39,6 +51,8 @@ export class WindowFactory {
     this.#mainPageFrame = null
     this.#quickPasteFrame?.destroy()
     this.#quickPasteFrame = null
+    this.#notificationFrame?.destroy()
+    this.#notificationFrame = null
   }
 }
 

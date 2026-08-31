@@ -6,7 +6,7 @@ import log from 'electron-log'
 import icon from '../../../resources/icon.png?asset'
 import { windowFactory } from '../frame/WindowFactory'
 
-export class TrayService {
+class TrayService {
   private tray: Tray | null = null
 
   init(): void {
@@ -21,7 +21,7 @@ export class TrayService {
             : base
       if (process.platform === 'darwin') image.setTemplateImage(true)
       this.tray = new Tray(image)
-      this.tray.setToolTip('Prism v2')
+      this.setUnread(0)
 
       const menu = Menu.buildFromTemplate([
         { label: '显示主界面', click: () => windowFactory.getMainPageFrame().showCentered() },
@@ -36,8 +36,16 @@ export class TrayService {
     }
   }
 
+  /** 更新托盘 tooltip 中的未读数（由通知服务在未读变化时调用） */
+  setUnread(n: number): void {
+    if (!this.tray) return
+    this.tray.setToolTip(n > 0 ? `Prism v2（${n} 条未读通知）` : 'Prism v2')
+  }
+
   destroy(): void {
     this.tray?.destroy()
     this.tray = null
   }
 }
+
+export const trayService = new TrayService()

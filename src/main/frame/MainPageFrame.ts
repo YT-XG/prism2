@@ -23,6 +23,9 @@ export default class MainPageFrame extends BaseFrame {
   /** 尺寸变化持久化防抖定时器 */
   #saveTimer: ReturnType<typeof setTimeout> | null = null
 
+  /** 隐藏的兜底强制隐藏定时器（渲染端 animationend 缺失时窗口卡在可见态，用它兜底） */
+  #hideTimer: ReturnType<typeof setTimeout> | null = null
+
   protected readonly options: BrowserWindowConstructorOptions = {
     width: MainPageFrame.WIDTH,
     height: MainPageFrame.HEIGHT,
@@ -83,6 +86,7 @@ export default class MainPageFrame extends BaseFrame {
       clearTimeout(this.#saveTimer)
       this.#saveTimer = null
     }
+    this.#cancelHide()
     if (this.window && !this.window.isDestroyed()) {
       const [width, height] = this.window.getSize()
       windowState.save({ width, height, isMaximized: this.window.isMaximized() })
@@ -106,16 +110,51 @@ export default class MainPageFrame extends BaseFrame {
     setTimeout(() => (this.#showLock = false), 100)
 
     if (!this.isAlive()) {
+      this.#cancelHide()
       this.create()
       this.#centerOnScreen()
       this.window!.show()
     } else if (this.window!.isVisible()) {
       this.sendOne(mainPage.toRenderer.startHide)
+      // 兜底：渲染端 animationend 缺失（透明窗口合成异常等）时窗口停在"可见但已淡出"态，
+      // isVisible() 恒为 true 会让本方法永远命中 startHide 分支、无法再显示。定时强制隐藏，
+      // 使窗口进入隐藏态，下次托盘点击可正常显示。重新显示时会取消该定时器（见 #cancelHide）。
+      if (!this.#hideTimer) {
+        this.#hideTimer = setTimeout(() => {
+          this.#hideTimer = null
+          if (this.isAlive() && this.window!.isVisible()) this.window!.hide()
+        }, 400)
+      }
     } else {
+      this.#cancelHide()
       this.#centerOnScreen()
       this.window!.show()
       this.sendOne(mainPage.toRenderer.reShow)
     }
+  }
+
+  /** 取消兜底隐藏定时器（重新显示/销毁时调用，避免定时器误隐藏刚显示的窗口） */
+  #cancelHide(): void {
+    if (this.#hideTimer) {
+      clearTimeout(this.#hideTimer)
+      this.#hideTimer = null
+    }
+  }
+
+  /** 显示主窗口并跳转到指定子页面（page 不带前导斜杠，如 'notifications'）。通知浮窗等外部入口用 */
+  showPage(page: string): void {
+    if (!this.isAlive()) {
+      this.#cancelHide()
+      this.create()
+      this.#centerOnScreen()
+      this.window!.show()
+    } else if (!this.window!.isVisible()) {
+      this.#cancelHide()
+      this.#centerOnScreen()
+      this.window!.show()
+      this.sendOne(mainPage.toRenderer.reShow)
+    }
+    this.sendOne(mainPage.toRenderer.setPage, { page })
   }
 
   /** 最小化窗口让系统恢复焦点（用于自动粘贴场景） */
@@ -165,6 +204,10 @@ export default class MainPageFrame extends BaseFrame {
 
     this.recvOne(mainPage.toMain.openTranslate, (_event, text: unknown) => {
       log.info('[MainPageFrame] openTranslate (待翻译功能接入):', String(text ?? '').substring(0, 40))
+    })
+
+    this.recvOne(mainPage.toMain.showPage, (_event, page: unknown) => {
+      if (typeof page === 'string') this.showPage(page)
     })
   }
 }

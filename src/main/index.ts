@@ -6,15 +6,15 @@ import { electronApp, optimizer } from '@electron-toolkit/utils'
 import { platform, arch, release } from 'node:os'
 import log from 'electron-log'
 import { windowFactory } from './frame/WindowFactory'
-import { TrayService } from './services/trayService'
+import { trayService } from './services/trayService'
 import { settingsService } from './services/settingsService'
 import { clipboardService } from './services/clipboardService'
 import { stickyNotesService } from './services/stickyNotesService'
 import { updateService } from './services/updateService'
 import { legacyImportService } from './services/legacyImportService'
 import { legacyCleanupService } from './services/legacyCleanupService'
+import { notificationService } from './services/notificationService'
 
-let trayService: TrayService | null = null
 let isQuitting = false
 
 // ── 全局错误捕获 ──
@@ -49,11 +49,11 @@ app.whenReady().then(async () => {
   })
 
   // 服务初始化
-  trayService = new TrayService()
   trayService.init()
   settingsService.init()
   await clipboardService.init()
   await stickyNotesService.init()
+  await notificationService.init()
   updateService.init()
   updateService.checkOnStartup()
   legacyImportService.init()
@@ -61,6 +61,9 @@ app.whenReady().then(async () => {
 
   // 启动后显示主界面（首次可见）
   windowFactory.getMainPageFrame().showCentered()
+
+  // 预创建自绘通知浮窗（隐藏态），避免首次通知到来时窗口还在加载、广播丢失
+  windowFactory.getNotificationFrame()
 
   // macOS：点击 Dock 图标恢复主窗口
   app.on('activate', () => windowFactory.getMainPageFrame().showCentered())
@@ -70,7 +73,7 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     if (isQuitting) {
       windowFactory.closeAll()
-      trayService?.destroy()
+      trayService.destroy()
       app.quit()
     }
   }
@@ -81,7 +84,8 @@ app.on('before-quit', () => {
   log.info('[App] 退出，清理资源...')
   clipboardService.stop()
   stickyNotesService.stop()
+  notificationService.stop()
   settingsService.destroy()
-  trayService?.destroy()
+  trayService.destroy()
   globalShortcut.unregisterAll()
 })

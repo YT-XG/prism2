@@ -9,7 +9,7 @@
  * - 图片内容以 PNG 文件存于 userData/clipboard-images/，DB 只存文件名；
  *   历史清理/删除时同步删除对应文件。
  * - 清理为低频定时任务（每小时），落盘做防抖，复制高峰不再每次全量写盘。
- * - 不再触发通知弹窗（属后续迭代），只广播新记录给所有可见窗口。
+ * - 新内容同步触发通知服务（受「通知中心 / 剪贴板新内容」开关控制），通知中心留存历史。
  * - 所有 IPC handler 入参做类型收窄的防御性处理。
  */
 import {
@@ -30,6 +30,7 @@ import AdmZip from 'adm-zip'
 import { SqliteStore } from './db/sqliteDatabase'
 import { inputService } from './inputService'
 import { settingsService } from './settingsService'
+import { notificationService } from './notificationService'
 import { windowFactory } from '../frame/WindowFactory'
 import { broadcast } from '../utils/platform'
 import { BACKUP_EXTENSION, BROADCAST, SERVICE_CHANNELS } from '@preload/ipc'
@@ -272,6 +273,14 @@ class ClipboardService extends SqliteStore {
           { onlyVisible: true }
         )
         this.#notifyHistoryChanged()
+        // 通知：重新复制的既有内容同样提醒（仅浮窗弹出，不入通知中心——剪贴板历史已有记录）
+        notificationService.notify({
+          type: 'info',
+          source: 'clipboard',
+          title: '剪贴板新内容',
+          message: type === 'image' ? '已复制一张图片' : content.substring(0, 120),
+          persist: false
+        })
         return
       }
 
@@ -291,6 +300,15 @@ class ClipboardService extends SqliteStore {
       broadcast(BROADCAST.clipboardNew, newItem, { onlyVisible: true })
       this.#notifyHistoryChanged()
       log.info('[ClipboardService] 新增记录:', type, content.substring(0, 50))
+
+      // 通知：新剪贴板内容（受「剪贴板新内容」开关控制；仅浮窗弹出不入通知中心——剪贴板历史已有记录）
+      notificationService.notify({
+        type: 'info',
+        source: 'clipboard',
+        title: '剪贴板新内容',
+        message: type === 'image' ? '已复制一张图片' : content.substring(0, 120),
+        persist: false
+      })
     } catch (err) {
       log.error('[ClipboardService] 插入失败:', err)
     }

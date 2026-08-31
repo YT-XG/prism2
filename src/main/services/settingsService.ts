@@ -26,7 +26,11 @@ const DEFAULT_SETTINGS: AppSettings = {
   clipboardRetentionValue: 1,
   clipboardAutoClean: true,
   clipboardRetentionUnit: 'month',
-  theme: 'light'
+  theme: 'light',
+  // 通知相关（默认全部开启）
+  notificationsEnabled: true,
+  notifyClipboard: true,
+  notifyUpdate: true
 }
 
 class SettingsService {

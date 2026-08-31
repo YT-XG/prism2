@@ -4,7 +4,9 @@ import Home from '@renderer/views/Home.vue'
 import ClipboardManager from '@renderer/views/ClipboardManager.vue'
 import StickyNotes from '@renderer/views/StickyNotes.vue'
 import QuickPaste from '@renderer/views/QuickPaste.vue'
+import NotificationPopup from '@renderer/views/NotificationPopup.vue'
 import Settings from '@renderer/views/Settings.vue'
+import Notifications from '@renderer/views/Notifications.vue'
 
 const router = createRouter({
   history: createWebHashHistory(),
@@ -17,10 +19,12 @@ const router = createRouter({
         { path: 'home', name: 'home', component: Home },
         { path: 'clipboard', name: 'clipboard', component: ClipboardManager },
         { path: 'notes', name: 'notes', component: StickyNotes },
+        { path: 'notifications', name: 'notifications', component: Notifications },
         { path: 'settings', name: 'settings', component: Settings }
       ]
     },
     { path: '/quickPaste', name: 'quickPaste', component: QuickPaste },
+    { path: '/notificationPopup', name: 'notificationPopup', component: NotificationPopup },
     { path: '/', redirect: '/mainPage/home' },
     { path: '/:pathMatch(.*)*', redirect: '/mainPage/home' }
   ]
