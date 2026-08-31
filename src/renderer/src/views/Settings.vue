@@ -140,7 +140,9 @@
         </div>
         <div v-if="updateMessage" class="update-status">{{ updateMessage }}</div>
         <div v-if="updateStatus.status === 'downloading'" class="update-progress">
-          <div class="update-progress__bar" :style="{ width: `${updateStatus.progress ?? 0}%` }"></div>
+          <div class="update-progress__track">
+            <div class="update-progress__bar" :style="{ width: `${updateStatus.progress ?? 0}%` }"></div>
+          </div>
           <span class="update-progress__text">{{ updateStatus.progress ?? 0 }}%</span>
         </div>
         <div v-if="updateStatus.status === 'downloaded'" class="setting-row">
@@ -709,12 +711,18 @@ onMounted(async () => {
   padding: 0 0 var(--sp-3);
 }
 
-.update-progress__bar {
+.update-progress__track {
   flex: 1;
   height: 6px;
   border-radius: var(--radius-pill);
-  background: var(--brand);
+  background: var(--bg-hover);
   overflow: hidden;
+}
+
+.update-progress__bar {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--brand);
   transition: width var(--duration-fast) var(--ease-out-soft);
 }
 

@@ -113,6 +113,12 @@ export default class QuickPasteFrame extends BaseFrame {
     const [w, h] = this.window.getSize()
     const x = Math.min(Math.max(cursor.x - Math.round(w / 2), workArea.x), workArea.x + workArea.width - w)
     const y = Math.min(Math.max(cursor.y - Math.round(h / 2), workArea.y), workArea.y + workArea.height - h)
-    this.window.setPosition(x, y)
+    // 防御：高 DPI / 多屏 / 透明无边框窗口布局未完成时，workArea 或 getSize() 可能返回
+    // 非有限值，直接 setPosition 会抛 "conversion failure from ..." 崩溃。
+    if (Number.isFinite(x) && Number.isFinite(y)) {
+      this.window.setPosition(x, y)
+    } else {
+      this.window.center()
+    }
   }
 }

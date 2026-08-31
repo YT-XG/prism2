@@ -57,6 +57,9 @@ export default class NotificationFrame extends BaseFrame {
     const [w, curH] = this.window.getSize()
     const [x, y] = this.window.getPosition()
     if (h === curH) return
+    // 防御：多屏 / 高 DPI 下 getSize / getPosition 可能返回非有限值，setBounds 同样会抛
+    // "conversion failure from ..." 崩溃。
+    if (![w, curH, x, y, h].every(Number.isFinite)) return
     this.window.setBounds({ x, y: y + curH - h, width: w, height: h })
   }
 
@@ -72,7 +75,13 @@ export default class NotificationFrame extends BaseFrame {
     const [w, h] = this.window.getSize()
     const x = workArea.x + workArea.width - w - NotificationFrame.MARGIN
     const y = workArea.y + workArea.height - h - NotificationFrame.MARGIN
-    this.window.setPosition(x, y)
+    // 防御：高 DPI / 多屏 / 透明无边框窗口布局未完成时，workArea 或 getSize() 可能返回
+    // 非有限值，直接 setPosition 会抛 "conversion failure from ..." 崩溃。
+    if (Number.isFinite(x) && Number.isFinite(y)) {
+      this.window.setPosition(x, y)
+    } else {
+      this.window.center()
+    }
   }
 
   protected registerIPC(): void {

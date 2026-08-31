@@ -172,11 +172,21 @@ export default class MainPageFrame extends BaseFrame {
 
   #centerOnScreen(): void {
     if (!this.window || this.window.isDestroyed()) return
+    // 最大化/全屏时无需居中（本方法在 create() 后立即调用，首启即最大化，居中无意义），
+    // 且最大化窗口的 getSize() 在部分环境（高 DPI / 多屏 / 透明无边框窗口布局未完成）
+    // 会返回非有限值，直接 setPosition 会抛 "conversion failure from ..." 导致主页面打不开。
+    if (this.window.isMaximized() || this.window.isFullScreen()) return
     const { workArea } = screen.getPrimaryDisplay()
     const [width, height] = this.window.getSize()
     const x = Math.round(workArea.x + (workArea.width - width) / 2)
     const y = Math.round(workArea.y + (workArea.height - height) / 2)
-    this.window.setPosition(x, y)
+    if (Number.isFinite(x) && Number.isFinite(y)) {
+      this.window.setPosition(x, y)
+    } else {
+      // 兜底：workArea / getSize() 任一出非有限值时交给系统自行居中，避免崩溃
+      log.warn('[MainPageFrame] #centerOnScreen 计算出非有限坐标，回退系统居中:', { workArea, width, height, x, y })
+      this.window.center()
+    }
   }
 
   protected registerIPC(): void {
