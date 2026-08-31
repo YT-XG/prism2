@@ -172,20 +172,45 @@ export default class MainPageFrame extends BaseFrame {
 
   #centerOnScreen(): void {
     if (!this.window || this.window.isDestroyed()) return
-    // 最大化/全屏时无需居中（本方法在 create() 后立即调用，首启即最大化，居中无意义），
-    // 且最大化窗口的 getSize() 在部分环境（高 DPI / 多屏 / 透明无边框窗口布局未完成）
-    // 会返回非有限值，直接 setPosition 会抛 "conversion failure from ..." 导致主页面打不开。
+    // 最大化/全屏时无需居中（本方法在 create() 后立即调用，首启即最大化，居中无意义）
     if (this.window.isMaximized() || this.window.isFullScreen()) return
     const { workArea } = screen.getPrimaryDisplay()
     const [width, height] = this.window.getSize()
+    // Electron 的 setPosition 只接受 int32 范围内的整数坐标；透明无边框窗口在部分环境
+    // （高 DPI / 多屏 / 布局未完成 / 隐藏态）getSize() 会返回 NaN / 负数 / 超大有限值，
+    // 使计算出的坐标超出可转换范围，抛 "conversion failure from ..."。该异常发生在
+    // showCentered() 的 window.show() 之前，会直接导致主页面打不开，因此这里做多重防御：
+    // ① 尺寸可疑（非有限 / 非正 / 超 1e6）时放弃计算，交给系统居中；
+    const usable = (v: number): boolean => Number.isFinite(v) && v > 0 && v <= 1_000_000
+    if (!usable(width) || !usable(height)) {
+      log.warn('[MainPageFrame] #centerOnScreen 窗口尺寸异常，回退系统居中:', { workArea, width, height })
+      this.#safeCenter()
+      return
+    }
     const x = Math.round(workArea.x + (workArea.width - width) / 2)
     const y = Math.round(workArea.y + (workArea.height - height) / 2)
-    if (Number.isFinite(x) && Number.isFinite(y)) {
+    // ② 坐标必须落在 int32 可表示范围（Number.isFinite 拦不住超 int32 的有限值）；
+    const inInt32 = (v: number): boolean => Number.isFinite(v) && v >= -2147483647 && v <= 2147483647
+    if (!inInt32(x) || !inInt32(y)) {
+      log.warn('[MainPageFrame] #centerOnScreen 计算出越界坐标，回退系统居中:', { workArea, width, height, x, y })
+      this.#safeCenter()
+      return
+    }
+    // ③ 仍有意外异常时兜底系统居中，绝不把异常抛回 showCentered（否则 window.show() 不会执行）
+    try {
       this.window.setPosition(x, y)
-    } else {
-      // 兜底：workArea / getSize() 任一出非有限值时交给系统自行居中，避免崩溃
-      log.warn('[MainPageFrame] #centerOnScreen 计算出非有限坐标，回退系统居中:', { workArea, width, height, x, y })
-      this.window.center()
+    } catch (err) {
+      log.warn('[MainPageFrame] #centerOnScreen setPosition 异常，回退系统居中:', err)
+      this.#safeCenter()
+    }
+  }
+
+  /** 系统居中兜底：center() 内部也按窗口尺寸计算坐标，异常时吞掉，避免再抛给 showCentered */
+  #safeCenter(): void {
+    try {
+      this.window?.center()
+    } catch (err) {
+      log.warn('[MainPageFrame] #safeCenter 系统居中失败:', err)
     }
   }
 
