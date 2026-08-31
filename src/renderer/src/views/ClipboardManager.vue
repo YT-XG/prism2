@@ -189,7 +189,7 @@
                   class="cm-card"
                   :class="[`cm-card--${tint(index)}`, { 'is-copied': justCopiedId === item.id }]"
                   :style="cardDelay(index)"
-                  @click="handleCopy({ content: item.content, type: (item as FavoriteItem).type, id: item.id })"
+                  @click="handleFavoriteClick(item as FavoriteItem)"
                 >
                   <div
                     v-if="(item as FavoriteItem).type === 'richtext'"
@@ -293,6 +293,7 @@ import SnippetEditorDialog from '@renderer/components/SnippetEditorDialog.vue'
 import ClipboardHistoryEditorDialog from '@renderer/components/ClipboardHistoryEditorDialog.vue'
 import { subscribeOnUnmounted } from '@renderer/composables/useIpcListener'
 import { useToast } from '@renderer/composables/useToast'
+import { openPlaceholderDialog } from '@renderer/composables/useSnippetPlaceholder'
 import type { HistoryItem, FavoriteItem, CategoryItem, ClipboardRetention } from '@preload/ipc'
 
 const toast = useToast()
@@ -440,6 +441,13 @@ watch(keyword, async (val) => {
 
 async function copyItem(item: Pick<HistoryItem, 'content' | 'type'>): Promise<void> {
   await window.electronAPI.clipboard.clickItem({ content: item.content, type: item.type })
+}
+
+/** 片段卡片点击：先解析占位符（有占位符则弹输入框，用户取消则放弃），再走常规复制 */
+async function handleFavoriteClick(item: FavoriteItem): Promise<void> {
+  const resolved = await openPlaceholderDialog({ content: item.content, type: item.type })
+  if (!resolved) return
+  await handleCopy({ ...resolved, id: item.id })
 }
 
 /** 点击复制：执行复制并展示短暂的「已复制」反馈 */

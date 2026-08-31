@@ -7,6 +7,7 @@
     <div class="form-group">
       <label>内容（支持富文本）<span class="required">*</span></label>
       <RichTextEditor v-model="form.content" placeholder="输入片段内容..." />
+      <p class="form-hint">支持占位符 &#123;&#123;名称&#125;&#125;，点击片段粘贴时会先弹出输入框替换</p>
     </div>
     <div class="form-group">
       <label>分类</label>
@@ -102,6 +103,12 @@ function save(): void {
 
 .required {
   color: var(--danger);
+}
+
+.form-hint {
+  margin: var(--sp-2) 0 0;
+  font-size: 11px;
+  color: var(--text-muted);
 }
 
 .form-input {
