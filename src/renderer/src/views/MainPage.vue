@@ -71,17 +71,75 @@
     <section class="content">
       <RouterView />
     </section>
+
+    <!-- 启动弹窗：检测到旧版（v1）安装且未选择「不再提醒」时询问是否卸载 -->
+    <UiDialog
+      :model-value="legacyPromptOpen"
+      title="检测到旧版 Prism"
+      @update:model-value="legacyPromptOpen = false"
+    >
+      <p class="confirm-text">
+        检测到旧版 Prism v{{ legacyInstall.version }} 已安装，是否卸载旧版本？卸载后可前往
+        设置 → 旧版本 清理旧版数据。
+      </p>
+      <template #footer>
+        <UiButton variant="ghost" @click="dismissLegacyPrompt">暂不</UiButton>
+        <UiButton variant="ghost" @click="dismissLegacyPromptForever">不再提醒</UiButton>
+        <UiButton variant="danger" @click="uninstallLegacy">卸载旧版</UiButton>
+      </template>
+    </UiDialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { House, ClipboardList, StickyNote, Settings2, ChevronsLeft, ChevronsRight } from '@lucide/vue'
+import UiDialog from '@renderer/components/ui/UiDialog.vue'
+import UiButton from '@renderer/components/ui/UiButton.vue'
+import { useToast } from '@renderer/composables/useToast'
 import { subscribeOnUnmounted } from '@renderer/composables/useIpcListener'
+import type { LegacyInstallInfo } from '@preload/ipc'
+
+const toast = useToast()
 
 /** 侧栏折叠态：预留图标竖栏模式（参考图），后续模块增多后仍保持轻量导航 */
 const collapsed = ref(false)
 const count = ref(0)
+
+// ---------------------------------------------------------------------------
+// 旧版本（v1）启动提示弹窗
+// ---------------------------------------------------------------------------
+/** 弹窗是否打开 */
+const legacyPromptOpen = ref(false)
+/** 检测到的旧版安装信息 */
+const legacyInstall = ref<LegacyInstallInfo>({ detected: false, platform: 'win' })
+/** 本次运行是否已提示过（避免用户点「暂不」后因窗口重显反复弹出） */
+let legacyPrompted = false
+
+/** 卸载旧版：执行后关闭弹窗（不置「不再提醒」，用户仍可在设置页操作） */
+async function uninstallLegacy(): Promise<void> {
+  legacyPromptOpen.value = false
+  legacyPrompted = true
+  const r = await window.electronAPI.legacyCleanup.uninstall()
+  if (r.ok) {
+    toast.success(r.launched ? '已启动旧版卸载' : '旧版已移入废纸篓')
+  } else {
+    toast.error(`卸载失败：${r.error ?? '未知错误'}`)
+  }
+}
+
+/** 暂不：本次运行不再提示 */
+function dismissLegacyPrompt(): void {
+  legacyPromptOpen.value = false
+  legacyPrompted = true
+}
+
+/** 不再提醒：写入设置，后续启动不再弹窗 */
+async function dismissLegacyPromptForever(): Promise<void> {
+  legacyPromptOpen.value = false
+  legacyPrompted = true
+  await window.electronAPI.settings.update({ legacyUninstallPromptDone: true })
+}
 
 /** 从主进程重新拉取权威历史计数（新增/删除/清空/导入后均以此为准） */
 async function refreshCount(): Promise<void> {
@@ -90,6 +148,18 @@ async function refreshCount(): Promise<void> {
 
 onMounted(async () => {
   await refreshCount()
+
+  // 检测旧版安装：已检测到且未「不再提醒」且本运行未提示过 → 弹窗
+  if (!legacyPrompted) {
+    const [cleanup, settings] = await Promise.all([
+      window.electronAPI.legacyCleanup.getState(),
+      window.electronAPI.settings.get()
+    ])
+    if (cleanup.install.detected && !settings.legacyUninstallPromptDone) {
+      legacyInstall.value = cleanup.install
+      legacyPromptOpen.value = true
+    }
+  }
 
   // 历史变更广播触发时刷新计数，避免删除/清空/导入后侧栏角标残留
   subscribeOnUnmounted(() =>
@@ -298,5 +368,12 @@ onMounted(async () => {
   border: 1px solid var(--border);
   border-radius: var(--radius-xl);
   background: var(--bg-surface);
+}
+
+.confirm-text {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text-secondary);
+  line-height: 1.6;
 }
 </style>

@@ -14,6 +14,8 @@ import type {
   ClipboardRetention,
   ElectronAPI,
   HistoryItem,
+  LegacyCleanupResult,
+  LegacyCleanupState,
   LegacyImportResult,
   LegacyImportState,
   MainWindowEvent,
@@ -29,6 +31,7 @@ const S = SERVICE_CHANNELS.settings
 const N = SERVICE_CHANNELS.stickyNotes
 const U = SERVICE_CHANNELS.update
 const L = SERVICE_CHANNELS.legacyImport
+const LC = SERVICE_CHANNELS.legacyCleanup
 
 /** 供 vm 上下文判定的渲染进程受控 flag（可选） */
 function subscribe(channel: string, cb: (...args: unknown[]) => void): () => void {
@@ -131,6 +134,13 @@ const electronAPI: ElectronAPI = {
     getState: () => ipcRenderer.invoke(L.getState) as Promise<LegacyImportState>,
     import: () => ipcRenderer.invoke(L.import) as Promise<LegacyImportResult>,
     dismiss: () => ipcRenderer.invoke(L.dismiss) as Promise<void>
+  },
+
+  legacyCleanup: {
+    getState: () => ipcRenderer.invoke(LC.getState) as Promise<LegacyCleanupState>,
+    uninstall: () => ipcRenderer.invoke(LC.uninstall) as Promise<LegacyCleanupResult>,
+    deleteData: (paths: string[]) =>
+      ipcRenderer.invoke(LC.deleteData, paths) as Promise<LegacyCleanupResult>
   }
 }
 

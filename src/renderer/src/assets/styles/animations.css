@@ -136,6 +136,19 @@
   }
 }
 
+/* 告警闪烁：标题栏品牌圆点有可用更新时（黄色），节奏更快、明暗对比更强 */
+@keyframes flash-warn {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.25;
+    transform: scale(0.78);
+  }
+}
+
 /* 减少动态效果偏好：全局兜底，组件内不要覆盖 */
 @media (prefers-reduced-motion: reduce) {
   *,

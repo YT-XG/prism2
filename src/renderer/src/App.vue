@@ -7,8 +7,26 @@
   >
     <header v-if="!isQuickPaste" class="titlebar drag-region">
       <div class="titlebar-brand">
-        <span class="brand-dot"></span>
-        <span class="titlebar-title">Prism <span class="titlebar-version">v{{ version }}</span></span>
+        <span class="brand-dot" :class="{ 'has-update': hasUpdate }"></span>
+        <span class="titlebar-title">
+          Prism <span class="titlebar-version">v{{ version }}</span>
+          <!-- 有可用更新：标题栏内提示，点击安装并重启 -->
+          <Transition name="pop">
+            <button
+              v-if="hasUpdate"
+              class="update-chip"
+              type="button"
+              :title="updateChipTitle"
+              @click="onUpdateChipClick"
+            >
+              <span v-if="update.status === 'downloaded'">有新版本 {{ update.version }}，点击安装</span>
+              <span v-else-if="update.status === 'downloading'">
+                新版本 {{ update.version }} · {{ update.progress ?? 0 }}%
+              </span>
+              <span v-else>有新版本 v{{ update.version }}</span>
+            </button>
+          </Transition>
+        </span>
       </div>
 
       <!-- 居中工具栏：功能搜索 + 主页显示设置 -->
@@ -77,6 +95,7 @@ import { subscribeOnUnmounted } from '@renderer/composables/useIpcListener'
 import { useFeatureSearch } from '@renderer/composables/useFeatureSearch'
 import { useHomeModules, type HomeModuleDef } from '@renderer/composables/useHomeModules'
 import { applyTheme } from '@renderer/composables/useTheme'
+import type { UpdateStatusInfo } from '@preload/ipc'
 
 const router = useRouter()
 const route = useRoute()
@@ -85,6 +104,37 @@ const version = ref('')
 const isMaximized = ref(false)
 const shellRef = ref<HTMLElement | null>(null)
 const { open: openFeatureSearch, toggle } = useFeatureSearch()
+
+// ---------------------------------------------------------------------------
+// 标题栏更新提示：有可用更新时左上角圆点变黄闪烁，版本号右侧出现「有新版本」胶囊
+// ---------------------------------------------------------------------------
+const update = ref<UpdateStatusInfo>({ status: 'idle', currentVersion: '' })
+
+const hasUpdate = computed(
+  () =>
+    update.value.status === 'available' ||
+    update.value.status === 'downloading' ||
+    update.value.status === 'downloaded'
+)
+
+/** 提示胶囊的 title 文案 */
+const updateChipTitle = computed(() => {
+  switch (update.value.status) {
+    case 'downloaded':
+      return '更新已就绪，点击安装并重启'
+    case 'downloading':
+      return `正在下载新版本… ${update.value.progress ?? 0}%`
+    default:
+      return '发现新版本，正在下载…'
+  }
+})
+
+/** 点击提示：已下载则安装并重启；available/downloading 由 autoDownload 自动下载，无需操作 */
+function onUpdateChipClick(): void {
+  if (update.value.status === 'downloaded') {
+    void window.electronAPI.update.quitAndInstall()
+  }
+}
 
 /** 主页显示设置面板：开关 + 模块清单 */
 const showModules = ref(false)
@@ -186,6 +236,16 @@ onMounted(() => {
   subscribeOnUnmounted(() =>
     window.electronAPI.window.onMaximizeState((max) => {
       isMaximized.value = max
+    })
+  )
+
+  // 标题栏更新提示：同步当前状态 + 订阅后续变化（启动检查/下载进度/已下载）
+  void window.electronAPI.update.getStatus().then((s) => {
+    update.value = s
+  })
+  subscribeOnUnmounted(() =>
+    window.electronAPI.update.onStatus((info) => {
+      update.value = info
     })
   )
 
@@ -331,6 +391,36 @@ onBeforeUnmount(() => {
   border-radius: var(--radius-pill);
   background: var(--brand);
   animation: pulse-soft 3.2s var(--ease-in-soft) infinite;
+}
+
+/* 有可用更新：圆点变黄并快速闪烁，作为醒目的更新提示 */
+.brand-dot.has-update {
+  background: var(--warning);
+  animation: flash-warn 1.1s var(--ease-in-soft) infinite;
+}
+
+/* 「有新版本」提示胶囊：标题栏品牌区版本号右侧，点击安装更新 */
+.update-chip {
+  display: inline-flex;
+  align-items: center;
+  margin-left: var(--sp-2);
+  padding: 1px 8px;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: var(--warning-soft);
+  color: var(--warning);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 18px;
+  cursor: pointer;
+  vertical-align: middle;
+  transition: background-color var(--duration-fast) var(--ease-out-soft),
+    color var(--duration-fast) var(--ease-out-soft);
+}
+
+.update-chip:hover {
+  background: var(--warning);
+  color: var(--text-on-primary);
 }
 
 /* 路由切换过渡：出场淡出上移，入场淡入上移 */

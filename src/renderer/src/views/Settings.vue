@@ -105,7 +105,68 @@
           <button class="btn btn--primary" type="button" @click="installUpdate">安装并重启</button>
         </div>
       </section>
+
+      <section class="setting-group">
+        <h3 class="group-title">旧版本（Prism v1）</h3>
+        <div class="setting-row">
+          <div class="row-info">
+            <div class="row-name">旧版安装检测</div>
+            <div class="row-desc">
+              <template v-if="cleanup.install.detected">
+                已检测到旧版 Prism v{{ cleanup.install.version }}（{{ cleanup.install.installPath }}）<span
+                  v-if="cleanup.install.running"
+                  >，旧版正在运行，卸载前请先退出</span
+                >
+              </template>
+              <template v-else>未检测到旧版 Prism 安装</template>
+            </div>
+          </div>
+          <div class="import-actions">
+            <button
+              class="btn btn--primary"
+              type="button"
+              :disabled="!cleanup.install.detected || uninstallBusy"
+              @click="uninstallLegacy"
+            >
+              {{ uninstallBusy ? '处理中…' : '卸载旧版本' }}
+            </button>
+            <button class="btn" type="button" @click="refreshCleanup">重新检测</button>
+          </div>
+        </div>
+
+        <div v-if="cleanup.dataDirs.length" class="legacy-data">
+          <div class="legacy-data__title">旧版数据（删除后移入回收站，可恢复）</div>
+          <div v-for="dir in cleanup.dataDirs" :key="dir.path" class="legacy-data__dir">
+            <div class="legacy-data__dir-head">
+              <span class="legacy-data__dir-name">{{ dir.dirName }}</span>
+              <span class="legacy-data__dir-size">{{ formatSize(dir.totalSize) }}</span>
+              <button
+                class="btn btn--danger legacy-data__dir-del"
+                type="button"
+                @click="requestDeleteDir(dir)"
+              >
+                删除目录
+              </button>
+            </div>
+          </div>
+        </div>
+        <div v-else class="legacy-data__empty">未检测到旧版 Prism 数据目录</div>
+      </section>
       </template>
+
+      <UiDialog
+        :model-value="deleteConfirm"
+        title="删除旧版数据"
+        @update:model-value="deleteConfirm = false"
+      >
+        <p class="confirm-text">
+          确定将旧版数据目录「{{ deleteDirTarget?.dirName }}」及其中所有内容移入回收站吗？可在回收站中恢复。
+        </p>
+        <template #footer>
+          <UiButton variant="ghost" @click="deleteConfirm = false">取消</UiButton>
+          <UiButton variant="danger" @click="confirmDeleteData">移入回收站</UiButton>
+        </template>
+      </UiDialog>
     </div>
   </div>
 </template>
@@ -113,10 +174,18 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import UiPillTab from '@renderer/components/ui/UiPillTab.vue'
+import UiDialog from '@renderer/components/ui/UiDialog.vue'
+import UiButton from '@renderer/components/ui/UiButton.vue'
 import { useToast } from '@renderer/composables/useToast'
 import { applyTheme } from '@renderer/composables/useTheme'
 import { subscribeOnUnmounted } from '@renderer/composables/useIpcListener'
-import type { AppSettings, BackupImportMode, UpdateStatusInfo } from '@preload/ipc'
+import type {
+  AppSettings,
+  BackupImportMode,
+  LegacyCleanupState,
+  LegacyDataDir,
+  UpdateStatusInfo
+} from '@preload/ipc'
 
 const toast = useToast()
 
@@ -232,6 +301,71 @@ function installUpdate(): void {
   void window.electronAPI.update.quitAndInstall()
 }
 
+// ---------------------------------------------------------------------------
+// 旧版本（Prism v1）检测 / 卸载 / 旧数据清理
+// ---------------------------------------------------------------------------
+/** 旧版本整体状态（安装 + 数据目录） */
+const cleanup = ref<LegacyCleanupState>({
+  install: { detected: false, platform: 'win' },
+  dataDirs: []
+})
+const uninstallBusy = ref(false)
+/** 删除确认弹窗 */
+const deleteConfirm = ref(false)
+/** 待删除的旧版数据目录（整目录删除） */
+const deleteDirTarget = ref<LegacyDataDir | null>(null)
+
+/** 刷新旧版本检测状态 */
+async function refreshCleanup(): Promise<void> {
+  cleanup.value = await window.electronAPI.legacyCleanup.getState()
+}
+
+/** 字节数格式化为人类可读 */
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+  return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`
+}
+
+/** 卸载旧版本（win 静默卸载器 / mac 移入废纸篓） */
+async function uninstallLegacy(): Promise<void> {
+  if (uninstallBusy.value) return
+  uninstallBusy.value = true
+  try {
+    const r = await window.electronAPI.legacyCleanup.uninstall()
+    if (r.ok) {
+      toast.success(r.launched ? '已启动旧版卸载，完成后可重新检测确认' : '旧版已移入废纸篓')
+    } else {
+      toast.error(`卸载失败：${r.error ?? '未知错误'}`)
+    }
+  } finally {
+    uninstallBusy.value = false
+  }
+  await refreshCleanup()
+}
+
+/** 请求删除整个旧版数据目录（弹确认框） */
+function requestDeleteDir(dir: LegacyDataDir): void {
+  deleteDirTarget.value = dir
+  deleteConfirm.value = true
+}
+
+/** 确认删除：整目录移入回收站后刷新 */
+async function confirmDeleteData(): Promise<void> {
+  const dir = deleteDirTarget.value
+  deleteConfirm.value = false
+  deleteDirTarget.value = null
+  if (!dir) return
+  const r = await window.electronAPI.legacyCleanup.deleteData([dir.path])
+  if (r.ok) {
+    toast.success(`已移入回收站：${dir.dirName}`)
+  } else {
+    toast.error(`删除失败：${r.error ?? '未知错误'}`)
+  }
+  await refreshCleanup()
+}
+
 onMounted(async () => {
   settings.value = await window.electronAPI.settings.get()
   settingsLoaded.value = true
@@ -243,6 +377,9 @@ onMounted(async () => {
       updateStatus.value = info
     })
   )
+
+  // 同步旧版本检测状态（安装 + 数据目录）
+  await refreshCleanup()
 })
 </script>
 
@@ -432,6 +569,75 @@ onMounted(async () => {
 .btn--primary:hover {
   color: var(--text-on-brand, #fff);
   filter: brightness(1.05);
+}
+
+.btn--danger {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.btn--danger:hover {
+  border-color: var(--danger);
+  color: var(--danger);
+  background: rgba(229, 72, 77, 0.1);
+}
+
+.confirm-text {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+/* 旧版本（Prism v1）区块 */
+.legacy-data {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding: var(--sp-3) 0;
+}
+
+.legacy-data__title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.legacy-data__dir {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.legacy-data__dir-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--bg-selected-subtle);
+}
+
+.legacy-data__dir-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.legacy-data__dir-size {
+  flex: 1;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.legacy-data__dir-del {
+  padding: 3px 10px;
+  font-size: 12px;
+}
+
+.legacy-data__empty {
+  padding: var(--sp-3) 0;
+  font-size: 12px;
+  color: var(--text-muted);
 }
 
 .update-status {

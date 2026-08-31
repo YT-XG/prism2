@@ -38,6 +38,16 @@ class UpdateService {
     return { ...this.status }
   }
 
+  /**
+   * 启动静默检查更新（仅打包后执行，dev 跳过避免无意义网络请求）。
+   * 延迟 3s 待窗口与渲染端就绪，发现新版本后由 autoDownload 自动下载，
+   * 渲染端经 BROADCAST.updateStatus 收到状态并在标题栏提示。
+   */
+  checkOnStartup(): void {
+    if (!app.isPackaged) return
+    setTimeout(() => void this.check(), 3000)
+  }
+
   /** 检查更新：发现新版本后由 electron-updater 自动开始下载 */
   async check(): Promise<UpdateStatusInfo> {
     if (!app.isPackaged) {

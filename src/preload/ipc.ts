@@ -135,6 +135,8 @@ export interface AppSettings {
   theme: 'light' | 'dark' | 'lavender' | 'mint'
   /** 是否已完成旧版（v1）数据导入（true=已导入或用户选择暂不导入，不再提示） */
   legacyImportDone?: boolean
+  /** 是否已处理旧版安装卸载提示（true=用户选择「不再提醒」，启动不再弹窗） */
+  legacyUninstallPromptDone?: boolean
 }
 
 /** 应用更新状态（electron-updater 事件驱动） */
@@ -186,6 +188,56 @@ export interface LegacyImportResult {
   importedFavorites: number
   skippedHistory: number
   skippedFavorites: number
+  error?: string
+}
+
+/** 旧版（v1）安装检测结果 */
+export interface LegacyInstallInfo {
+  /** 是否检测到旧版安装 */
+  detected: boolean
+  /** v1 版本号（如 '1.5.0'） */
+  version?: string
+  /** 显示名（如 'Prism'） */
+  displayName?: string
+  /** 安装位置（win=UninstallString 所在目录 / mac=.app 路径） */
+  installPath?: string
+  /** 平台：win | mac */
+  platform: 'win' | 'mac'
+  /** 旧版是否正在运行（仅 win 检测） */
+  running?: boolean
+}
+
+/** 旧版数据目录内的一个条目（文件或子目录） */
+export interface LegacyDataEntry {
+  name: string
+  path: string
+  /** 字节数（目录为递归合计） */
+  size: number
+  /** 已知数据文件标记，用于 UI 打标签 */
+  kind: 'db' | 'config' | 'cache' | 'other'
+}
+
+/** 一个旧版数据目录 */
+export interface LegacyDataDir {
+  dirName: string
+  path: string
+  totalSize: number
+  entries: LegacyDataEntry[]
+}
+
+/** 旧版本整体状态（安装 + 数据目录） */
+export interface LegacyCleanupState {
+  install: LegacyInstallInfo
+  dataDirs: LegacyDataDir[]
+}
+
+/** 卸载 / 删除数据 的操作结果 */
+export interface LegacyCleanupResult {
+  ok: boolean
+  /** win：卸载器已启动 */
+  launched?: boolean
+  /** mac 卸载或删数据：已移入回收站的路径 */
+  trashed?: string[]
   error?: string
 }
 
@@ -266,6 +318,11 @@ export const SERVICE_CHANNELS = {
     getState: 'to-service-LegacyImportService:getState',
     import: 'to-service-LegacyImportService:import',
     dismiss: 'to-service-LegacyImportService:dismiss'
+  },
+  legacyCleanup: {
+    getState: 'to-service-LegacyCleanupService:getState',
+    uninstall: 'to-service-LegacyCleanupService:uninstall',
+    deleteData: 'to-service-LegacyCleanupService:deleteData'
   }
 } as const
 
@@ -376,5 +433,13 @@ export interface ElectronAPI {
     import: () => Promise<LegacyImportResult>
     /** 用户选择暂不导入（标记 done，不再提示） */
     dismiss: () => Promise<void>
+  }
+  legacyCleanup: {
+    /** 获取旧版本整体状态（是否安装 + 旧版数据目录清单） */
+    getState: () => Promise<LegacyCleanupState>
+    /** 卸载旧版本（win 静默卸载器 / mac 移入废纸篓） */
+    uninstall: () => Promise<LegacyCleanupResult>
+    /** 将选中的旧版数据条目移入回收站（仅限旧版数据目录内的路径） */
+    deleteData: (paths: string[]) => Promise<LegacyCleanupResult>
   }
 }

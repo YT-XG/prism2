@@ -16,21 +16,25 @@ import { settingsService } from './settingsService'
 import { SERVICE_CHANNELS } from '@preload/ipc'
 import type { LegacyImportResult, LegacyImportState } from '@preload/ipc'
 
-/** 旧版应用名（v1 userData 目录名） */
-const LEGACY_APP_DIR = 'Prism'
+/** 旧版应用名候选（v1 userData 目录名：打包版大写 Prism、开发模式小写 prism） */
+const LEGACY_DIR_NAMES = ['Prism', 'prism'] as const
 /** 旧版数据库文件名 */
 const LEGACY_DB_FILE = 'clipboard.db'
 
 class LegacyImportService {
-  /** 旧版剪贴板数据库路径（v1 userData 目录下） */
-  #legacyDbPath(): string {
-    return join(app.getPath('appData'), LEGACY_APP_DIR, LEGACY_DB_FILE)
+  /** 旧版剪贴板数据库路径（依次探测候选 v1 userData 目录，都不存在返回 null） */
+  #legacyDbPath(): string | null {
+    for (const name of LEGACY_DIR_NAMES) {
+      const p = join(app.getPath('appData'), name, LEGACY_DB_FILE)
+      if (existsSync(p)) return p
+    }
+    return null
   }
 
   /** 打开旧版数据库（不存在返回 null；调用方负责 close） */
   async #openLegacyDb(): Promise<Database | null> {
     const path = this.#legacyDbPath()
-    if (!existsSync(path)) return null
+    if (!path) return null
     const SQL = await initSqlJs({
       locateFile: (file) => join(app.getAppPath(), 'node_modules', 'sql.js', 'dist', file)
     })
@@ -52,7 +56,7 @@ class LegacyImportService {
   /** 查询旧版数据状态（是否可导入 + 数量预览） */
   async getState(): Promise<LegacyImportState> {
     const path = this.#legacyDbPath()
-    if (!existsSync(path)) {
+    if (!path) {
       return { legacyDbExists: false, done: true }
     }
     const db = await this.#openLegacyDb()
