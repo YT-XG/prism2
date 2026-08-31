@@ -200,6 +200,17 @@
         </div>
         <div v-else class="legacy-data__empty">未检测到旧版 Prism 数据目录</div>
       </section>
+
+      <section class="setting-group">
+        <h3 class="group-title">日志</h3>
+        <div class="setting-row">
+          <div class="row-info">
+            <div class="row-name">查看日志</div>
+            <div class="row-desc">运行日志文件：{{ logFilePath }}</div>
+          </div>
+          <button class="btn" type="button" :disabled="logBusy" @click="openLogFile">打开日志</button>
+        </div>
+      </section>
       </template>
 
       <UiDialog
@@ -423,9 +434,34 @@ async function confirmDeleteData(): Promise<void> {
   await refreshCleanup()
 }
 
+// ---------------------------------------------------------------------------
+// 日志
+// ---------------------------------------------------------------------------
+/** 日志文件完整路径（展示用） */
+const logFilePath = ref('')
+const logBusy = ref(false)
+
+/** 用系统默认程序打开日志文件 */
+async function openLogFile(): Promise<void> {
+  if (logBusy.value) return
+  logBusy.value = true
+  try {
+    const r = await window.electronAPI.log.openFile()
+    if (r.ok) {
+      toast.success('已打开日志文件')
+    } else {
+      toast.error(`打开日志失败：${r.error ?? '未知错误'}`)
+    }
+  } finally {
+    logBusy.value = false
+  }
+}
+
 onMounted(async () => {
   settings.value = await window.electronAPI.settings.get()
   settingsLoaded.value = true
+
+  logFilePath.value = await window.electronAPI.log.getPath()
 
   // 同步当前更新状态并订阅后续变化
   updateStatus.value = await window.electronAPI.update.getStatus()

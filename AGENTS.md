@@ -38,6 +38,7 @@ src/
 │   │   ├── legacyImportService.ts # 旧版 v1 剪贴板数据一键导入（读 v1 userData/Prism/clipboard.db 合并）
 │   │   ├── legacyCleanupService.ts # 旧版 v1 安装检测/静默卸载/旧数据选择性删除 + 运行期系统残留清理（注册表 + NSIS /S / shell.trashItem）
 │   │   ├── notificationService.ts # 通知中心（持久化通知 + 自绘通知浮窗统一呈现，不依赖系统通知）
+│   │   ├── logService.ts          # 日志服务（定位 electron-log 落盘文件，托盘/设置页「查看日志」打开）
 │   │   └── trayService.ts
 │   └── utils/platform.ts         # broadcast()
 │   └── utils/windowState.ts      # 主窗口尺寸/最大化状态持久化（userData/window-state.json）

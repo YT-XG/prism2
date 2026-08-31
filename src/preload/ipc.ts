@@ -278,6 +278,15 @@ export interface LegacyCleanupResult {
   error?: string
 }
 
+/** 打开日志文件结果 */
+export interface LogOpenResult {
+  ok: boolean
+  /** 日志文件完整路径（electron-log 文件传输目标的落盘位置） */
+  path: string
+  /** 失败原因（ok=false 时） */
+  error?: string
+}
+
 // ---------------------------------------------------------------------------
 // 通道名常量
 // ---------------------------------------------------------------------------
@@ -379,6 +388,12 @@ export const SERVICE_CHANNELS = {
     markRead: 'to-service-NotificationService:markRead',
     markAllRead: 'to-service-NotificationService:markAllRead',
     clear: 'to-service-NotificationService:clear'
+  },
+  log: {
+    /** 日志文件完整路径 */
+    getPath: 'to-service-LogService:getPath',
+    /** 用系统默认程序打开日志文件 */
+    openFile: 'to-service-LogService:openFile'
   }
 } as const
 
@@ -526,5 +541,11 @@ export interface ElectronAPI {
     clear: () => Promise<void>
     /** 订阅新通知到达（返回取消函数） */
     onNew: (cb: (payload: NotificationNewPayload) => void) => () => void
+  }
+  log: {
+    /** 日志文件完整路径（electron-log 文件传输目标的落盘位置） */
+    getPath: () => Promise<string>
+    /** 用系统默认程序打开日志文件 */
+    openFile: () => Promise<LogOpenResult>
   }
 }

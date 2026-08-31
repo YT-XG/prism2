@@ -14,6 +14,7 @@ import { updateService } from './services/updateService'
 import { legacyImportService } from './services/legacyImportService'
 import { legacyCleanupService } from './services/legacyCleanupService'
 import { notificationService } from './services/notificationService'
+import { logService } from './services/logService'
 
 let isQuitting = false
 
@@ -58,6 +59,7 @@ app.whenReady().then(async () => {
   updateService.checkOnStartup()
   legacyImportService.init()
   legacyCleanupService.init()
+  logService.init()
 
   // 启动后显示主界面（首次可见）
   windowFactory.getMainPageFrame().showCentered()

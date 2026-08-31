@@ -5,6 +5,7 @@ import { app, Menu, Tray, nativeImage } from 'electron'
 import log from 'electron-log'
 import icon from '../../../resources/icon.png?asset'
 import { windowFactory } from '../frame/WindowFactory'
+import { logService } from './logService'
 
 class TrayService {
   private tray: Tray | null = null
@@ -25,6 +26,8 @@ class TrayService {
 
       const menu = Menu.buildFromTemplate([
         { label: '显示主界面', click: () => windowFactory.getMainPageFrame().showCentered() },
+        { type: 'separator' },
+        { label: '查看日志', click: () => void logService.openLogFile() },
         { type: 'separator' },
         { label: '退出', click: () => app.quit() }
       ])

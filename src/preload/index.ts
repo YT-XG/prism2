@@ -18,6 +18,7 @@ import type {
   LegacyCleanupState,
   LegacyImportResult,
   LegacyImportState,
+  LogOpenResult,
   MainWindowEvent,
   NotificationItem,
   NotificationNewPayload,
@@ -35,6 +36,7 @@ const U = SERVICE_CHANNELS.update
 const L = SERVICE_CHANNELS.legacyImport
 const LC = SERVICE_CHANNELS.legacyCleanup
 const NT = SERVICE_CHANNELS.notification
+const LG = SERVICE_CHANNELS.log
 
 /** 供 vm 上下文判定的渲染进程受控 flag（可选） */
 function subscribe(channel: string, cb: (...args: unknown[]) => void): () => void {
@@ -173,6 +175,11 @@ const electronAPI: ElectronAPI = {
     clear: () => ipcRenderer.invoke(NT.clear) as Promise<void>,
     onNew: (cb: (payload: NotificationNewPayload) => void) =>
       subscribe(BROADCAST.notificationNew, (p) => cb(p as NotificationNewPayload))
+  },
+
+  log: {
+    getPath: () => ipcRenderer.invoke(LG.getPath) as Promise<string>,
+    openFile: () => ipcRenderer.invoke(LG.openFile) as Promise<LogOpenResult>
   }
 }
 
