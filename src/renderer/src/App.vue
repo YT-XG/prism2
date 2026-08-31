@@ -80,6 +80,9 @@
     <!-- 功能搜索命令面板：仅主界面（快捷粘贴/通知浮窗小窗不挂载） -->
     <FeatureSearchPanel v-if="!isStandalone" />
 
+    <!-- 片段占位符输入弹窗：仅主界面（小窗无片段入口） -->
+    <SnippetPlaceholderDialog v-if="!isStandalone" />
+
     <UiToast />
   </div>
 </template>
@@ -91,6 +94,7 @@ import { Minus, X, Square, Minimize2, Command, LayoutGrid } from '@lucide/vue'
 import UiToast from '@renderer/components/ui/UiToast.vue'
 import UiSwitch from '@renderer/components/ui/UiSwitch.vue'
 import FeatureSearchPanel from '@renderer/components/FeatureSearchPanel.vue'
+import SnippetPlaceholderDialog from '@renderer/components/SnippetPlaceholderDialog.vue'
 import { subscribeOnUnmounted } from '@renderer/composables/useIpcListener'
 import { useFeatureSearch } from '@renderer/composables/useFeatureSearch'
 import { useHomeModules, type HomeModuleDef } from '@renderer/composables/useHomeModules'

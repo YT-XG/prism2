@@ -53,8 +53,9 @@ src/
     ├── components/HomeNoteCard.vue        # 贴到主页的便利贴可拖拽卡片
     ├── components/StickyNoteEditorDialog.vue # 便利贴大编辑框（富文本 + 颜色，主页/便利贴页共用）
     ├── components/SnippetEditorDialog.vue # 片段添加/编辑弹窗（剪贴板页/主页共用，内容为富文本）
+    ├── components/SnippetPlaceholderDialog.vue # 片段占位符输入弹窗（{{名称}}，填写后替换并粘贴）
     ├── components/ClipboardHistoryEditorDialog.vue # 剪贴板历史编辑弹窗（富文本）
-    ├── composables/useIpcListener.ts  useToast.ts  useTheme.ts  useFeatureSearch.ts  useDrag.ts  useHomeModules.ts  useNotifications.ts  useNotificationPopups.ts  useClipboardText.ts（富文本/纯文本预览工具：stripHtml/itemText）
+    ├── composables/useIpcListener.ts  useToast.ts  useTheme.ts  useFeatureSearch.ts  useDrag.ts  useHomeModules.ts  useNotifications.ts  useNotificationPopups.ts  useClipboardText.ts（富文本/纯文本预览工具：stripHtml/itemText）  useSnippetPlaceholder.ts（片段占位符：提取/替换 {{名称}}，单例弹窗状态）
     ├── views/                    # MainPage / Home / ClipboardManager / StickyNotes / Notifications / NotificationPopup（自绘通知浮窗页） / QuickPaste / Settings
     └── router/  types.d.ts
 scripts/import-legacy-db.mjs      # 旧剪贴板数据一次性导入（已由应用内 legacyImportService 承接）

@@ -55,6 +55,7 @@ import { Search, House, ClipboardList, StickyNote, Settings2, History, Star } fr
 import type { Component } from 'vue'
 import { useFeatureSearch } from '@renderer/composables/useFeatureSearch'
 import { itemText } from '@renderer/composables/useClipboardText'
+import { openPlaceholderDialog } from '@renderer/composables/useSnippetPlaceholder'
 
 const { isOpen, close } = useFeatureSearch()
 const router = useRouter()
@@ -159,8 +160,11 @@ async function rebuild(): Promise<void> {
     icon: Star,
     title: itemText(s),
     subtitle: s.category || '片段',
-    run: () => {
-      void window.electronAPI.clipboard.clickItem({ content: s.content, type: s.type })
+    run: async () => {
+      // 片段：先解析占位符（有占位符则弹输入框，用户取消则放弃）
+      const resolved = await openPlaceholderDialog({ content: s.content, type: s.type })
+      if (!resolved) return
+      void window.electronAPI.clipboard.clickItem(resolved)
     }
   }))
 

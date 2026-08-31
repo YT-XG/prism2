@@ -244,6 +244,7 @@ import { useToast } from '@renderer/composables/useToast'
 import { useHomeModules } from '@renderer/composables/useHomeModules'
 import { useDrag } from '@renderer/composables/useDrag'
 import { itemText } from '@renderer/composables/useClipboardText'
+import { openPlaceholderDialog } from '@renderer/composables/useSnippetPlaceholder'
 import type {
   HistoryItem,
   FavoriteItem,
@@ -444,7 +445,16 @@ async function handleCopy(
   item: { content: string; id: number; type?: HistoryItem['type'] },
   kind: 'history' | 'snippet'
 ): Promise<void> {
-  await window.electronAPI.clipboard.clickItem({ content: item.content, type: item.type ?? 'text' })
+  // 片段：先解析占位符（有占位符则弹输入框，用户取消则放弃粘贴）
+  const content = item.content
+  const type: HistoryItem['type'] = item.type ?? 'text'
+  if (kind === 'snippet') {
+    const resolved = await openPlaceholderDialog({ content, type: type as FavoriteItem['type'] })
+    if (!resolved) return
+    await window.electronAPI.clipboard.clickItem(resolved)
+  } else {
+    await window.electronAPI.clipboard.clickItem({ content, type })
+  }
   copiedKey.value = `${kind}-${item.id}`
   if (copiedTimer) clearTimeout(copiedTimer)
   copiedTimer = setTimeout(() => {
