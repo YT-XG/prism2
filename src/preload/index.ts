@@ -91,11 +91,13 @@ const electronAPI: ElectronAPI = {
     deleteHistoryBatch: (ids: number[]) =>
       ipcRenderer.invoke(C.deleteHistoryBatch, ids) as Promise<void>,
     clearHistory: () => ipcRenderer.invoke(C.clearHistory) as Promise<void>,
+    updateHistoryContent: (id: number, content: string) =>
+      ipcRenderer.invoke(C.updateHistory, id, content) as Promise<boolean>,
     getHistoryCount: () => ipcRenderer.invoke(C.getHistoryCount) as Promise<number>,
     getRetentionState: () => ipcRenderer.invoke(C.getRetentionState) as Promise<ClipboardRetention>,
     setRetentionState: (partial: Partial<ClipboardRetention>) =>
       ipcRenderer.invoke(C.setRetentionState, partial) as Promise<void>,
-    clickItem: (payload: { content: string; type: 'text' | 'image' }) =>
+    clickItem: (payload: { content: string; type: 'text' | 'image' | 'richtext' }) =>
       ipcRenderer.invoke(C.clickItem, payload) as Promise<void>,
     getImageData: (filename: string) =>
       ipcRenderer.invoke(C.getImageData, filename) as Promise<string>,
@@ -104,10 +106,20 @@ const electronAPI: ElectronAPI = {
       ipcRenderer.invoke(C.getFavoritesByCategory, category),
     getCategories: () => ipcRenderer.invoke(C.getCategories),
     searchSnippets: (keyword: string) => ipcRenderer.invoke(C.searchSnippets, keyword),
-    addFavorite: (content: string, category?: string, description?: string) =>
-      ipcRenderer.invoke(C.addFavorite, content, category, description) as Promise<number>,
-    updateFavorite: (id: number, content: string, category: string, description: string) =>
-      ipcRenderer.invoke(C.updateFavorite, id, content, category, description) as Promise<void>,
+    addFavorite: (
+      content: string,
+      category?: string,
+      description?: string,
+      type?: 'text' | 'richtext'
+    ) => ipcRenderer.invoke(C.addFavorite, content, category, description, type) as Promise<number>,
+    updateFavorite: (
+      id: number,
+      content: string,
+      category: string,
+      description: string,
+      type?: 'text' | 'richtext'
+    ) =>
+      ipcRenderer.invoke(C.updateFavorite, id, content, category, description, type) as Promise<void>,
     deleteFavorite: (id: number) => ipcRenderer.invoke(C.deleteFavorite, id) as Promise<void>,
     clearFavorites: () => ipcRenderer.invoke(C.clearFavorites) as Promise<void>,
     writeText: (text: string) => ipcRenderer.invoke(C.writeText, text) as Promise<void>,

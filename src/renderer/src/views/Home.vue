@@ -98,7 +98,7 @@
                   class="row__thumb"
                   alt="剪贴板图片"
                 />
-                <span v-else class="row__text">{{ item.content }}</span>
+                <span v-else class="row__text">{{ itemText(item) }}</span>
                 <span class="row__time">{{ formatTime(item.created_at) }}</span>
                 <span v-if="copiedKey === 'history-' + item.id" class="row__copied">
                   <Check :size="12" :stroke-width="3" /> 已复制
@@ -106,6 +106,14 @@
                 <span class="row__actions" @click.stop>
                   <button class="row-btn" title="收藏" @click="quickFavorite(item)">
                     <Star :size="13" :stroke-width="1.6" />
+                  </button>
+                  <button
+                    v-if="item.type !== 'image'"
+                    class="row-btn"
+                    title="编辑"
+                    @click="editHistory(item)"
+                  >
+                    <Pencil :size="13" :stroke-width="1.6" />
                   </button>
                   <button
                     class="row-btn row-btn--danger"
@@ -132,12 +140,15 @@
                 @click="handleCopy(item, 'snippet')"
               >
                 <Star :size="14" :stroke-width="1.6" class="row__cat-icon" />
-                <span class="row__text">{{ item.content }}</span>
+                <span class="row__text">{{ itemText(item) }}</span>
                 <span v-if="item.category" class="row__cat">{{ item.category }}</span>
                 <span v-if="copiedKey === 'snippet-' + item.id" class="row__copied">
                   <Check :size="12" :stroke-width="3" /> 已复制
                 </span>
                 <span class="row__actions" @click.stop>
+                  <button class="row-btn" title="编辑" @click="editSnippet(item)">
+                    <Pencil :size="13" :stroke-width="1.6" />
+                  </button>
                   <button
                     class="row-btn row-btn--danger"
                     title="删除"
@@ -191,12 +202,19 @@
     <!-- 便利贴大编辑框（主页创建 / 点击编辑共用，富文本） -->
     <StickyNoteEditorDialog v-model="noteDialog" :note="editingNote" @save="saveNote" />
 
-    <!-- 片段编辑弹窗（新增片段） -->
+    <!-- 片段编辑弹窗（新增 / 编辑共用） -->
     <SnippetEditorDialog
       v-model="snippetDialog"
-      :favorite="null"
+      :favorite="editingSnippet"
       :categories="snippetCategories"
       @save="saveSnippet"
+    />
+
+    <!-- 历史记录富文本编辑 -->
+    <ClipboardHistoryEditorDialog
+      v-model="historyDialog"
+      :item="editingHistory"
+      @save="saveHistory"
     />
   </div>
 </template>
@@ -210,7 +228,8 @@ import {
   Star,
   History,
   Check,
-  GripVertical
+  GripVertical,
+  Pencil
 } from '@lucide/vue'
 import type { Component } from 'vue'
 import UiButton from '@renderer/components/ui/UiButton.vue'
@@ -219,10 +238,12 @@ import UiDialog from '@renderer/components/ui/UiDialog.vue'
 import HomeNoteCard from '@renderer/components/HomeNoteCard.vue'
 import StickyNoteEditorDialog from '@renderer/components/StickyNoteEditorDialog.vue'
 import SnippetEditorDialog from '@renderer/components/SnippetEditorDialog.vue'
+import ClipboardHistoryEditorDialog from '@renderer/components/ClipboardHistoryEditorDialog.vue'
 import { subscribeOnUnmounted } from '@renderer/composables/useIpcListener'
 import { useToast } from '@renderer/composables/useToast'
 import { useHomeModules } from '@renderer/composables/useHomeModules'
 import { useDrag } from '@renderer/composables/useDrag'
+import { itemText } from '@renderer/composables/useClipboardText'
 import type {
   HistoryItem,
   FavoriteItem,
@@ -389,8 +410,12 @@ const pinnedNotes = ref<StickyNote[]>([])
 /** 便利贴大编辑框：打开状态 + 编辑目标（null = 新建） */
 const noteDialog = ref(false)
 const editingNote = ref<StickyNote | null>(null)
-/** 片段编辑弹窗（新增片段入口） */
+/** 片段编辑弹窗（新增 / 编辑共用；null = 新建） */
 const snippetDialog = ref(false)
+const editingSnippet = ref<FavoriteItem | null>(null)
+/** 历史记录富文本编辑弹窗：打开状态 + 编辑目标 */
+const historyDialog = ref(false)
+const editingHistory = ref<HistoryItem | null>(null)
 
 const deleteDialogTitle = computed(() =>
   deleteTarget.value?.kind === 'snippet'
@@ -488,7 +513,12 @@ watch(keyword, (val) => {
 
 /** 快速收藏历史记录 */
 async function quickFavorite(item: HistoryItem): Promise<void> {
-  await window.electronAPI.clipboard.addFavorite(item.content, '', '')
+  await window.electronAPI.clipboard.addFavorite(
+    item.content,
+    '',
+    '',
+    item.type === 'richtext' ? 'richtext' : 'text'
+  )
   await fetchStats()
   toast.success('已收藏')
 }
@@ -541,19 +571,68 @@ function openCreateNote(): void {
 
 /** 打开主页片段编辑弹窗（新建） */
 function openCreateSnippet(): void {
+  editingSnippet.value = null
   snippetDialog.value = true
 }
 
-/** 新增片段：写库 → 刷新最近列表与概览 */
+/** 打开片段编辑弹窗（编辑既有片段） */
+function editSnippet(item: FavoriteItem): void {
+  editingSnippet.value = item
+  snippetDialog.value = true
+}
+
+/** 新增 / 编辑片段：写库 → 刷新最近列表与概览 */
 async function saveSnippet(payload: {
   content: string
   category: string
   description: string
 }): Promise<void> {
-  await window.electronAPI.clipboard.addFavorite(payload.content, payload.category, payload.description)
+  const target = editingSnippet.value
+  if (target) {
+    await window.electronAPI.clipboard.updateFavorite(
+      target.id,
+      payload.content,
+      payload.category,
+      payload.description,
+      'richtext'
+    )
+  } else {
+    await window.electronAPI.clipboard.addFavorite(
+      payload.content,
+      payload.category,
+      payload.description,
+      'richtext'
+    )
+  }
   snippetDialog.value = false
+  editingSnippet.value = null
   await refreshAll()
-  toast.success('片段已添加')
+  toast.success(target ? '片段已更新' : '片段已添加')
+}
+
+// ---------------------------------------------------------------------------
+// 历史记录富文本编辑
+// ---------------------------------------------------------------------------
+
+/** 打开历史记录富文本编辑弹窗（图片不可编辑） */
+function editHistory(item: HistoryItem): void {
+  editingHistory.value = item
+  historyDialog.value = true
+}
+
+/** 保存历史记录编辑（改为富文本；原地替换当前列表项） */
+async function saveHistory(payload: { content: string }): Promise<void> {
+  const target = editingHistory.value
+  if (!target) return
+  await window.electronAPI.clipboard.updateHistoryContent(target.id, payload.content)
+  historyDialog.value = false
+  editingHistory.value = null
+  const updated: HistoryItem = { ...target, content: payload.content, type: 'richtext' }
+  recentHistory.value = recentHistory.value.map((h) => (h.id === target.id ? updated : h))
+  searchResults.value.history = searchResults.value.history.map((h) =>
+    h.id === target.id ? updated : h
+  )
+  toast.success('记录已更新')
 }
 
 /**

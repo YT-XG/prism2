@@ -12,8 +12,8 @@
 // 数据模型
 // ---------------------------------------------------------------------------
 
-/** 剪贴板记录类型：文本 / 图片（图片的 content 为文件名） */
-export type HistoryItemType = 'text' | 'image'
+/** 剪贴板记录类型：文本 / 图片 / 富文本（richtext 的 content 为 HTML；图片的 content 为文件名） */
+export type HistoryItemType = 'text' | 'image' | 'richtext'
 
 /** 剪贴板历史记录项 */
 export interface HistoryItem {
@@ -23,6 +23,9 @@ export interface HistoryItem {
   type: HistoryItemType
 }
 
+/** 片段内容类型：文本 / 富文本（richtext 的 content 为 HTML） */
+export type FavoriteItemType = 'text' | 'richtext'
+
 /** 收藏片段项 */
 export interface FavoriteItem {
   id: number
@@ -30,6 +33,8 @@ export interface FavoriteItem {
   category: string
   description: string
   created_at: number
+  /** 内容类型：text 纯文本 / richtext 富文本 HTML */
+  type: FavoriteItemType
 }
 
 /** 收藏分类及其数量 */
@@ -326,6 +331,7 @@ export const SERVICE_CHANNELS = {
     deleteHistory: 'to-service-ClipboardService:deleteHistory',
     deleteHistoryBatch: 'to-service-ClipboardService:deleteHistoryBatch',
     clearHistory: 'to-service-ClipboardService:clearHistory',
+    updateHistory: 'to-service-ClipboardService:updateHistoryContent',
     getHistoryCount: 'to-service-ClipboardService:getHistoryCount',
     getRetentionState: 'to-service-ClipboardService:getRetentionState',
     setRetentionState: 'to-service-ClipboardService:setRetentionState',
@@ -432,10 +438,12 @@ export interface ElectronAPI {
     /** 批量删除历史记录（ids 为非法集合时静默忽略非法项） */
     deleteHistoryBatch: (ids: number[]) => Promise<void>
     clearHistory: () => Promise<void>
+    /** 修改历史记录内容（改为富文本；图片记录不可编辑返回 false） */
+    updateHistoryContent: (id: number, content: string) => Promise<boolean>
     getHistoryCount: () => Promise<number>
     getRetentionState: () => Promise<ClipboardRetention>
     setRetentionState: (partial: Partial<ClipboardRetention>) => Promise<void>
-    /** 点击历史项：写剪贴板 → 隐藏窗口 → 恢复焦点 → 模拟粘贴 */
+    /** 点击历史项：写剪贴板 → 隐藏窗口 → 恢复焦点 → 模拟粘贴（richtext 写 HTML+纯文本，保留格式） */
     clickItem: (payload: { content: string; type: HistoryItemType }) => Promise<void>
     /** 读取图片记录为 data URL（仅 type='image'，返回空串表示不可用） */
     getImageData: (filename: string) => Promise<string>
@@ -443,12 +451,18 @@ export interface ElectronAPI {
     getFavoritesByCategory: (category: string) => Promise<FavoriteItem[]>
     getCategories: () => Promise<CategoryItem[]>
     searchSnippets: (keyword: string) => Promise<FavoriteItem[]>
-    addFavorite: (content: string, category?: string, description?: string) => Promise<number>
+    addFavorite: (
+      content: string,
+      category?: string,
+      description?: string,
+      type?: FavoriteItemType
+    ) => Promise<number>
     updateFavorite: (
       id: number,
       content: string,
       category: string,
-      description: string
+      description: string,
+      type?: FavoriteItemType
     ) => Promise<void>
     deleteFavorite: (id: number) => Promise<void>
     clearFavorites: () => Promise<void>

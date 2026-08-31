@@ -124,9 +124,15 @@ class ClipboardService extends SqliteStore {
          content TEXT NOT NULL,
          category TEXT DEFAULT '',
          description TEXT DEFAULT '',
+         type TEXT NOT NULL DEFAULT 'text',
          created_at INTEGER NOT NULL
        )`
     )
+    // 旧库迁移：补充 type 列（富文本片段）
+    const favColumns = this.all<{ name: string }>('PRAGMA table_info(favorites)')
+    if (!favColumns.some((c) => c.name === 'type')) {
+      this.run("ALTER TABLE favorites ADD COLUMN type TEXT NOT NULL DEFAULT 'text'")
+    }
     this.run('CREATE INDEX IF NOT EXISTS idx_fav_category ON favorites(category)')
     this.run('CREATE INDEX IF NOT EXISTS idx_fav_created_at ON favorites(created_at DESC)')
 
@@ -356,9 +362,10 @@ class ClipboardService extends SqliteStore {
   }
 
   search(keyword: string): HistoryItem[] {
-    // 仅搜索文本记录；图片的 content 是文件名，参与搜索无意义
+    // 仅搜索文本/富文本记录；图片的 content 是文件名，参与搜索无意义。
+    // 富文本存 HTML，其文本子串可被 LIKE 命中（跨标签断词偶发漏搜属已知局限）。
     return this.all<HistoryItem>(
-      "SELECT * FROM clipboard_history WHERE type = 'text' AND content LIKE ? ESCAPE '\\' ORDER BY created_at DESC LIMIT 50",
+      "SELECT * FROM clipboard_history WHERE type IN ('text', 'richtext') AND content LIKE ? ESCAPE '\\' ORDER BY created_at DESC LIMIT 50",
       [`%${this.#escapeLike(keyword)}%`]
     )
   }
@@ -406,27 +413,48 @@ class ClipboardService extends SqliteStore {
     return keyword.replace(/[\\%_]/g, (ch) => `\\${ch}`)
   }
 
+  /** 去除 HTML 标签得到纯文本（富文本记录写系统剪贴板时附纯文本版本用） */
+  #stripHtml(html: string): string {
+    return html
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<\/p>|<\/div>|<\/li>|<\/h[1-6]>/gi, '\n')
+      .replace(/<[^>]*>/g, '')
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&amp;/g, '&')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/\n{3,}/g, '\n\n')
+      .trim()
+  }
+
   // -------------------------------------------------------------------------
   // 收藏 CRUD
   // -------------------------------------------------------------------------
 
-  addFavorite(content: string, category = '', description = ''): number {
+  addFavorite(content: string, category = '', description = '', type: FavoriteItem['type'] = 'text'): number {
     const now = Date.now()
-    this.run('INSERT INTO favorites (content, category, description, created_at) VALUES (?, ?, ?, ?)', [
-      content,
-      category,
-      description,
-      now
-    ])
+    this.run(
+      'INSERT INTO favorites (content, category, description, type, created_at) VALUES (?, ?, ?, ?, ?)',
+      [content, category, description, type, now]
+    )
     this.save()
     return this.lastInsertId()
   }
 
-  updateFavorite(id: number, content: string, category: string, description: string): void {
-    this.run('UPDATE favorites SET content = ?, category = ?, description = ? WHERE id = ?', [
+  updateFavorite(
+    id: number,
+    content: string,
+    category: string,
+    description: string,
+    type: FavoriteItem['type'] = 'text'
+  ): void {
+    this.run('UPDATE favorites SET content = ?, category = ?, description = ?, type = ? WHERE id = ?', [
       content,
       category,
       description,
+      type,
       id
     ])
     this.save()
@@ -443,8 +471,25 @@ class ClipboardService extends SqliteStore {
   }
 
   // -------------------------------------------------------------------------
-  // 历史删除
+  // 历史删除 / 编辑
   // -------------------------------------------------------------------------
+
+  /**
+   * 修改历史记录内容（编辑后按富文本存储）。
+   * @returns 是否成功（记录不存在或为图片时返回 false）
+   */
+  updateHistoryContent(id: number, content: string): boolean {
+    const row = this.one<{ type: string }>(
+      'SELECT type FROM clipboard_history WHERE id = ?',
+      [id]
+    )
+    if (!row || row.type === 'image') return false
+    // 保留 created_at：编辑不置顶，记录保持在原位置
+    this.run("UPDATE clipboard_history SET content = ?, type = 'richtext' WHERE id = ?", [content, id])
+    this.save()
+    this.#notifyHistoryChanged()
+    return true
+  }
 
   delete(id: number): void {
     const row = this.one<{ type: string; content: string }>(
@@ -732,8 +777,8 @@ class ClipboardService extends SqliteStore {
 
       for (const row of backupFavorites) {
         this.db?.run(
-          'INSERT OR IGNORE INTO favorites (id, content, category, description, created_at) VALUES (?, ?, ?, ?, ?)',
-          [row.id, row.content, row.category, row.description, row.created_at]
+          'INSERT OR IGNORE INTO favorites (id, content, category, description, type, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+          [row.id, row.content, row.category, row.description, row.type === 'richtext' ? 'richtext' : 'text', row.created_at]
         )
         if ((this.db?.getRowsModified() ?? 0) > 0) {
           importedFavorites++
@@ -816,8 +861,8 @@ class ClipboardService extends SqliteStore {
     }
     for (const row of favorites) {
       this.db?.run(
-        'INSERT OR IGNORE INTO favorites (id, content, category, description, created_at) VALUES (?, ?, ?, ?, ?)',
-        [row.id, row.content, row.category ?? '', row.description ?? '', row.created_at]
+        'INSERT OR IGNORE INTO favorites (id, content, category, description, type, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+        [row.id, row.content, row.category ?? '', row.description ?? '', 'text', row.created_at]
       )
       if ((this.db?.getRowsModified() ?? 0) > 0) {
         importedFavorites++
@@ -844,6 +889,9 @@ class ClipboardService extends SqliteStore {
     ipcMain.handle(C.deleteHistory, (_e, id: number) => this.delete(Number(id)))
     ipcMain.handle(C.deleteHistoryBatch, (_e, ids: number[]) => this.deleteBatch(ids))
     ipcMain.handle(C.clearHistory, () => this.clearAll())
+    ipcMain.handle(C.updateHistory, (_e, id: number, content: string) =>
+      this.updateHistoryContent(Number(id), String(content ?? ''))
+    )
     ipcMain.handle(C.getHistoryCount, () => this.getHistoryCount())
     ipcMain.handle(C.getRetentionState, () => this.getRetentionState())
     ipcMain.handle(C.setRetentionState, (_e, partial: Partial<ClipboardRetention>) =>
@@ -855,7 +903,8 @@ class ClipboardService extends SqliteStore {
 
     ipcMain.handle(C.clickItem, async (event, payload: { content?: string; type?: string }) => {
       const content = String(payload?.content ?? '')
-      const type: HistoryItem['type'] = payload?.type === 'image' ? 'image' : 'text'
+      const type: HistoryItem['type'] =
+        payload?.type === 'image' ? 'image' : payload?.type === 'richtext' ? 'richtext' : 'text'
       if (!content) return
 
       if (type === 'image') {
@@ -866,6 +915,12 @@ class ClipboardService extends SqliteStore {
         const mime = ext === 'jpg' ? 'image/jpeg' : `image/${ext ?? 'png'}`
         const data = readFileSync(path)
         await clipboard.write([new ClipboardItem({ [mime]: new Blob([data]) })])
+      } else if (type === 'richtext') {
+        // 富文本：同时写 HTML 与纯文本，目标应用尽量保留格式
+        await clipboard.write([
+          new ClipboardItem({ 'text/html': new Blob([content], { type: 'text/html' }) }),
+          new ClipboardItem({ 'text/plain': new Blob([this.#stripHtml(content)], { type: 'text/plain' }) })
+        ])
       } else {
         await clipboard.writeText(content)
       }
@@ -901,11 +956,24 @@ class ClipboardService extends SqliteStore {
     ipcMain.handle(C.searchSnippets, (_e, keyword: string) =>
       this.searchFavorites(String(keyword ?? ''))
     )
-    ipcMain.handle(C.addFavorite, (_e, content: string, category?: string, description?: string) =>
-      this.addFavorite(String(content ?? ''), category ?? '', description ?? '')
+    ipcMain.handle(C.addFavorite, (_e, content: string, category?: string, description?: string, type?: string) =>
+      this.addFavorite(
+        String(content ?? ''),
+        category ?? '',
+        description ?? '',
+        type === 'richtext' ? 'richtext' : 'text'
+      )
     )
-    ipcMain.handle(C.updateFavorite, (_e, id: number, content: string, category: string, description: string) =>
-      this.updateFavorite(Number(id), String(content ?? ''), String(category ?? ''), String(description ?? ''))
+    ipcMain.handle(
+      C.updateFavorite,
+      (_e, id: number, content: string, category: string, description: string, type?: string) =>
+        this.updateFavorite(
+          Number(id),
+          String(content ?? ''),
+          String(category ?? ''),
+          String(description ?? ''),
+          type === 'richtext' ? 'richtext' : 'text'
+        )
     )
     ipcMain.handle(C.deleteFavorite, (_e, id: number) => this.deleteFavorite(Number(id)))
     ipcMain.handle(C.clearFavorites, () => this.clearAllFavorites())

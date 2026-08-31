@@ -54,6 +54,7 @@ import { useRouter } from 'vue-router'
 import { Search, House, ClipboardList, StickyNote, Settings2, History, Star } from '@lucide/vue'
 import type { Component } from 'vue'
 import { useFeatureSearch } from '@renderer/composables/useFeatureSearch'
+import { itemText } from '@renderer/composables/useClipboardText'
 
 const { isOpen, close } = useFeatureSearch()
 const router = useRouter()
@@ -146,20 +147,20 @@ async function rebuild(): Promise<void> {
     id: `history-${h.id}`,
     kind: 'history',
     icon: History,
-    title: h.content,
+    title: itemText(h),
     subtitle: '剪贴板',
     run: () => {
-      void window.electronAPI.clipboard.clickItem({ content: h.content, type: 'text' })
+      void window.electronAPI.clipboard.clickItem({ content: h.content, type: h.type })
     }
   }))
   const snippetItems: PaletteItem[] = snippets.slice(0, 10).map((s) => ({
     id: `snippet-${s.id}`,
     kind: 'snippet',
     icon: Star,
-    title: s.content,
+    title: itemText(s),
     subtitle: s.category || '片段',
     run: () => {
-      void window.electronAPI.clipboard.clickItem({ content: s.content, type: 'text' })
+      void window.electronAPI.clipboard.clickItem({ content: s.content, type: s.type })
     }
   }))
 

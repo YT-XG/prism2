@@ -5,8 +5,8 @@
     @update:model-value="$emit('update:modelValue', $event)"
   >
     <div class="form-group">
-      <label>内容 <span class="required">*</span></label>
-      <textarea v-model="form.content" class="form-textarea" rows="4" placeholder="输入片段内容..."></textarea>
+      <label>内容（支持富文本）<span class="required">*</span></label>
+      <RichTextEditor v-model="form.content" placeholder="输入片段内容..." />
     </div>
     <div class="form-group">
       <label>分类</label>
@@ -21,7 +21,7 @@
     </div>
     <template #footer>
       <UiButton variant="ghost" @click="$emit('update:modelValue', false)">取消</UiButton>
-      <UiButton variant="primary" :disabled="!form.content.trim()" @click="save">
+      <UiButton variant="primary" :disabled="!canSave" @click="save">
         {{ favorite ? '保存' : '添加' }}
       </UiButton>
     </template>
@@ -29,9 +29,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, computed, watch } from 'vue'
 import UiButton from '@renderer/components/ui/UiButton.vue'
 import UiDialog from '@renderer/components/ui/UiDialog.vue'
+import RichTextEditor from '@renderer/components/ui/RichTextEditor.vue'
+import { stripHtml } from '@renderer/composables/useClipboardText'
 import type { FavoriteItem, CategoryItem } from '@preload/ipc'
 
 const props = defineProps<{
@@ -52,6 +54,9 @@ const form = ref<{ content: string; category: string; description: string }>({
   category: '',
   description: ''
 })
+
+/** 空态判断：去标签后 trim 为空则禁用保存 */
+const canSave = computed(() => stripHtml(form.value.content).trim().length > 0)
 
 /** 打开时按编辑目标初始化表单（新建 → 空） */
 watch(
@@ -99,8 +104,7 @@ function save(): void {
   color: var(--danger);
 }
 
-.form-input,
-.form-textarea {
+.form-input {
   width: 100%;
   padding: var(--sp-2) var(--sp-3);
   border: 1px solid var(--border);
@@ -111,14 +115,8 @@ function save(): void {
   outline: none;
 }
 
-.form-input:focus,
-.form-textarea:focus {
+.form-input:focus {
   border-color: var(--brand);
   box-shadow: var(--ring);
-}
-
-.form-textarea {
-  resize: vertical;
-  min-height: 80px;
 }
 </style>

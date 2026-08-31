@@ -132,15 +132,22 @@
                     <span v-if="selectMode" class="cm-card__check">
                       <Check v-if="selectedIds.has(item.id)" :size="12" :stroke-width="3" />
                     </span>
-                    <div class="cm-card__content">
+                    <div
+                      v-if="item.type === 'image'"
+                      class="cm-card__content"
+                    >
                       <img
-                        v-if="item.type === 'image'"
                         :src="imageCache[item.content]"
                         class="cm-card__image"
                         alt="剪贴板图片"
                       />
-                      <template v-else>{{ item.content }}</template>
                     </div>
+                    <div
+                      v-else-if="item.type === 'richtext'"
+                      class="cm-card__content"
+                      v-html="item.content"
+                    ></div>
+                    <div v-else class="cm-card__content">{{ item.content }}</div>
                     <div class="cm-card__footer">
                       <span v-if="justCopiedId === item.id" class="cm-card__copied">
                         <Check :size="12" :stroke-width="3" /> 已复制
@@ -154,6 +161,14 @@
                           @click="quickFavorite(item)"
                         >
                           <Star :size="14" :stroke-width="1.6" />
+                        </button>
+                        <button
+                          v-if="item.type !== 'image'"
+                          class="action-btn"
+                          title="编辑"
+                          @click="editHistoryItem(item)"
+                        >
+                          <Pencil :size="14" :stroke-width="1.6" />
                         </button>
                         <button class="action-btn action-btn--danger" title="删除" @click="requestDeleteItem(item)">
                           <Trash2 :size="14" :stroke-width="1.6" />
@@ -174,9 +189,14 @@
                   class="cm-card"
                   :class="[`cm-card--${tint(index)}`, { 'is-copied': justCopiedId === item.id }]"
                   :style="cardDelay(index)"
-                  @click="handleCopy({ content: item.content, type: 'text', id: item.id })"
+                  @click="handleCopy({ content: item.content, type: (item as FavoriteItem).type, id: item.id })"
                 >
-                  <div class="cm-card__content">{{ item.content }}</div>
+                  <div
+                    v-if="(item as FavoriteItem).type === 'richtext'"
+                    class="cm-card__content"
+                    v-html="(item as FavoriteItem).content"
+                  ></div>
+                  <div v-else class="cm-card__content">{{ item.content }}</div>
 
                   <div
                     v-if="(item as FavoriteItem).category || (item as FavoriteItem).description"
@@ -218,6 +238,13 @@
       :favorite="editing"
       :categories="categories"
       @save="saveFavorite"
+    />
+
+    <!-- 历史记录富文本编辑 -->
+    <ClipboardHistoryEditorDialog
+      v-model="historyDialog"
+      :item="editingHistory"
+      @save="saveHistory"
     />
 
     <!-- 清空确认 -->
@@ -263,6 +290,7 @@ import UiEmptyState from '@renderer/components/ui/UiEmptyState.vue'
 import UiDialog from '@renderer/components/ui/UiDialog.vue'
 import UiSwitch from '@renderer/components/ui/UiSwitch.vue'
 import SnippetEditorDialog from '@renderer/components/SnippetEditorDialog.vue'
+import ClipboardHistoryEditorDialog from '@renderer/components/ClipboardHistoryEditorDialog.vue'
 import { subscribeOnUnmounted } from '@renderer/composables/useIpcListener'
 import { useToast } from '@renderer/composables/useToast'
 import type { HistoryItem, FavoriteItem, CategoryItem, ClipboardRetention } from '@preload/ipc'
@@ -284,6 +312,9 @@ const retentionLoaded = ref(false)
 const RETENTION_VALUES = Array.from({ length: 30 }, (_, i) => i + 1)
 const showDialog = ref(false)
 const editing = ref<FavoriteItem | null>(null)
+/** 历史记录富文本编辑弹窗：打开状态 + 编辑目标 */
+const historyDialog = ref(false)
+const editingHistory = ref<HistoryItem | null>(null)
 const clearConfirm = ref(false)
 /** 批量选择模式 */
 const selectMode = ref(false)
@@ -429,10 +460,36 @@ function cardDelay(index: number): Record<string, string> {
 }
 
 async function quickFavorite(item: HistoryItem): Promise<void> {
-  await window.electronAPI.clipboard.addFavorite(item.content, '', '')
+  await window.electronAPI.clipboard.addFavorite(
+    item.content,
+    '',
+    '',
+    item.type === 'richtext' ? 'richtext' : 'text'
+  )
   await fetchFavorites()
   await fetchCategories()
   toast.success('已收藏')
+}
+
+/** 打开历史记录富文本编辑弹窗 */
+function editHistoryItem(item: HistoryItem): void {
+  editingHistory.value = item
+  historyDialog.value = true
+}
+
+/** 保存历史记录编辑（改为富文本；原地替换当前列表项） */
+async function saveHistory(payload: { content: string }): Promise<void> {
+  const target = editingHistory.value
+  if (!target) return
+  await window.electronAPI.clipboard.updateHistoryContent(target.id, payload.content)
+  historyDialog.value = false
+  editingHistory.value = null
+  const updated: HistoryItem = { ...target, content: payload.content, type: 'richtext' }
+  historyList.value = historyList.value.map((h) => (h.id === target.id ? updated : h))
+  if (searchResults.value.some((h) => h.id === target.id)) {
+    searchResults.value = searchResults.value.map((h) => (h.id === target.id ? updated : h))
+  }
+  toast.success('记录已更新')
 }
 
 function openAdd(): void {
@@ -457,10 +514,16 @@ async function saveFavorite(payload: {
       target.id,
       payload.content,
       payload.category,
-      payload.description
+      payload.description,
+      'richtext'
     )
   } else {
-    await window.electronAPI.clipboard.addFavorite(payload.content, payload.category, payload.description)
+    await window.electronAPI.clipboard.addFavorite(
+      payload.content,
+      payload.category,
+      payload.description,
+      'richtext'
+    )
   }
   showDialog.value = false
   editing.value = null
@@ -576,6 +639,13 @@ onMounted(async () => {
       historyList.value = historyList.value.filter((h) => h.id !== item.id)
       historyList.value.unshift(item)
       if (item.type === 'image') void loadImages([item])
+    })
+  )
+
+  // 历史变更（编辑/删除/清空/导入等）：刷新列表（反映主页等处的编辑）
+  subscribeOnUnmounted(() =>
+    window.electronAPI.clipboard.onHistoryChanged(() => {
+      void fetchHistory()
     })
   )
 })

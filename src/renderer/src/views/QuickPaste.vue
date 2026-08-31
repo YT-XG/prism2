@@ -40,7 +40,7 @@
             <ImageIcon v-else-if="item.type === 'image'" :size="16" :stroke-width="1.6" class="qp-item__img-icon" />
             <div class="qp-item__text" :class="{ 'qp-item__text--muted': item.type === 'image' }">
               <template v-if="item.type === 'image'">图片 · {{ formatTime(item.created_at) }}</template>
-              <template v-else>{{ item.content }}</template>
+              <template v-else>{{ itemText(item) }}</template>
             </div>
             <span class="qp-item__time">{{ formatTime(item.created_at) }}</span>
           </div>
@@ -54,6 +54,7 @@
 import { ref, watch, onMounted, onBeforeUnmount } from 'vue'
 import { Search, Image as ImageIcon } from '@lucide/vue'
 import { subscribeOnUnmounted } from '@renderer/composables/useIpcListener'
+import { itemText } from '@renderer/composables/useClipboardText'
 import type { HistoryItem } from '@preload/ipc'
 
 /** 展示条数上限 */
@@ -158,6 +159,13 @@ onMounted(async () => {
       historyList.value = historyList.value.filter((h) => h.id !== item.id)
       historyList.value.unshift(item)
       if (item.type === 'image') void loadImages([item])
+    })
+  )
+
+  // 历史变更（编辑/删除/清空等）：刷新列表
+  subscribeOnUnmounted(() =>
+    window.electronAPI.clipboard.onHistoryChanged(() => {
+      void refreshHistory()
     })
   )
 })
