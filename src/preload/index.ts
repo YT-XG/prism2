@@ -163,6 +163,10 @@ const electronAPI: ElectronAPI = {
     addFoldersByPaths: (paths: string[]) =>
       ipcRenderer.invoke(QF.addFoldersByPaths, paths) as Promise<QuickFolder[]>,
     deleteFolder: (id: number) => ipcRenderer.invoke(QF.deleteFolder, id) as Promise<void>,
+    reorder: (orderedIds: number[]) =>
+      ipcRenderer.invoke(QF.reorder, orderedIds) as Promise<void>,
+    setAlias: (id: number, alias: string | null) =>
+      ipcRenderer.invoke(QF.setAlias, id, alias) as Promise<void>,
     setPosition: (id: number, x: number, y: number) =>
       ipcRenderer.invoke(QF.setPosition, id, x, y) as Promise<void>,
     setSize: (id: number, w: number, h: number) =>

@@ -63,11 +63,18 @@ function matchFeatures(q: string): FeatureDef[] {
 
 /**
  * 全局搜索聚合：功能 + 快捷文件夹 + 剪贴板历史 + 片段。
- * 空查询返回功能全量（launcher 态），其余来源为空。
+ * 空查询（launcher 态）返回功能全量 + 最近 20 条剪贴板历史，其余来源为空。
  */
 export async function searchGlobal(q: string): Promise<GlobalSearchResult> {
   const trimmed = q.trim()
-  if (!trimmed) return EMPTY_RESULT
+  if (!trimmed) {
+    const recent = await window.electronAPI.clipboard.getHistory(20, 0)
+    return {
+      ...EMPTY_RESULT,
+      // 图片记录 content 为文件名，在单行列表中无法预览，仅取文本/富文本
+      history: recent.filter((h) => h.type === 'text' || h.type === 'richtext')
+    }
+  }
 
   const lower = trimmed.toLowerCase()
   const [history, snippets, folders] = await Promise.all([
@@ -77,11 +84,14 @@ export async function searchGlobal(q: string): Promise<GlobalSearchResult> {
   ])
   return {
     features: matchFeatures(trimmed),
-    // 快捷文件夹：按名称/路径匹配，失效路径不参与
+    // 快捷文件夹：按别名/名称/路径匹配，失效路径不参与
     folders: folders
       .filter((f) => !f.missing)
       .filter(
-        (f) => f.name.toLowerCase().includes(lower) || f.path.toLowerCase().includes(lower)
+        (f) =>
+          (f.alias?.toLowerCase().includes(lower) ?? false) ||
+          f.name.toLowerCase().includes(lower) ||
+          f.path.toLowerCase().includes(lower)
       )
       .slice(0, 8),
     history: history.slice(0, 10),

@@ -23,7 +23,7 @@ class QuickFoldersService extends SqliteStore {
     super('quick-folders.db', 'QuickFoldersService')
   }
 
-  /** 初始化：建表 + 注册 IPC */
+  /** 初始化：建表（含存量库迁移）+ 注册 IPC */
   async init(): Promise<void> {
     await this.open()
 
@@ -32,14 +32,29 @@ class QuickFoldersService extends SqliteStore {
          id INTEGER PRIMARY KEY AUTOINCREMENT,
          path TEXT NOT NULL UNIQUE,
          name TEXT NOT NULL,
+         alias TEXT,
          home_x INTEGER,
          home_y INTEGER,
          home_w INTEGER,
          home_h INTEGER,
+         sort_order INTEGER NOT NULL DEFAULT 0,
          created_at INTEGER NOT NULL
        )`
     )
     this.run('CREATE INDEX IF NOT EXISTS idx_quick_folders_created ON quick_folders(created_at)')
+
+    // 存量库迁移：补 sort_order 列并按既有顺序（创建时间）回填，保证老用户首次排序稳定
+    const cols = this.all<{ name: string }>('PRAGMA table_info(quick_folders)')
+    if (!cols.some((c) => c.name === 'sort_order')) {
+      this.run('ALTER TABLE quick_folders ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0')
+      this.all<{ id: number }>('SELECT id FROM quick_folders ORDER BY created_at ASC, id ASC').forEach(
+        (row, i) => this.run('UPDATE quick_folders SET sort_order = ? WHERE id = ?', [i, row.id])
+      )
+    }
+    // 存量库迁移：补 alias 列（可选别名，默认空则回退到文件夹名展示）
+    if (!cols.some((c) => c.name === 'alias')) {
+      this.run('ALTER TABLE quick_folders ADD COLUMN alias TEXT')
+    }
 
     this.save()
     this.registerIPC()
@@ -50,10 +65,10 @@ class QuickFoldersService extends SqliteStore {
     this.close()
   }
 
-  /** 查询全部快捷文件夹（按创建时间正序）；path 实时校验，失效的标记 missing */
+  /** 查询全部快捷文件夹（按 sort_order 正序，新增的排在最后）；path 实时校验，失效的标记 missing */
   getAll(): QuickFolder[] {
     return this.all<QuickFolder>(
-      'SELECT * FROM quick_folders ORDER BY created_at ASC, id ASC'
+      'SELECT * FROM quick_folders ORDER BY sort_order ASC, created_at ASC, id ASC'
     ).map((r) => ({ ...r, missing: !existsSync(r.path) }))
   }
 
@@ -62,6 +77,9 @@ class QuickFoldersService extends SqliteStore {
    * 系统多选对话框与拖放添加共用此逻辑。
    */
   private insertValidPaths(paths: string[]): void {
+    // 新加的一律排在现有列表末尾（sort_order 从当前最大值递增）
+    const max = this.one<{ m: number }>('SELECT COALESCE(MAX(sort_order), 0) AS m FROM quick_folders')
+    let nextSort = (max?.m ?? 0) + 1
     for (const raw of paths) {
       const path = typeof raw === 'string' ? raw.trim() : ''
       if (!path || !existsSync(path)) continue
@@ -73,9 +91,10 @@ class QuickFoldersService extends SqliteStore {
         continue
       }
       this.run(
-        'INSERT OR IGNORE INTO quick_folders (path, name, created_at) VALUES (?, ?, ?)',
-        [path, name, Date.now()]
+        'INSERT OR IGNORE INTO quick_folders (path, name, sort_order, created_at) VALUES (?, ?, ?, ?)',
+        [path, name, nextSort, Date.now()]
       )
+      nextSort += 1
     }
   }
 
@@ -105,6 +124,25 @@ class QuickFoldersService extends SqliteStore {
 
   delete(id: number): void {
     this.run('DELETE FROM quick_folders WHERE id = ?', [id])
+    this.save()
+  }
+
+  /** 按给定 id 顺序重排（面板内拖拽排序），sort_order 取数组下标持久化 */
+  reorder(orderedIds: number[]): void {
+    if (!Array.isArray(orderedIds)) return
+    orderedIds.forEach((raw, i) => {
+      const id = Number(raw)
+      if (Number.isInteger(id) && id > 0) {
+        this.run('UPDATE quick_folders SET sort_order = ? WHERE id = ?', [i, id])
+      }
+    })
+    this.save()
+  }
+
+  /** 设置自定义别名（空串视为清除，回退到文件夹名展示） */
+  setAlias(id: number, alias: string | null): void {
+    const normalized = typeof alias === 'string' ? alias.trim() || null : null
+    this.run('UPDATE quick_folders SET alias = ? WHERE id = ?', [normalized, id])
     this.save()
   }
 
@@ -153,6 +191,10 @@ class QuickFoldersService extends SqliteStore {
     ipcMain.handle(QF.addFolders, () => this.add())
     ipcMain.handle(QF.addFoldersByPaths, (_e, paths: string[]) => this.addPaths(paths))
     ipcMain.handle(QF.deleteFolder, (_e, id: number) => this.delete(Number(id)))
+    ipcMain.handle(QF.reorder, (_e, orderedIds: number[]) => this.reorder(orderedIds))
+    ipcMain.handle(QF.setAlias, (_e, id: number, alias: string | null) =>
+      this.setAlias(Number(id), alias)
+    )
     ipcMain.handle(QF.setPosition, (_e, id: number, x: number, y: number) =>
       this.setPosition(Number(id), Number(x), Number(y))
     )

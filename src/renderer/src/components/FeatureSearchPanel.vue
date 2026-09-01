@@ -111,7 +111,7 @@ function buildItems(r: GlobalSearchResult): PaletteItem[] {
     id: `folder-${f.id}`,
     kind: 'folder' as const,
     icon: Folder,
-    title: f.name,
+    title: f.alias || f.name,
     subtitle: f.path,
     run: () => {
       if (props.standalone) closePanel()

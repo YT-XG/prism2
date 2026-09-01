@@ -207,6 +207,8 @@
         @open="openFolder"
         @remove="requestRemoveFolder"
         @add="addQuickFolders"
+        @reorder="reorderQuickFolders"
+        @rename="renameQuickFolder"
         @drag-end="persistQfPanelPos"
         @resize-end="persistQfPanelSize"
       />
@@ -534,10 +536,12 @@ const deleteDialogTitle = computed(() =>
         : '删除记录'
 )
 
-/** 删除/移除确认弹窗中需要展示的名称（快捷文件夹等） */
+/** 删除/移除确认弹窗中需要展示的名称（快捷文件夹：别名优先，回退文件夹名） */
 const deleteTargetName = computed(() => {
   const t = deleteTarget.value
-  return t?.kind === 'folder' ? (t.item as QuickFolder).name : ''
+  return t?.kind === 'folder'
+    ? (t.item as QuickFolder).alias || (t.item as QuickFolder).name
+    : ''
 })
 
 /** 快捷入口卡（图标 + 名称 + 动作） */
@@ -708,6 +712,22 @@ async function addQuickFolders(): Promise<void> {
   if (added > 0) toast.success(`已添加 ${added} 个快捷文件夹`)
 }
 
+/** 面板内行拖拽排序：持久化并同步本地列表顺序 */
+async function reorderQuickFolders(orderedIds: number[]): Promise<void> {
+  await window.electronAPI.quickFolders.reorder(orderedIds)
+  const byId = new Map(quickFolders.value.map((f) => [f.id, f]))
+  quickFolders.value = orderedIds
+    .map((id) => byId.get(id))
+    .filter((f): f is QuickFolder => Boolean(f))
+}
+
+/** 行内重命名：设置别名（null=清除，回退到文件夹名）并同步本地 */
+async function renameQuickFolder(payload: { id: number; alias: string | null }): Promise<void> {
+  await window.electronAPI.quickFolders.setAlias(payload.id, payload.alias)
+  const f = quickFolders.value.find((x) => x.id === payload.id)
+  if (f) f.alias = payload.alias
+}
+
 // ---------------------------------------------------------------------------
 // 拖放添加：从资源管理器拖文件夹到主页画布即添加快捷入口
 // ---------------------------------------------------------------------------
@@ -769,7 +789,7 @@ async function openFolder(folder: QuickFolder): Promise<void> {
   flashTimer = setTimeout(() => {
     flashFolderId.value = null
   }, 1200)
-  toast.success(`已打开「${folder.name}」`)
+  toast.success(`已打开「${folder.alias || folder.name}」`)
 }
 
 /** 悬浮「移除」：进入确认弹窗 */

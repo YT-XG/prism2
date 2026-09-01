@@ -69,8 +69,10 @@ export interface QuickFolder {
   id: number
   /** 文件夹绝对路径 */
   path: string
-  /** 显示名（路径 basename） */
+  /** 显示名（路径 basename，作为默认展示名） */
   name: string
+  /** 自定义别名（可选）：设置了则列表/搜索展示别名，未设置回退到 name */
+  alias: string | null
   /** 路径当前是否失效（读取时实时校验：文件夹被移动/删除后为 true） */
   missing: boolean
   /** 主页画布内位置（px，相对画布内容区左上角）；未定位过为 null */
@@ -412,6 +414,10 @@ export const SERVICE_CHANNELS = {
     /** 按给定路径批量入库（拖放添加来源，主进程校验存在性/目录类型）；返回更新后的完整列表 */
     addFoldersByPaths: 'to-service-QuickFoldersService:addFoldersByPaths',
     deleteFolder: 'to-service-QuickFoldersService:deleteFolder',
+    /** 按给定 id 顺序重排（面板内拖拽排序） */
+    reorder: 'to-service-QuickFoldersService:reorder',
+    /** 设置自定义别名（null/空串 = 清除别名，回退到文件夹名） */
+    setAlias: 'to-service-QuickFoldersService:setAlias',
     setPosition: 'to-service-QuickFoldersService:setPosition',
     setSize: 'to-service-QuickFoldersService:setSize',
     /** 在系统资源管理器中打开文件夹 */
@@ -568,6 +574,10 @@ export interface ElectronAPI {
     addFoldersByPaths: (paths: string[]) => Promise<QuickFolder[]>
     /** 移除快捷文件夹（仅删快捷记录，不影响磁盘上的文件夹） */
     deleteFolder: (id: number) => Promise<void>
+    /** 按给定 id 顺序重排（面板内拖拽排序）；id 集合需与当前列表一致 */
+    reorder: (orderedIds: number[]) => Promise<void>
+    /** 设置自定义别名（null/空串 = 清除别名，回退到文件夹名） */
+    setAlias: (id: number, alias: string | null) => Promise<void>
     /** 记录快捷文件夹在主页画布上的位置（px） */
     setPosition: (id: number, x: number, y: number) => Promise<void>
     /** 记录快捷文件夹在主页画布上的尺寸（px） */
