@@ -3,6 +3,9 @@
     :model-value="modelValue"
     size="lg"
     :title="note ? '编辑便利贴' : '添加便利贴'"
+    :overlay-close="false"
+    fullscreen
+    resizable
     @update:model-value="$emit('update:modelValue', $event)"
   >
     <div class="form-group">

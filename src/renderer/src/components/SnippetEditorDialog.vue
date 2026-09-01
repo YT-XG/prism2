@@ -1,7 +1,11 @@
 <template>
   <UiDialog
     :model-value="modelValue"
+    size="lg"
     :title="favorite ? '编辑片段' : '添加片段'"
+    :overlay-close="false"
+    fullscreen
+    resizable
     @update:model-value="$emit('update:modelValue', $event)"
   >
     <div class="form-group">
