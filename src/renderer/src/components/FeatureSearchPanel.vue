@@ -259,7 +259,6 @@ function onBlur(): void {
   border: 1px solid var(--border);
   border-radius: var(--radius-xl);
   background: var(--bg-surface);
-  box-shadow: var(--shadow-lg);
   overflow: hidden;
 }
 
@@ -368,7 +367,6 @@ function onBlur(): void {
   max-height: 100vh;
   border: 1px solid var(--border);
   border-radius: var(--radius-xl);
-  box-shadow: var(--shadow-lg);
   overflow: hidden;
 }
 

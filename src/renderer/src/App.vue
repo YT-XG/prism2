@@ -273,7 +273,6 @@ onBeforeUnmount(() => {
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   overflow: hidden;
-  box-shadow: var(--shadow-lg);
 }
 
 .app-shell.is-exiting {
