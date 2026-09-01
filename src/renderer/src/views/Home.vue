@@ -182,6 +182,21 @@
         @drag-end="persistNotePos"
         @resize-end="persistNoteSize"
       />
+
+      <!-- 快捷文件夹（可拖拽定位、可缩放尺寸；「显示」面板开关控制显隐） -->
+      <template v-if="modules.quickFolders">
+        <QuickFolderCard
+          v-for="(folder, index) in quickFolders"
+          :key="folder.id"
+          :folder="folder"
+          :canvas="getCanvas"
+          :fallback-pos="folderFallbackPos(index)"
+          @open="openFolder"
+          @remove="requestRemoveFolder"
+          @drag-end="persistFolderPos"
+          @resize-end="persistFolderSize"
+        />
+      </template>
     </section>
 
     <!-- 单条删除确认 -->
@@ -191,11 +206,18 @@
       @update:model-value="deleteConfirm = false"
     >
       <p class="confirm-text">
-        确定删除这条{{ deleteTarget?.kind === 'snippet' ? '片段' : deleteTarget?.kind === 'note' ? '便利贴' : '记录' }}吗？此操作不可恢复。
+        <template v-if="deleteTarget?.kind === 'folder'">
+          确定移除「{{ deleteTargetName }}」快捷方式吗？仅移除主页快捷方式，不会删除磁盘上的文件夹。
+        </template>
+        <template v-else>
+          确定删除这条{{ deleteTarget?.kind === 'snippet' ? '片段' : deleteTarget?.kind === 'note' ? '便利贴' : '记录' }}吗？此操作不可恢复。
+        </template>
       </p>
       <template #footer>
         <UiButton variant="ghost" @click="deleteConfirm = false">取消</UiButton>
-        <UiButton variant="danger" @click="confirmDelete">删除</UiButton>
+        <UiButton variant="danger" @click="confirmDelete">
+          {{ deleteTarget?.kind === 'folder' ? '移除' : '删除' }}
+        </UiButton>
       </template>
     </UiDialog>
 
@@ -229,13 +251,15 @@ import {
   History,
   Check,
   GripVertical,
-  Pencil
+  Pencil,
+  FolderPlus
 } from '@lucide/vue'
 import type { Component } from 'vue'
 import UiButton from '@renderer/components/ui/UiButton.vue'
 import UiInput from '@renderer/components/ui/UiInput.vue'
 import UiDialog from '@renderer/components/ui/UiDialog.vue'
 import HomeNoteCard from '@renderer/components/HomeNoteCard.vue'
+import QuickFolderCard from '@renderer/components/QuickFolderCard.vue'
 import StickyNoteEditorDialog from '@renderer/components/StickyNoteEditorDialog.vue'
 import SnippetEditorDialog from '@renderer/components/SnippetEditorDialog.vue'
 import ClipboardHistoryEditorDialog from '@renderer/components/ClipboardHistoryEditorDialog.vue'
@@ -251,7 +275,8 @@ import type {
   StickyNote,
   StickyNoteColor,
   CategoryItem,
-  LegacyImportState
+  LegacyImportState,
+  QuickFolder
 } from '@preload/ipc'
 
 const toast = useToast()
@@ -392,8 +417,8 @@ let copiedTimer: ReturnType<typeof setTimeout> | null = null
 let searchTimer: ReturnType<typeof setTimeout> | null = null
 /** 单条删除确认 */
 const deleteTarget = ref<{
-  kind: 'history' | 'snippet' | 'note'
-  item: HistoryItem | FavoriteItem | StickyNote
+  kind: 'history' | 'snippet' | 'note' | 'folder'
+  item: HistoryItem | FavoriteItem | StickyNote | QuickFolder
 } | null>(null)
 const deleteConfirm = ref(false)
 
@@ -423,8 +448,16 @@ const deleteDialogTitle = computed(() =>
     ? '删除片段'
     : deleteTarget.value?.kind === 'note'
       ? '删除便利贴'
-      : '删除记录'
+      : deleteTarget.value?.kind === 'folder'
+        ? '移除快捷文件夹'
+        : '删除记录'
 )
+
+/** 删除/移除确认弹窗中需要展示的名称（快捷文件夹等） */
+const deleteTargetName = computed(() => {
+  const t = deleteTarget.value
+  return t?.kind === 'folder' ? (t.item as QuickFolder).name : ''
+})
 
 /** 快捷入口卡（图标 + 名称 + 动作） */
 const entries: Array<{ label: string; icon: Component; action: () => void }> = [
@@ -437,6 +470,11 @@ const entries: Array<{ label: string; icon: Component; action: () => void }> = [
     label: '新增片段',
     icon: Star,
     action: openCreateSnippet
+  },
+  {
+    label: '快捷文件夹',
+    icon: FolderPlus,
+    action: addQuickFolders
   }
 ]
 
@@ -573,6 +611,51 @@ async function persistNoteSize(payload: { id: number; w: number; h: number }): P
   await window.electronAPI.stickyNotes.setNoteSize(payload.id, payload.w, payload.h)
 }
 
+// ---------------------------------------------------------------------------
+// 快捷文件夹
+// ---------------------------------------------------------------------------
+
+/** 主页快捷文件夹列表（可拖拽卡片） */
+const quickFolders = ref<QuickFolder[]>([])
+
+/** 未定位过（home_x/home_y 为 null）时的默认位置：画布右上角起始，按索引错位下落 */
+function folderFallbackPos(index: number): { x: number; y: number } {
+  const w = canvasRef.value?.clientWidth ?? 400
+  return { x: Math.max(0, w - 244 - index * 12), y: 76 + index * 32 }
+}
+
+async function fetchQuickFolders(): Promise<void> {
+  quickFolders.value = await window.electronAPI.quickFolders.getFolders()
+}
+
+/** 点击「快捷文件夹」入口：弹出系统文件夹多选框（多选）并添加 */
+async function addQuickFolders(): Promise<void> {
+  const before = quickFolders.value.length
+  quickFolders.value = await window.electronAPI.quickFolders.addFolders()
+  const added = quickFolders.value.length - before
+  if (added > 0) toast.success(`已添加 ${added} 个快捷文件夹`)
+}
+
+/** 点击卡片 / 悬浮「打开」：在系统资源管理器中打开文件夹 */
+async function openFolder(folder: QuickFolder): Promise<void> {
+  const r = await window.electronAPI.quickFolders.openFolder(folder.path)
+  if (!r.ok) toast.error(`打开文件夹失败：${r.error ?? '未知错误'}`)
+}
+
+/** 悬浮「移除」：进入确认弹窗 */
+function requestRemoveFolder(folder: QuickFolder): void {
+  deleteTarget.value = { kind: 'folder', item: folder }
+  deleteConfirm.value = true
+}
+
+async function persistFolderPos(payload: { id: number; x: number; y: number }): Promise<void> {
+  await window.electronAPI.quickFolders.setPosition(payload.id, payload.x, payload.y)
+}
+
+async function persistFolderSize(payload: { id: number; w: number; h: number }): Promise<void> {
+  await window.electronAPI.quickFolders.setSize(payload.id, payload.w, payload.h)
+}
+
 /** 打开主页便利贴大编辑框（新建，创建后默认贴主页） */
 function openCreateNote(): void {
   editingNote.value = null
@@ -647,7 +730,7 @@ async function saveHistory(payload: { content: string }): Promise<void> {
 
 /**
  * 计算新建便利贴的落点：从画布右上角向右下扫描，
- * 返回第一个既不与「最近记录框」相交、也不与现有已贴便利贴相交的位置。
+ * 返回第一个既不与「最近记录框」相交、也不与现有已贴便利贴 / 快捷文件夹相交的位置。
  */
 function nextNotePos(): { x: number; y: number } {
   const canvas = canvasRef.value
@@ -667,6 +750,16 @@ function nextNotePos(): { x: number; y: number } {
     const nw = n.home_w ?? NOTE_DEFAULT_W
     const nh = n.home_h ?? NOTE_DEFAULT_H
     return { left: nx, top: ny, right: nx + nw, bottom: ny + nh }
+  })
+  // 快捷文件夹卡一并纳入避让（默认宽 220×120，未定位用兜底位置）
+  const FOLDER_DEFAULT_W = 220
+  const FOLDER_DEFAULT_H = 120
+  quickFolders.value.forEach((f, i) => {
+    const fx = f.home_x ?? folderFallbackPos(i).x
+    const fy = f.home_y ?? folderFallbackPos(i).y
+    const fw = f.home_w ?? FOLDER_DEFAULT_W
+    const fh = f.home_h ?? FOLDER_DEFAULT_H
+    noteRects.push({ left: fx, top: fy, right: fx + fw, bottom: fy + fh })
   })
   const overlaps = (r: { left: number; top: number; right: number; bottom: number }): boolean =>
     (boxRect !== null &&
@@ -737,6 +830,10 @@ async function confirmDelete(): Promise<void> {
     await window.electronAPI.clipboard.deleteFavorite(target.item.id)
     recentSnippets.value = recentSnippets.value.filter((f) => f.id !== target.item!.id)
     toast.success('已删除片段')
+  } else if (target.kind === 'folder') {
+    await window.electronAPI.quickFolders.deleteFolder(target.item.id)
+    quickFolders.value = quickFolders.value.filter((f) => f.id !== target.item!.id)
+    toast.success('已移除快捷文件夹')
   } else {
     await window.electronAPI.stickyNotes.deleteNote(target.item.id)
     pinnedNotes.value = pinnedNotes.value.filter((n) => n.id !== target.item!.id)
@@ -786,6 +883,7 @@ async function dismissLegacyImport(): Promise<void> {
 onMounted(async () => {
   await refreshAll()
   await fetchPinnedNotes()
+  await fetchQuickFolders()
   await refreshLegacyImport()
 
   // 新记录/置顶：插到左列最近列表最前（去重）
@@ -810,6 +908,7 @@ onMounted(async () => {
     window.electronAPI.window.onWindowEvent('reShow', () => {
       void refreshAll()
       void fetchPinnedNotes()
+      void fetchQuickFolders()
     })
   )
 })

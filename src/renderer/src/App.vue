@@ -144,7 +144,10 @@ function onUpdateChipClick(): void {
 const showModules = ref(false)
 const centerRef = ref<HTMLElement | null>(null)
 const { modules, setModule } = useHomeModules()
-const moduleDefs: HomeModuleDef[] = [{ key: 'compactClipboard', label: '精简剪贴板' }]
+const moduleDefs: HomeModuleDef[] = [
+  { key: 'compactClipboard', label: '精简剪贴板' },
+  { key: 'quickFolders', label: '快捷文件夹' }
+]
 
 /** 点击面板外区域关闭「显示」面板 */
 function onDocPointerDown(e: PointerEvent): void {
@@ -429,7 +432,9 @@ onBeforeUnmount(() => {
 }
 
 /* 「有新版本」提示胶囊：标题栏品牌区版本号右侧，点击安装更新 */
+/* 标题栏整体是拖动区（drag-region），必须显式 no-drag 才能收到点击事件 */
 .update-chip {
+  -webkit-app-region: no-drag;
   display: inline-flex;
   align-items: center;
   margin-left: var(--sp-2);

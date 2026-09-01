@@ -22,6 +22,7 @@ import type {
   MainWindowEvent,
   NotificationItem,
   NotificationNewPayload,
+  QuickFolder,
   SetPagePayload,
   StickyNote,
   StickyNoteColor,
@@ -32,6 +33,7 @@ const { mainPage, baseFrame, notificationPopup } = WINDOW_CHANNELS
 const C = SERVICE_CHANNELS.clipboard
 const S = SERVICE_CHANNELS.settings
 const N = SERVICE_CHANNELS.stickyNotes
+const QF = SERVICE_CHANNELS.quickFolders
 const U = SERVICE_CHANNELS.update
 const L = SERVICE_CHANNELS.legacyImport
 const LC = SERVICE_CHANNELS.legacyCleanup
@@ -144,6 +146,18 @@ const electronAPI: ElectronAPI = {
       ipcRenderer.invoke(N.setNotePosition, id, x, y) as Promise<void>,
     setNoteSize: (id: number, w: number, h: number) =>
       ipcRenderer.invoke(N.setNoteSize, id, w, h) as Promise<void>,
+  },
+
+  quickFolders: {
+    getFolders: () => ipcRenderer.invoke(QF.getFolders) as Promise<QuickFolder[]>,
+    addFolders: () => ipcRenderer.invoke(QF.addFolders) as Promise<QuickFolder[]>,
+    deleteFolder: (id: number) => ipcRenderer.invoke(QF.deleteFolder, id) as Promise<void>,
+    setPosition: (id: number, x: number, y: number) =>
+      ipcRenderer.invoke(QF.setPosition, id, x, y) as Promise<void>,
+    setSize: (id: number, w: number, h: number) =>
+      ipcRenderer.invoke(QF.setSize, id, w, h) as Promise<void>,
+    openFolder: (path: string) =>
+      ipcRenderer.invoke(QF.openFolder, path) as Promise<{ ok: boolean; error?: string }>,
   },
 
   update: {

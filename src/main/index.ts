@@ -10,6 +10,7 @@ import { trayService } from './services/trayService'
 import { settingsService } from './services/settingsService'
 import { clipboardService } from './services/clipboardService'
 import { stickyNotesService } from './services/stickyNotesService'
+import { quickFoldersService } from './services/quickFoldersService'
 import { updateService } from './services/updateService'
 import { legacyImportService } from './services/legacyImportService'
 import { legacyCleanupService } from './services/legacyCleanupService'
@@ -54,6 +55,7 @@ app.whenReady().then(async () => {
   settingsService.init()
   await clipboardService.init()
   await stickyNotesService.init()
+  await quickFoldersService.init()
   await notificationService.init()
   updateService.init()
   updateService.checkOnStartup()
@@ -86,6 +88,7 @@ app.on('before-quit', () => {
   log.info('[App] 退出，清理资源...')
   clipboardService.stop()
   stickyNotesService.stop()
+  quickFoldersService.stop()
   notificationService.stop()
   settingsService.destroy()
   trayService.destroy()

@@ -6,7 +6,7 @@
 
 ## 产品
 
-桌面效率工具集（剪贴板管理、翻译、Markdown 预览、多线程下载、局域网互传、全局搜索、JSON 工具、Claude Code 监控通知）。当前进度：**骨架 + 剪贴板 + 主页/便利贴/功能搜索 + 通知中心**已落地。
+桌面效率工具集（剪贴板管理、翻译、Markdown 预览、多线程下载、局域网互传、全局搜索、JSON 工具、Claude Code 监控通知）。当前进度：**骨架 + 剪贴板 + 主页/便利贴/功能搜索/快捷文件夹 + 通知中心**已落地。
 
 ## 技术栈（创建时锁定，见 ../docs/prism2/migration-roadmap.md 的版本决策）
 
@@ -33,6 +33,7 @@ src/
 │   │   ├── settingsService.ts
 │   │   ├── clipboardService.ts
 │   │   ├── stickyNotesService.ts # 便利贴（sql.js 持久化，无广播）
+│   │   ├── quickFoldersService.ts # 快捷文件夹（主页快捷打开，sql.js 持久化 + 系统文件夹多选 + shell.openPath）
 │   │   ├── inputService.ts       # 模拟粘贴（平台分支）
 │   │   ├── updateService.ts      # 应用更新（electron-updater + GitHub provider，dev 返回提示）
 │   │   ├── legacyImportService.ts # 旧版 v1 剪贴板数据一键导入（读 v1 userData/Prism/clipboard.db 合并）
@@ -51,6 +52,7 @@ src/
     ├── components/ui/            # 设计系统组件层（含 RichTextEditor.vue 富文本编辑器）
     ├── components/FeatureSearchPanel.vue  # 功能搜索命令面板（Ctrl/Cmd+K）
     ├── components/HomeNoteCard.vue        # 贴到主页的便利贴可拖拽卡片
+    ├── components/QuickFolderCard.vue     # 主页快捷文件夹可拖拽/可缩放卡片（点击打开，悬浮「打开/移除」）
     ├── components/StickyNoteEditorDialog.vue # 便利贴大编辑框（富文本 + 颜色，主页/便利贴页共用）
     ├── components/SnippetEditorDialog.vue # 片段添加/编辑弹窗（剪贴板页/主页共用，内容为富文本）
     ├── components/SnippetPlaceholderDialog.vue # 片段占位符输入弹窗（{{名称}}，填写后替换并粘贴）
@@ -93,6 +95,7 @@ dev-app-update.yml                # 开发模式 electron-updater 配置（打�
 | 骨架（入口/托盘/主页/设置/设计系统/契约层） | ✅ |
 | 剪贴板管理（历史/收藏/搜索/保留期/导入/富文本编辑：历史与片段均可用富文本编辑器修改并保留格式粘贴） | ✅ |
 | 主页（可拖拽合并记录框：剪贴板+片段跨类全搜 + 自定义尺寸 + 概览 + 入口卡（新增便利贴/新增片段） + 模块显隐开关） | ✅ |
+| 快捷文件夹（主页「快捷入口」弹系统文件夹多选 → 主页可拖拽/可缩放卡片，点击在资源管理器打开；「显示」面板开关控制显隐） | ✅ |
 | 便利贴（本地便签，增删改 + 富文本大编辑框 + 贴到主页可拖拽定位/自由缩放 + 主页点击编辑/一键创建默认贴主页） | ✅ |
 | 功能搜索（命令面板，Ctrl/Cmd+K） | ✅ |
 | 自动更新（electron-updater + GitHub CI 自动发版 + 设置页检查更新 + 启动静默检查与标题栏「有新版本」提示） | ✅（接入就绪，待建仓库替换占位地址后实际发版） |

@@ -64,6 +64,29 @@ export interface StickyNote {
   updated_at: number
 }
 
+/** 快捷文件夹（主页快捷打开的可拖拽卡片） */
+export interface QuickFolder {
+  id: number
+  /** 文件夹绝对路径 */
+  path: string
+  /** 显示名（路径 basename） */
+  name: string
+  /** 主页画布内位置（px，相对画布内容区左上角）；未定位过为 null */
+  home_x: number | null
+  home_y: number | null
+  /** 主页画布内尺寸（px）；未调整过为 null */
+  home_w: number | null
+  home_h: number | null
+  created_at: number
+}
+
+/** 在系统资源管理器中打开文件夹的结果 */
+export interface QuickFolderOpenResult {
+  ok: boolean
+  /** 失败原因（ok=false 时） */
+  error?: string
+}
+
 /**
  * 剪贴板历史自动清除策略。
  * 滑动窗口：每次触发清理时以当下为基准，删除早于「value 个 unit」的历史记录。
@@ -367,6 +390,16 @@ export const SERVICE_CHANNELS = {
     setNotePosition: 'to-service-StickyNotesService:setNotePosition',
     setNoteSize: 'to-service-StickyNotesService:setNoteSize'
   },
+  quickFolders: {
+    getFolders: 'to-service-QuickFoldersService:getFolders',
+    /** 弹出系统文件夹多选对话框并入库；返回更新后的完整列表 */
+    addFolders: 'to-service-QuickFoldersService:addFolders',
+    deleteFolder: 'to-service-QuickFoldersService:deleteFolder',
+    setPosition: 'to-service-QuickFoldersService:setPosition',
+    setSize: 'to-service-QuickFoldersService:setSize',
+    /** 在系统资源管理器中打开文件夹 */
+    openFolder: 'to-service-QuickFoldersService:openFolder'
+  },
   update: {
     getStatus: 'to-service-UpdateService:getStatus',
     check: 'to-service-UpdateService:check',
@@ -501,6 +534,19 @@ export interface ElectronAPI {
     setNotePosition: (id: number, x: number, y: number) => Promise<void>
     /** 记录便利贴在主页画布上的尺寸（px） */
     setNoteSize: (id: number, w: number, h: number) => Promise<void>
+  }
+  quickFolders: {
+    getFolders: () => Promise<QuickFolder[]>
+    /** 弹出系统文件夹多选框并添加；返回更新后的完整列表（取消则原样返回） */
+    addFolders: () => Promise<QuickFolder[]>
+    /** 移除快捷文件夹（仅删快捷记录，不影响磁盘上的文件夹） */
+    deleteFolder: (id: number) => Promise<void>
+    /** 记录快捷文件夹在主页画布上的位置（px） */
+    setPosition: (id: number, x: number, y: number) => Promise<void>
+    /** 记录快捷文件夹在主页画布上的尺寸（px） */
+    setSize: (id: number, w: number, h: number) => Promise<void>
+    /** 在系统资源管理器中打开文件夹 */
+    openFolder: (path: string) => Promise<QuickFolderOpenResult>
   }
   update: {
     /** 获取当前更新状态 */

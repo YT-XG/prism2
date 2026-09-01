@@ -8,6 +8,8 @@ import { ref } from 'vue'
 export interface HomeModules {
   /** 精简剪贴板（最近记录框） */
   compactClipboard: boolean
+  /** 快捷文件夹（主页可拖拽的快捷打开文件夹卡片） */
+  quickFolders: boolean
 }
 
 /** 「显示」面板的模块清单项（后续新增模块在此扩展） */
@@ -17,7 +19,7 @@ export interface HomeModuleDef {
 }
 
 const STORAGE_KEY = 'prism.home.modules'
-const DEFAULT_MODULES: HomeModules = { compactClipboard: true }
+const DEFAULT_MODULES: HomeModules = { compactClipboard: true, quickFolders: true }
 
 function load(): HomeModules {
   try {
