@@ -3,8 +3,8 @@ import MainPage from '@renderer/views/MainPage.vue'
 import Home from '@renderer/views/Home.vue'
 import ClipboardManager from '@renderer/views/ClipboardManager.vue'
 import StickyNotes from '@renderer/views/StickyNotes.vue'
-import QuickPaste from '@renderer/views/QuickPaste.vue'
 import NotificationPopup from '@renderer/views/NotificationPopup.vue'
+import SearchView from '@renderer/views/SearchView.vue'
 import Settings from '@renderer/views/Settings.vue'
 import Notifications from '@renderer/views/Notifications.vue'
 
@@ -23,8 +23,8 @@ const router = createRouter({
         { path: 'settings', name: 'settings', component: Settings }
       ]
     },
-    { path: '/quickPaste', name: 'quickPaste', component: QuickPaste },
     { path: '/notificationPopup', name: 'notificationPopup', component: NotificationPopup },
+    { path: '/search', name: 'search', component: SearchView },
     { path: '/', redirect: '/mainPage/home' },
     { path: '/:pathMatch(.*)*', redirect: '/mainPage/home' }
   ]

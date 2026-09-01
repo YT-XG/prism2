@@ -1,7 +1,7 @@
 <template>
   <div
     class="app-shell"
-    :class="{ 'is-exiting': exiting, 'is-popup': isPopup }"
+    :class="{ 'is-exiting': exiting, 'is-popup': isPopup, 'is-search': isSearch }"
     ref="shellRef"
     @animationend="onAnimationEnd"
   >
@@ -77,11 +77,11 @@
       </Transition>
     </main>
 
-    <!-- 功能搜索命令面板：仅主界面（快捷粘贴/通知浮窗小窗不挂载） -->
-    <FeatureSearchPanel v-if="!isStandalone" />
+    <!-- 功能搜索命令面板：仅主界面（通知浮窗/独立搜索窗小窗不挂载，搜索窗经 SearchView 自渲染） -->
+    <FeatureSearchPanel v-if="!isStandalone && !isSearch" />
 
-    <!-- 片段占位符输入弹窗：仅主界面（小窗无片段入口） -->
-    <SnippetPlaceholderDialog v-if="!isStandalone" />
+    <!-- 片段占位符输入弹窗：主界面与独立搜索窗均可用（搜索可命中片段） -->
+    <SnippetPlaceholderDialog v-if="!isPopup" />
 
     <UiToast />
   </div>
@@ -98,7 +98,6 @@ import SnippetPlaceholderDialog from '@renderer/components/SnippetPlaceholderDia
 import { subscribeOnUnmounted } from '@renderer/composables/useIpcListener'
 import { useFeatureSearch } from '@renderer/composables/useFeatureSearch'
 import { useHomeModules, type HomeModuleDef } from '@renderer/composables/useHomeModules'
-import { applyTheme } from '@renderer/composables/useTheme'
 import type { UpdateStatusInfo } from '@preload/ipc'
 
 const router = useRouter()
@@ -107,7 +106,7 @@ const exiting = ref(false)
 const version = ref('')
 const isMaximized = ref(false)
 const shellRef = ref<HTMLElement | null>(null)
-const { open: openFeatureSearch, toggle } = useFeatureSearch()
+const { open: openFeatureSearch } = useFeatureSearch()
 
 // ---------------------------------------------------------------------------
 // 标题栏更新提示：有可用更新时左上角圆点变黄闪烁，版本号右侧出现「有新版本」胶囊
@@ -156,20 +155,15 @@ function onDocPointerDown(e: PointerEvent): void {
   if (centerRef.value && !centerRef.value.contains(target)) showModules.value = false
 }
 
-/** 快捷粘贴窗口：无标题栏的轻量视图 */
-const isQuickPaste = computed(() => route.path.startsWith('/quickPaste'))
 /** 通知浮窗：透明小窗，只显示通知卡片栈 */
 const isPopup = computed(() => route.path.startsWith('/notificationPopup'))
-/** 独立小窗（快捷粘贴/通知浮窗）：隐藏标题栏与主界面专属面板 */
-const isStandalone = computed(() => isQuickPaste.value || isPopup.value)
+/** 独立搜索窗（Ctrl+K SearchFrame）：只显示全局搜索面板 */
+const isSearch = computed(() => route.path.startsWith('/search'))
+/** 独立小窗（通知浮窗/独立搜索窗）：隐藏标题栏与主界面专属面板 */
+const isStandalone = computed(() => isPopup.value || isSearch.value)
 
-/** Ctrl+K / Cmd+K：呼出/关闭功能搜索命令面板；Esc：关闭主页显示面板 */
+/** Esc：关闭主页显示面板。Ctrl+K 由主进程全局快捷键统一处理（系统级唤起全局搜索） */
 function onGlobalKeydown(e: KeyboardEvent): void {
-  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
-    e.preventDefault()
-    toggle()
-    return
-  }
   if (e.key === 'Escape') showModules.value = false
 }
 
@@ -224,11 +218,6 @@ onMounted(() => {
 
   window.addEventListener('keydown', onGlobalKeydown)
   document.addEventListener('pointerdown', onDocPointerDown)
-
-  // 应用持久化的主题（启动时）
-  void window.electronAPI.settings.get().then((s) => {
-    applyTheme(s.theme)
-  })
 
   subscribeOnUnmounted(() =>
     window.electronAPI.window.onSetPage((p) => {
@@ -305,6 +294,14 @@ onBeforeUnmount(() => {
 
 .app-shell.is-popup .app-content {
   overflow: visible;
+}
+
+/* 独立搜索窗（Ctrl+K）：透明背景去边框，去掉"最外层背景色层"，只显示全局搜索面板卡片本身 */
+.app-shell.is-search {
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
 }
 
 .titlebar {

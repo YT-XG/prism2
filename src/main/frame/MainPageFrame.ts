@@ -7,6 +7,7 @@ import log from 'electron-log'
 import BaseFrame from './BaseFrame'
 import { WINDOW_CHANNELS } from '@preload/ipc'
 import { windowState } from '../utils/windowState'
+import { minimizeWindowForPaste } from '../utils/platform'
 import appIcon from '../../../resources/icon.png?asset'
 
 const { mainPage } = WINDOW_CHANNELS
@@ -159,15 +160,7 @@ export default class MainPageFrame extends BaseFrame {
 
   /** 最小化窗口让系统恢复焦点（用于自动粘贴场景） */
   minimizeForPaste(): void {
-    if (this.window && !this.window.isDestroyed() && this.window.isVisible()) {
-      if (process.platform === 'darwin') {
-        this.window.hide()
-        app.hide()
-        setTimeout(() => (app as unknown as { unhide: () => void }).unhide?.(), 200)
-      } else {
-        this.window.minimize()
-      }
-    }
+    minimizeWindowForPaste(this.window)
   }
 
   #centerOnScreen(): void {

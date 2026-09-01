@@ -27,7 +27,7 @@ npm run build        # typecheck 后构建
 src/
 ├── main/                         # 主进程
 │   ├── index.ts                  # 入口：单实例、生命周期、服务初始化、托盘
-│   ├── frame/                    # BaseFrame v2 + WindowFactory + MainPageFrame + QuickPasteFrame + NotificationFrame（自绘通知浮窗）
+│   ├── frame/                    # BaseFrame v2 + WindowFactory + MainPageFrame + NotificationFrame（自绘通知浮窗）+ SearchFrame（全局搜索独立窗）；全局快捷键 Ctrl+K 经 SearchFrame.toggle() 唤起独立搜索窗口
 │   ├── services/                 # services/ 复数；模块级单例 + 构造器注册 IPC
 │   │   ├── db/sqliteDatabase.ts  # SQLite 公共基类（init/save/run/all/one）
 │   │   ├── settingsService.ts
@@ -50,15 +50,15 @@ src/
 └── renderer/src/
     ├── assets/styles/            # tokens.css / animations.css / main.css
     ├── components/ui/            # 设计系统组件层（含 RichTextEditor.vue 富文本编辑器）
-    ├── components/FeatureSearchPanel.vue  # 功能搜索命令面板（Ctrl/Cmd+K；功能跳转 + 剪贴板/片段/快捷文件夹数据搜索，文件夹回车即在资源管理器打开）
+    ├── components/FeatureSearchPanel.vue  # 功能搜索命令面板（Ctrl/Cmd+K 独立搜索窗 SearchFrame 与主页内嵌共用；功能跳转 + 剪贴板/片段/快捷文件夹数据搜索，文件夹回车即在资源管理器打开；standalone 模式铺满独立窗、失焦自动隐藏、开关无过渡，重开由主进程 SearchFrame 每次显示时发的 show 事件（onSearchShow）显式驱动，不依赖 visibilitychange；与主页合并记录框共用同一全局搜索逻辑 useGlobalSearch）
     ├── components/HomeNoteCard.vue        # 贴到主页的便利贴可拖拽卡片
     ├── components/QuickFolderCard.vue     # 主页快捷文件夹可拖拽/可缩放卡片（单击/双击打开 + 成功高亮，失效路径置灰角标，悬浮「打开/移除」）
     ├── components/StickyNoteEditorDialog.vue # 便利贴大编辑框（富文本 + 颜色，主页/便利贴页共用）
     ├── components/SnippetEditorDialog.vue # 片段添加/编辑弹窗（剪贴板页/主页共用，内容为富文本）
     ├── components/SnippetPlaceholderDialog.vue # 片段占位符输入弹窗（{{名称}}，填写后替换并粘贴）
     ├── components/ClipboardHistoryEditorDialog.vue # 剪贴板历史编辑弹窗（富文本）
-    ├── composables/useIpcListener.ts  useToast.ts  useTheme.ts  useFeatureSearch.ts  useDrag.ts  useHomeModules.ts  useNotifications.ts  useNotificationPopups.ts  useClipboardText.ts（富文本/纯文本预览工具：stripHtml/itemText）  useSnippetPlaceholder.ts（片段占位符：提取/替换 {{名称}}，单例弹窗状态）
-    ├── views/                    # MainPage / Home / ClipboardManager / StickyNotes / Notifications / NotificationPopup（自绘通知浮窗页） / QuickPaste / Settings
+    ├── composables/useIpcListener.ts  useToast.ts  useTheme.ts  useFeatureSearch.ts  useGlobalSearch.ts（命令面板与主页搜索共用的全局搜索聚合逻辑）  useDrag.ts  useHomeModules.ts  useNotifications.ts  useNotificationPopups.ts  useClipboardText.ts（富文本/纯文本预览工具：stripHtml/itemText）  useSnippetPlaceholder.ts（片段占位符：提取/替换 {{名称}}，单例弹窗状态）
+    ├── views/                    # MainPage / Home / ClipboardManager / StickyNotes / Notifications / NotificationPopup（自绘通知浮窗页） / SearchView（全局搜索独立窗页）/ Settings
     └── router/  types.d.ts
 scripts/import-legacy-db.mjs      # 旧剪贴板数据一次性导入（已由应用内 legacyImportService 承接）
 .github/workflows/release.yml     # 打 v* tag 时三平台自动打包并发 GitHub Release

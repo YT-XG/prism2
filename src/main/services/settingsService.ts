@@ -115,8 +115,8 @@ class SettingsService {
       windowFactory.getMainPageFrame().showCentered()
     }, '主页面')
     this.#tryRegister(this.settings.searchBoxShortcut, () => {
-      windowFactory.getQuickPasteFrame().toggle()
-    }, '快捷粘贴')
+      windowFactory.getSearchFrame().toggle()
+    }, '全局搜索')
     // 片段选择器随对应功能迁移时再接入（暂不注册，避免空引用）
   }
 

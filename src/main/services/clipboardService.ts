@@ -18,8 +18,8 @@ import {
   nativeImage,
   ClipboardItem,
   app,
-  BrowserWindow,
-  dialog
+  dialog,
+  BrowserWindow
 } from 'electron'
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from 'node:fs'
@@ -32,7 +32,7 @@ import { inputService } from './inputService'
 import { settingsService } from './settingsService'
 import { notificationService } from './notificationService'
 import { windowFactory } from '../frame/WindowFactory'
-import { broadcast } from '../utils/platform'
+import { broadcast, minimizeWindowForPaste } from '../utils/platform'
 import { BACKUP_EXTENSION, BROADCAST, SERVICE_CHANNELS } from '@preload/ipc'
 import type {
   HistoryItem,
@@ -901,7 +901,7 @@ class ClipboardService extends SqliteStore {
       this.getImageData(String(filename ?? ''))
     )
 
-    ipcMain.handle(C.clickItem, async (event, payload: { content?: string; type?: string }) => {
+    ipcMain.handle(C.clickItem, async (e, payload: { content?: string; type?: string }) => {
       const content = String(payload?.content ?? '')
       const type: HistoryItem['type'] =
         payload?.type === 'image' ? 'image' : payload?.type === 'richtext' ? 'richtext' : 'text'
@@ -926,24 +926,17 @@ class ClipboardService extends SqliteStore {
       }
       await this.syncMonitorCache()
 
-      // 退场时应最小化"真正持有焦点的那个窗口"，才能把焦点可靠交还给上一个前台应用：
-      // - 主页面是普通任务栏窗口，minimize() 会可靠归还焦点；
-      // - 快捷粘贴是 alwaysOnTop + skipTaskbar 的工具窗，不能靠隐藏主页面来归还焦点，
-      //   否则焦点回不到上一个应用，后续 SendKeys 的 ^v 就发到错误窗口。
-      const senderWin = BrowserWindow.fromWebContents(event.sender)
-      const quickPasteWin = windowFactory.getQuickPasteFrame().getWindow()
-
-      if (senderWin && quickPasteWin && senderWin === quickPasteWin) {
-        // 从快捷粘贴窗口发起：最小化它来归还焦点（内部抑制 blur 自动隐藏）
-        await windowFactory.getQuickPasteFrame().dismissForPaste()
+      // 退场时应最小化唤起方窗口（主窗口 / 全局搜索窗），把焦点可靠交还给上一个前台应用，
+      // 后续 SendKeys 的 ^v 才能发到正确窗口。用 minimize 而非 hide：hide 在 Windows 上焦点交还不可靠。
+      const invoker = BrowserWindow.fromWebContents(e.sender)
+      if (invoker && !invoker.isDestroyed() && invoker.isVisible()) {
+        minimizeWindowForPaste(invoker)
       } else {
-        // 从主页面发起：关闭快捷粘贴（若有），并最小化主页面归还焦点
-        windowFactory.hideQuickPaste()
-        const mainPageFrame = windowFactory.getMainPageFrame()
-        mainPageFrame.minimizeForPaste()
-        // 等待窗口最小化后的前台焦点转移稳定
-        await new Promise((resolve) => setTimeout(resolve, 250))
+        // 唤起方不可见（异常路径）时兜底最小化主窗口
+        windowFactory.getMainPageFrame().minimizeForPaste()
       }
+      // 等待窗口最小化后的前台焦点转移稳定
+      await new Promise((resolve) => setTimeout(resolve, 250))
 
       await inputService.pasteToPreviousWindow()
     })

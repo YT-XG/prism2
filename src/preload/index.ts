@@ -29,7 +29,7 @@ import type {
   UpdateStatusInfo
 } from './ipc'
 
-const { mainPage, baseFrame, notificationPopup } = WINDOW_CHANNELS
+const { mainPage, baseFrame, notificationPopup, searchFrame } = WINDOW_CHANNELS
 const C = SERVICE_CHANNELS.clipboard
 const S = SERVICE_CHANNELS.settings
 const N = SERVICE_CHANNELS.stickyNotes
@@ -82,7 +82,13 @@ const electronAPI: ElectronAPI = {
     notificationPopupResize: (height: number) =>
       ipcRenderer.send(notificationPopup.toMain.resize, height),
 
-    notificationPopupHide: () => ipcRenderer.send(notificationPopup.toMain.hide)
+    notificationPopupHide: () => ipcRenderer.send(notificationPopup.toMain.hide),
+
+    searchClose: () => ipcRenderer.send(searchFrame.toMain.close),
+
+    searchOpenFeature: (page: string) => ipcRenderer.send(searchFrame.toMain.openFeature, page),
+
+    onSearchShow: (cb: () => void) => subscribe(searchFrame.toRenderer.show, cb)
   },
 
   settings: {

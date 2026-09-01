@@ -283,6 +283,7 @@ import { useHomeModules } from '@renderer/composables/useHomeModules'
 import { useDrag } from '@renderer/composables/useDrag'
 import { itemText } from '@renderer/composables/useClipboardText'
 import { openPlaceholderDialog } from '@renderer/composables/useSnippetPlaceholder'
+import { searchGlobal } from '@renderer/composables/useGlobalSearch'
 import type {
   HistoryItem,
   FavoriteItem,
@@ -553,19 +554,16 @@ async function refreshAll(): Promise<void> {
   await Promise.all([fetchRecent(), fetchStats()])
 }
 
-/** 快捷搜索：200ms 防抖后并行搜历史 + 片段（结果分别过滤左/右列） */
+/** 快捷搜索：200ms 防抖后调用共享全局搜索，取剪贴板 + 片段结果分别填充左/右列 */
 async function runSearch(q: string): Promise<void> {
   const trimmed = q.trim()
   if (!trimmed) {
     searchResults.value = { history: [], snippets: [] }
     return
   }
-  const [history, snippets] = await Promise.all([
-    window.electronAPI.clipboard.searchHistory(trimmed),
-    window.electronAPI.clipboard.searchSnippets(trimmed)
-  ])
-  searchResults.value = { history, snippets }
-  void loadImages(history)
+  const r = await searchGlobal(trimmed)
+  searchResults.value = { history: r.history, snippets: r.snippets }
+  void loadImages(r.history)
 }
 
 watch(keyword, (val) => {

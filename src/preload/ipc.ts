@@ -350,6 +350,19 @@ export const WINDOW_CHANNELS = {
       /** 通知全部消失后请求隐藏浮窗 */
       hide: 'to-main-NotificationPopup:hide'
     }
+  },
+  /** 全局搜索独立窗口（Ctrl+K 呼出；无边框、置顶、聚焦输入） */
+  searchFrame: {
+    toMain: {
+      /** 渲染端请求隐藏搜索窗口（Esc / 选中 / 失焦） */
+      close: 'to-main-SearchFrame:close',
+      /** 渲染端选中功能项：隐藏搜索窗口并让主窗口跳转对应页面 */
+      openFeature: 'to-main-SearchFrame:openFeature'
+    },
+    toRenderer: {
+      /** 主进程每次显示搜索窗口后通知渲染端打开面板（Esc/选中隐藏后再唤起） */
+      show: 'to-renderer-SearchFrame:show'
+    }
   }
 } as const
 
@@ -480,6 +493,12 @@ export interface ElectronAPI {
     notificationPopupResize: (height: number) => void
     /** 通知浮窗：通知全部消失后请求隐藏 */
     notificationPopupHide: () => void
+    /** 全局搜索独立窗口：请求隐藏（Esc / 选中 / 失焦） */
+    searchClose: () => void
+    /** 全局搜索独立窗口：选中功能项，让主窗口跳转对应页面（页面不带前导斜杠，如 'home'） */
+    searchOpenFeature: (page: string) => void
+    /** 全局搜索独立窗口：主进程每次显示窗口后通知渲染端打开面板（Esc/选中隐藏后再唤起） */
+    onSearchShow: (cb: () => void) => () => void
   }
   settings: {
     get: () => Promise<AppSettings>
