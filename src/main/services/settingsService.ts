@@ -36,6 +36,8 @@ const DEFAULT_SETTINGS: AppSettings = {
 class SettingsService {
   private settings: AppSettings = { ...DEFAULT_SETTINGS }
   private filePath = ''
+  /** 快捷键是否处于暂停状态（设置页录制新快捷键期间为 true，避免误触发现行快捷键） */
+  private shortcutsSuspended = false
 
   /** 初始化：加载配置 + 应用开机自启动 + 注册全局快捷键 */
   init(): void {
@@ -107,10 +109,29 @@ class SettingsService {
     ipcMain.handle(SERVICE_CHANNELS.settings.update, (_event, partial: Partial<AppSettings>) => {
       this.update(partial)
     })
+
+    // 快捷键录制期间暂停 / 恢复全局快捷键
+    ipcMain.handle(SERVICE_CHANNELS.settings.suspendShortcuts, () => this.suspendShortcuts())
+    ipcMain.handle(SERVICE_CHANNELS.settings.resumeShortcuts, () => this.resumeShortcuts())
+  }
+
+  /** 暂停全局快捷键（录制期间调用），录制完成后用 resumeShortcuts 恢复 */
+  suspendShortcuts(): void {
+    this.shortcutsSuspended = true
+    globalShortcut.unregisterAll()
+    log.info('[SettingsService] 全局快捷键已暂停（录制中）')
+  }
+
+  /** 恢复全局快捷键：按最新设置重新注册 */
+  resumeShortcuts(): void {
+    this.shortcutsSuspended = false
+    this.#registerAllShortcuts()
+    log.info('[SettingsService] 全局快捷键已恢复')
   }
 
   #registerAllShortcuts(): void {
     globalShortcut.unregisterAll()
+    if (this.shortcutsSuspended) return
     this.#tryRegister(this.settings.shortcut, () => {
       windowFactory.getMainPageFrame().showCentered()
     }, '主页面')

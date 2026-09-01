@@ -49,7 +49,7 @@ src/
 │   ├── index.d.ts
 └── renderer/src/
     ├── assets/styles/            # tokens.css / animations.css / main.css
-    ├── components/ui/            # 设计系统组件层（含 RichTextEditor.vue 富文本编辑器）
+    ├── components/ui/            # 设计系统组件层（含 RichTextEditor.vue 富文本编辑器、UiShortcutRecorder.vue 快捷键录制组件（点击录制组合键，Esc 取消 / Backspace 清除，录制期间经 settings.suspendShortcuts 暂停全局快捷键））
     ├── components/FeatureSearchPanel.vue  # 功能搜索命令面板（Ctrl/Cmd+K 独立搜索窗 SearchFrame 与主页内嵌共用；功能跳转 + 剪贴板/片段/快捷文件夹数据搜索，文件夹回车即在资源管理器打开；standalone 模式铺满独立窗、失焦自动隐藏、开关无过渡，重开由主进程 SearchFrame 每次显示时发的 show 事件（onSearchShow）显式驱动，不依赖 visibilitychange；与主页合并记录框共用同一全局搜索逻辑 useGlobalSearch）
     ├── components/HomeNoteCard.vue        # 贴到主页的便利贴可拖拽卡片
     ├── components/QuickFolderPanel.vue    # 主页快捷文件夹单面板（可拖拽/缩放，框内列表行展示 + 行拖拽排序 + 行内重命名别名 + 悬浮/聚焦操作 + 失效标记 + 空态引导）

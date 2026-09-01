@@ -50,6 +50,16 @@
             <span class="keycap">{{ shortcutLabel(settings.shortcut) }}</span>
           </div>
         </div>
+        <div class="setting-row">
+          <div class="row-info">
+            <div class="row-name">全局搜索</div>
+            <div class="row-desc">任意界面按下即可唤起全局搜索；点击右侧修改，Backspace 清除</div>
+          </div>
+          <UiShortcutRecorder
+            :model-value="settings.searchBoxShortcut"
+            @update:model-value="saveSearchBoxShortcut"
+          />
+        </div>
       </section>
 
       <section class="setting-group">
@@ -235,6 +245,7 @@ import { ref, computed, onMounted } from 'vue'
 import UiPillTab from '@renderer/components/ui/UiPillTab.vue'
 import UiDialog from '@renderer/components/ui/UiDialog.vue'
 import UiButton from '@renderer/components/ui/UiButton.vue'
+import UiShortcutRecorder from '@renderer/components/ui/UiShortcutRecorder.vue'
 import { useToast } from '@renderer/composables/useToast'
 import { applyTheme } from '@renderer/composables/useTheme'
 import { subscribeOnUnmounted } from '@renderer/composables/useIpcListener'
@@ -292,6 +303,13 @@ function setTheme(theme: ThemeValue): void {
 
 function shortcutLabel(acc: string): string {
   return acc.replace(/CommandOrControl/g, 'Ctrl/Cmd').replace(/\+/g, ' ')
+}
+
+/** 保存全局搜索快捷键（空串 = 清除，等价于关闭） */
+async function saveSearchBoxShortcut(value: string): Promise<void> {
+  settings.value.searchBoxShortcut = value
+  await window.electronAPI.settings.update({ searchBoxShortcut: value })
+  toast.success(value ? `全局搜索快捷键已设为 ${shortcutLabel(value)}` : '已清除全局搜索快捷键')
 }
 
 /** 备份导入合并方式选项 */

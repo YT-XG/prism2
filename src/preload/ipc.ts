@@ -147,7 +147,7 @@ export interface AppSettings {
   shortcut: string
   /** 片段选择器快捷键 */
   snippetShortcut: string
-  /** 搜索框快捷键 */
+  /** 全局搜索快捷键，如 'CommandOrControl+K'（设置页可自定义） */
   searchBoxShortcut: string
   /** 局域网更新服务器路径 */
   serverUrl: string
@@ -372,7 +372,11 @@ export const WINDOW_CHANNELS = {
 export const SERVICE_CHANNELS = {
   settings: {
     get: 'to-service-SettingsService:get',
-    update: 'to-service-SettingsService:update'
+    update: 'to-service-SettingsService:update',
+    /** 暂停全局快捷键（快捷键录制期间避免误触发） */
+    suspendShortcuts: 'to-service-SettingsService:suspendShortcuts',
+    /** 恢复全局快捷键（按最新设置重新注册） */
+    resumeShortcuts: 'to-service-SettingsService:resumeShortcuts'
   },
   clipboard: {
     getHistory: 'to-service-ClipboardService:getHistory',
@@ -509,6 +513,10 @@ export interface ElectronAPI {
   settings: {
     get: () => Promise<AppSettings>
     update: (partial: Partial<AppSettings>) => Promise<void>
+    /** 暂停全局快捷键（录制期间调用） */
+    suspendShortcuts: () => Promise<void>
+    /** 恢复全局快捷键（按最新设置重新注册） */
+    resumeShortcuts: () => Promise<void>
   }
   clipboard: {
     getHistory: (limit?: number, offset?: number) => Promise<HistoryItem[]>

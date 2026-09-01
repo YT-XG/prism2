@@ -93,7 +93,9 @@ const electronAPI: ElectronAPI = {
 
   settings: {
     get: () => ipcRenderer.invoke(S.get) as Promise<AppSettings>,
-    update: (partial: Partial<AppSettings>) => ipcRenderer.invoke(S.update, partial) as Promise<void>
+    update: (partial: Partial<AppSettings>) => ipcRenderer.invoke(S.update, partial) as Promise<void>,
+    suspendShortcuts: () => ipcRenderer.invoke(S.suspendShortcuts) as Promise<void>,
+    resumeShortcuts: () => ipcRenderer.invoke(S.resumeShortcuts) as Promise<void>
   },
 
   clipboard: {
