@@ -4,7 +4,7 @@
  * v2 改进：渲染进程不再直接使用原始通道字符串，而是调用此处暴露的
  * 方法（如 electronAPI.clipboard.getHistory()），通道名与数据模型全部来自 ./ipc。
  */
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { BROADCAST, SERVICE_CHANNELS, WINDOW_CHANNELS } from './ipc'
 import type {
   AppSettings,
@@ -49,6 +49,9 @@ function subscribe(channel: string, cb: (...args: unknown[]) => void): () => voi
 
 const electronAPI: ElectronAPI = {
   platform: process.platform,
+
+  /** 拖放文件取真实磁盘路径（webUtils 需在 preload 内调用） */
+  getPathForFile: (file) => webUtils.getPathForFile(file),
 
   window: {
     minimize: () => ipcRenderer.send(mainPage.toMain.minimize),
@@ -151,6 +154,8 @@ const electronAPI: ElectronAPI = {
   quickFolders: {
     getFolders: () => ipcRenderer.invoke(QF.getFolders) as Promise<QuickFolder[]>,
     addFolders: () => ipcRenderer.invoke(QF.addFolders) as Promise<QuickFolder[]>,
+    addFoldersByPaths: (paths: string[]) =>
+      ipcRenderer.invoke(QF.addFoldersByPaths, paths) as Promise<QuickFolder[]>,
     deleteFolder: (id: number) => ipcRenderer.invoke(QF.deleteFolder, id) as Promise<void>,
     setPosition: (id: number, x: number, y: number) =>
       ipcRenderer.invoke(QF.setPosition, id, x, y) as Promise<void>,

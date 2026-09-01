@@ -2,7 +2,7 @@
   <div
     ref="el"
     class="qf-card"
-    :class="{ 'is-dragging': dragging }"
+    :class="{ 'is-dragging': dragging, 'is-missing': folder.missing, 'is-flash': flash }"
     :style="{
       left: `${x}px`,
       top: `${y}px`,
@@ -11,8 +11,13 @@
       zIndex: dragging ? 30 : 20
     }"
     role="button"
-    :title="`${folder.name}（${folder.path}）`"
+    :title="
+      folder.missing
+        ? `${folder.name}（路径不存在，可移除）`
+        : `${folder.name}（${folder.path}）`
+    "
     @pointerdown="startDrag"
+    @dblclick="onDblClick"
   >
     <!-- 头部：拖拽手柄 + 图标 + 名称 -->
     <div class="qf-card__head">
@@ -21,12 +26,22 @@
       <span class="qf-card__name">{{ folder.name }}</span>
     </div>
 
+    <!-- 失效提示：文件夹已被移动/删除 -->
+    <div v-if="folder.missing" class="qf-card__missing">
+      <AlertTriangle :size="12" :stroke-width="1.6" /> 路径不存在
+    </div>
+
     <!-- 完整路径（关键文本不截断：可换行 + title 兜底） -->
     <div class="qf-card__path" :title="folder.path">{{ folder.path }}</div>
 
     <!-- 悬浮操作：打开 / 移除 -->
     <div class="qf-card__footer" @pointerdown.stop @click.stop>
-      <button class="qf-btn" title="在资源管理器中打开" @click="emit('open', folder)">
+      <button
+        v-if="!folder.missing"
+        class="qf-btn"
+        title="在资源管理器中打开"
+        @click="emit('open', folder)"
+      >
         <FolderOpen :size="13" :stroke-width="1.6" /> 打开
       </button>
       <button class="qf-btn qf-btn--danger" title="移除快捷文件夹" @click="emit('remove', folder)">
@@ -45,7 +60,7 @@
 
 <script setup lang="ts">
 import { ref, onBeforeUnmount } from 'vue'
-import { GripVertical, Folder, FolderOpen, Trash2 } from '@lucide/vue'
+import { GripVertical, Folder, FolderOpen, Trash2, AlertTriangle } from '@lucide/vue'
 import { useDrag } from '@renderer/composables/useDrag'
 import type { QuickFolder } from '@preload/ipc'
 
@@ -63,6 +78,8 @@ const props = defineProps<{
   canvas: () => HTMLElement | null
   /** 默认位置（folder.home_x/home_y 为 null 时的兜底） */
   fallbackPos: { x: number; y: number }
+  /** 打开成功后短暂高亮（由父组件按 id 触发） */
+  flash?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -86,9 +103,14 @@ const { x, y, dragging, startDrag } = useDrag({
   }),
   onEnd: (pos, moved) => {
     if (moved) emit('drag-end', { id: props.folder.id, x: pos.x, y: pos.y })
-    else emit('open', props.folder)
+    else if (!props.folder.missing) emit('open', props.folder)
   }
 })
+
+/** 双击打开（缺失路径不响应）；单击已由 useDrag onEnd 触发，父组件做去重 */
+function onDblClick(): void {
+  if (!props.folder.missing) emit('open', props.folder)
+}
 
 // ---------------------------------------------------------------------------
 // 缩放：右下角手柄指针事件（独立于整卡拖拽，仿 useDrag 模式）
@@ -155,6 +177,48 @@ onBeforeUnmount(() => {
 
 .qf-card:hover {
   box-shadow: var(--shadow-md);
+}
+
+/* 失效路径：整卡置灰 + 虚线边框，仅保留移除操作 */
+.qf-card.is-missing {
+  border-style: dashed;
+  opacity: 0.72;
+  cursor: default;
+}
+
+.qf-card.is-missing .qf-card__name,
+.qf-card.is-missing .qf-card__path {
+  color: var(--text-muted);
+}
+
+.qf-card__missing {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: var(--sp-2) var(--sp-3) 0;
+  padding: 3px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+/* 打开成功：短暂品牌描边高亮（父组件按 id 触发 flash） */
+.qf-card.is-flash {
+  outline: 2px solid var(--brand);
+  outline-offset: -1px;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 30%, transparent);
+  animation: qf-flash var(--duration-base) var(--ease-out-soft);
+}
+
+@keyframes qf-flash {
+  0% {
+    outline-color: color-mix(in srgb, var(--brand) 30%, transparent);
+  }
+  100% {
+    outline-color: var(--brand);
+  }
 }
 
 .qf-card__head {

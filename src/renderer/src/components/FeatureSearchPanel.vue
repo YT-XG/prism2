@@ -18,7 +18,7 @@
               v-model="query"
               class="palette-input"
               type="text"
-              placeholder="搜索功能、剪贴板、片段…"
+              placeholder="搜索功能、剪贴板、片段、快捷文件夹…"
               spellcheck="false"
             />
             <span class="palette-kbd">Esc</span>
@@ -51,13 +51,16 @@
 <script setup lang="ts">
 import { ref, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
-import { Search, House, ClipboardList, StickyNote, Settings2, History, Star } from '@lucide/vue'
+import { Search, House, ClipboardList, StickyNote, Settings2, History, Star, Folder } from '@lucide/vue'
 import type { Component } from 'vue'
 import { useFeatureSearch } from '@renderer/composables/useFeatureSearch'
+import { useToast } from '@renderer/composables/useToast'
 import { itemText } from '@renderer/composables/useClipboardText'
 import { openPlaceholderDialog } from '@renderer/composables/useSnippetPlaceholder'
+import type { QuickFolder } from '@preload/ipc'
 
 const { isOpen, close } = useFeatureSearch()
+const toast = useToast()
 const router = useRouter()
 
 /** 静态功能源：名称/别名命中即跳转对应页面 */
@@ -90,7 +93,7 @@ const FEATURES: FeatureDef[] = [
 
 interface PaletteItem {
   id: string
-  kind: 'feature' | 'history' | 'snippet'
+  kind: 'feature' | 'history' | 'snippet' | 'folder'
   icon: Component
   title: string
   subtitle?: string
@@ -140,10 +143,28 @@ async function rebuild(): Promise<void> {
     return
   }
 
-  const [history, snippets] = await Promise.all([
+  const [history, snippets, folders] = await Promise.all([
     window.electronAPI.clipboard.searchHistory(q),
-    window.electronAPI.clipboard.searchSnippets(q)
+    window.electronAPI.clipboard.searchSnippets(q),
+    window.electronAPI.quickFolders.getFolders()
   ])
+  // 快捷文件夹：按名称/路径匹配，失效路径不参与
+  const folderItems: PaletteItem[] = folders
+    .filter((f) => !f.missing)
+    .filter(
+      (f) => f.name.toLowerCase().includes(lower) || f.path.toLowerCase().includes(lower)
+    )
+    .slice(0, 8)
+    .map((f) => ({
+      id: `folder-${f.id}`,
+      kind: 'folder' as const,
+      icon: Folder,
+      title: f.name,
+      subtitle: f.path,
+      run: () => {
+        void openQuickFolder(f)
+      }
+    }))
   const historyItems: PaletteItem[] = history.slice(0, 10).map((h) => ({
     id: `history-${h.id}`,
     kind: 'history',
@@ -168,8 +189,14 @@ async function rebuild(): Promise<void> {
     }
   }))
 
-  items.value = [...featureItems, ...historyItems, ...snippetItems]
+  items.value = [...featureItems, ...folderItems, ...historyItems, ...snippetItems]
   activeIndex.value = 0
+}
+
+/** 在系统资源管理器中打开快捷文件夹（失败给出 Toast 反馈） */
+async function openQuickFolder(folder: QuickFolder): Promise<void> {
+  const r = await window.electronAPI.quickFolders.openFolder(folder.path)
+  if (!r.ok) toast.error(`打开文件夹失败：${r.error ?? '未知错误'}`)
 }
 
 function run(item: PaletteItem): void {

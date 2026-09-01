@@ -50,11 +50,33 @@ class QuickFoldersService extends SqliteStore {
     this.close()
   }
 
-  /** 查询全部快捷文件夹（按创建时间正序） */
+  /** 查询全部快捷文件夹（按创建时间正序）；path 实时校验，失效的标记 missing */
   getAll(): QuickFolder[] {
     return this.all<QuickFolder>(
       'SELECT * FROM quick_folders ORDER BY created_at ASC, id ASC'
-    )
+    ).map((r) => ({ ...r, missing: !existsSync(r.path) }))
+  }
+
+  /**
+   * 校验并入库一批路径（仅保留存在的目录；path 唯一去重）。
+   * 系统多选对话框与拖放添加共用此逻辑。
+   */
+  private insertValidPaths(paths: string[]): void {
+    for (const raw of paths) {
+      const path = typeof raw === 'string' ? raw.trim() : ''
+      if (!path || !existsSync(path)) continue
+      let name: string
+      try {
+        if (!statSync(path).isDirectory()) continue
+        name = basename(path) || path
+      } catch {
+        continue
+      }
+      this.run(
+        'INSERT OR IGNORE INTO quick_folders (path, name, created_at) VALUES (?, ?, ?)',
+        [path, name, Date.now()]
+      )
+    }
   }
 
   /**
@@ -68,24 +90,16 @@ class QuickFoldersService extends SqliteStore {
     })
     if (canceled || filePaths.length === 0) return this.getAll()
 
-    const now = Date.now()
-    for (const path of filePaths) {
-      // 校验为存在的目录，避免记录被删除/无权限的路径
-      if (!existsSync(path)) continue
-      let name: string
-      try {
-        if (!statSync(path).isDirectory()) continue
-        name = basename(path) || path
-      } catch {
-        continue
-      }
-      this.run(
-        'INSERT OR IGNORE INTO quick_folders (path, name, created_at) VALUES (?, ?, ?)',
-        [path, name, now]
-      )
-    }
+    this.insertValidPaths(filePaths)
     this.save()
     log.info(`[QuickFoldersService] 已添加快捷文件夹:`, filePaths)
+    return this.getAll()
+  }
+
+  /** 按给定路径批量添加（拖放来源）；仅入库合法目录，返回更新后的完整列表 */
+  addPaths(paths: string[]): QuickFolder[] {
+    this.insertValidPaths(Array.isArray(paths) ? paths : [])
+    this.save()
     return this.getAll()
   }
 
@@ -137,6 +151,7 @@ class QuickFoldersService extends SqliteStore {
 
     ipcMain.handle(QF.getFolders, () => this.getAll())
     ipcMain.handle(QF.addFolders, () => this.add())
+    ipcMain.handle(QF.addFoldersByPaths, (_e, paths: string[]) => this.addPaths(paths))
     ipcMain.handle(QF.deleteFolder, (_e, id: number) => this.delete(Number(id)))
     ipcMain.handle(QF.setPosition, (_e, id: number, x: number, y: number) =>
       this.setPosition(Number(id), Number(x), Number(y))

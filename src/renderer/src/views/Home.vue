@@ -53,8 +53,21 @@
       </button>
     </section>
 
-    <!-- 画布：可拖拽 widget（合并记录框 + 贴到主页的便利贴） -->
-    <section ref="canvasRef" class="home-canvas">
+    <!-- 画布：可拖拽 widget（合并记录框 + 贴到主页的便利贴 + 快捷文件夹）；支持从资源管理器拖放文件夹添加快捷入口 -->
+    <section
+      ref="canvasRef"
+      class="home-canvas"
+      @dragenter.prevent="onDragEnter"
+      @dragover.prevent="dropActive = true"
+      @dragleave.prevent="onDragLeave"
+      @drop.prevent="onCanvasDrop"
+    >
+      <!-- 拖放提示遮罩：文件夹拖入画布时浮现 -->
+      <div v-if="dropActive" class="drop-overlay">
+        <FolderPlus :size="20" :stroke-width="1.6" />
+        松开以添加快捷文件夹
+      </div>
+
       <!-- 合并记录框：左=剪贴板，右=片段，框顶跨两类全搜（模块显隐开关控制显示） -->
       <div
         v-if="modules.compactClipboard"
@@ -191,6 +204,7 @@
           :folder="folder"
           :canvas="getCanvas"
           :fallback-pos="folderFallbackPos(index)"
+          :flash="flashFolderId === folder.id"
           @open="openFolder"
           @remove="requestRemoveFolder"
           @drag-end="persistFolderPos"
@@ -636,10 +650,68 @@ async function addQuickFolders(): Promise<void> {
   if (added > 0) toast.success(`已添加 ${added} 个快捷文件夹`)
 }
 
-/** 点击卡片 / 悬浮「打开」：在系统资源管理器中打开文件夹 */
+// ---------------------------------------------------------------------------
+// 拖放添加：从资源管理器拖文件夹到主页画布即添加快捷入口
+// ---------------------------------------------------------------------------
+/** 是否有文件夹拖入画布（显示提示遮罩） */
+const dropActive = ref(false)
+/** dragenter/dragleave 配平计数：避免在子元素间移动时遮罩闪烁 */
+let dragDepth = 0
+
+function onDragEnter(): void {
+  dragDepth += 1
+  dropActive.value = true
+}
+
+function onDragLeave(): void {
+  dragDepth = Math.max(0, dragDepth - 1)
+  if (dragDepth === 0) dropActive.value = false
+}
+
+/** 松手：取拖放项的真实路径批量添加（仅目录会被主进程采纳） */
+async function onCanvasDrop(e: DragEvent): Promise<void> {
+  dragDepth = 0
+  dropActive.value = false
+  const paths = Array.from(e.dataTransfer?.files ?? [])
+    .map((f) => window.electronAPI.getPathForFile(f))
+    .filter((p) => typeof p === 'string' && p.length > 0)
+  if (!paths.length) return
+
+  const before = quickFolders.value.length
+  quickFolders.value = await window.electronAPI.quickFolders.addFoldersByPaths(paths)
+  const added = quickFolders.value.length - before
+  if (added > 0) toast.success(`已添加 ${added} 个快捷文件夹`)
+  else toast.info('所选路径中没有新的有效文件夹')
+}
+
+// ---------------------------------------------------------------------------
+// 打开：单击/双击/悬浮按钮共用，去重 + 成功高亮反馈
+// ---------------------------------------------------------------------------
+/** 打开成功高亮的卡片 id（1.2s 后自动清除） */
+const flashFolderId = ref<number | null>(null)
+let flashTimer: ReturnType<typeof setTimeout> | null = null
+/** 双击去重：同一卡片 300ms 内的重复打开请求只执行一次（单击+双击叠加会连发多次） */
+const lastOpen = ref<{ id: number; at: number } | null>(null)
+
+/** 在系统资源管理器中打开文件夹（失效路径不响应） */
 async function openFolder(folder: QuickFolder): Promise<void> {
+  if (folder.missing) return
+  const now = Date.now()
+  if (lastOpen.value && lastOpen.value.id === folder.id && now - lastOpen.value.at < 300) return
+  lastOpen.value = { id: folder.id, at: now }
+
   const r = await window.electronAPI.quickFolders.openFolder(folder.path)
-  if (!r.ok) toast.error(`打开文件夹失败：${r.error ?? '未知错误'}`)
+  if (!r.ok) {
+    toast.error(`打开文件夹失败：${r.error ?? '未知错误'}`)
+    return
+  }
+  // 成功：卡片短暂高亮 + Toast 反馈
+  flashFolderId.value = folder.id
+  if (flashTimer) clearTimeout(flashTimer)
+  flashTimer = setTimeout(() => {
+    flashFolderId.value = null
+  }, 1200)
+  toast.success(`已打开「${folder.name}」`)
 }
 
 /** 悬浮「移除」：进入确认弹窗 */
@@ -922,6 +994,10 @@ onBeforeUnmount(() => {
     clearTimeout(searchTimer)
     searchTimer = null
   }
+  if (flashTimer) {
+    clearTimeout(flashTimer)
+    flashTimer = null
+  }
   window.removeEventListener('pointermove', onBoxResizeMove)
   window.removeEventListener('pointerup', onBoxResizeUp)
 })
@@ -1103,6 +1179,27 @@ onBeforeUnmount(() => {
   min-height: 0;
   overflow: auto;
   padding: var(--sp-2) var(--sp-5) var(--sp-5);
+}
+
+/* 拖放添加提示遮罩：文件夹拖入画布时浮现 */
+.drop-overlay {
+  position: sticky;
+  top: var(--sp-2);
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  margin: var(--sp-2) var(--sp-3);
+  padding: var(--sp-5);
+  border: 2px dashed var(--brand);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--brand) 10%, var(--bg-surface));
+  color: var(--brand);
+  font-size: 13px;
+  font-weight: 600;
+  pointer-events: none;
+  animation: fade-up var(--duration-fast) var(--ease-out-soft);
 }
 
 /* 合并记录框 */

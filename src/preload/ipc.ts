@@ -71,6 +71,8 @@ export interface QuickFolder {
   path: string
   /** 显示名（路径 basename） */
   name: string
+  /** 路径当前是否失效（读取时实时校验：文件夹被移动/删除后为 true） */
+  missing: boolean
   /** 主页画布内位置（px，相对画布内容区左上角）；未定位过为 null */
   home_x: number | null
   home_y: number | null
@@ -394,6 +396,8 @@ export const SERVICE_CHANNELS = {
     getFolders: 'to-service-QuickFoldersService:getFolders',
     /** 弹出系统文件夹多选对话框并入库；返回更新后的完整列表 */
     addFolders: 'to-service-QuickFoldersService:addFolders',
+    /** 按给定路径批量入库（拖放添加来源，主进程校验存在性/目录类型）；返回更新后的完整列表 */
+    addFoldersByPaths: 'to-service-QuickFoldersService:addFoldersByPaths',
     deleteFolder: 'to-service-QuickFoldersService:deleteFolder',
     setPosition: 'to-service-QuickFoldersService:setPosition',
     setSize: 'to-service-QuickFoldersService:setSize',
@@ -457,6 +461,8 @@ export interface SetPagePayload {
 /** preload 暴露的完整 API 面 */
 export interface ElectronAPI {
   platform: string
+  /** 拖放/文件场景取真实路径（renderer 内 webUtils，需 preload 暴露） */
+  getPathForFile: (file: File) => string
   window: {
     minimize: () => void
     hideAfterAnimation: () => void
@@ -539,6 +545,8 @@ export interface ElectronAPI {
     getFolders: () => Promise<QuickFolder[]>
     /** 弹出系统文件夹多选框并添加；返回更新后的完整列表（取消则原样返回） */
     addFolders: () => Promise<QuickFolder[]>
+    /** 按给定路径批量添加（拖放来源，主进程校验存在性与目录类型）；返回更新后的完整列表 */
+    addFoldersByPaths: (paths: string[]) => Promise<QuickFolder[]>
     /** 移除快捷文件夹（仅删快捷记录，不影响磁盘上的文件夹） */
     deleteFolder: (id: number) => Promise<void>
     /** 记录快捷文件夹在主页画布上的位置（px） */
