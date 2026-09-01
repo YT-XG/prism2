@@ -52,7 +52,7 @@ src/
     ├── components/ui/            # 设计系统组件层（含 RichTextEditor.vue 富文本编辑器）
     ├── components/FeatureSearchPanel.vue  # 功能搜索命令面板（Ctrl/Cmd+K 独立搜索窗 SearchFrame 与主页内嵌共用；功能跳转 + 剪贴板/片段/快捷文件夹数据搜索，文件夹回车即在资源管理器打开；standalone 模式铺满独立窗、失焦自动隐藏、开关无过渡，重开由主进程 SearchFrame 每次显示时发的 show 事件（onSearchShow）显式驱动，不依赖 visibilitychange；与主页合并记录框共用同一全局搜索逻辑 useGlobalSearch）
     ├── components/HomeNoteCard.vue        # 贴到主页的便利贴可拖拽卡片
-    ├── components/QuickFolderCard.vue     # 主页快捷文件夹可拖拽/可缩放卡片（单击/双击打开 + 成功高亮，失效路径置灰角标，悬浮「打开/移除」）
+    ├── components/QuickFolderPanel.vue    # 主页快捷文件夹单面板（可拖拽/缩放，框内列表行展示 + 悬浮/聚焦操作 + 失效标记 + 空态引导）
     ├── components/StickyNoteEditorDialog.vue # 便利贴大编辑框（富文本 + 颜色，主页/便利贴页共用）
     ├── components/SnippetEditorDialog.vue # 片段添加/编辑弹窗（剪贴板页/主页共用，内容为富文本）
     ├── components/SnippetPlaceholderDialog.vue # 片段占位符输入弹窗（{{名称}}，填写后替换并粘贴）
@@ -95,7 +95,7 @@ dev-app-update.yml                # 开发模式 electron-updater 配置（打�
 | 骨架（入口/托盘/主页/设置/设计系统/契约层） | ✅ |
 | 剪贴板管理（历史/收藏/搜索/保留期/导入/富文本编辑：历史与片段均可用富文本编辑器修改并保留格式粘贴） | ✅ |
 | 主页（可拖拽合并记录框：剪贴板+片段跨类全搜 + 自定义尺寸 + 概览 + 入口卡（新增便利贴/新增片段） + 模块显隐开关） | ✅ |
-| 快捷文件夹（主页「快捷入口」弹系统文件夹多选 / 从资源管理器拖放添加 → 主页可拖拽/可缩放卡片，单击/双击在资源管理器打开 + 成功高亮，失效路径置灰标记；Ctrl/Cmd+K 全局搜索也可直接打开；「显示」面板开关控制显隐） | ✅ |
+| 快捷文件夹（主页「快捷入口」弹系统文件夹多选 / 从资源管理器拖放添加 → 主页快捷文件夹整合为一个可拖拽/缩放面板，框内列表行展示，单击行在资源管理器打开 + 成功高亮，失效路径置灰标记，行操作「打开/移除」悬浮与聚焦可及；Ctrl/Cmd+K 全局搜索也可直接打开；「显示」面板开关控制显隐） | ✅ |
 | 便利贴（本地便签，增删改 + 富文本大编辑框 + 贴到主页可拖拽定位/自由缩放 + 主页点击编辑/一键创建默认贴主页） | ✅ |
 | 功能搜索（命令面板，Ctrl/Cmd+K） | ✅ |
 | 自动更新（electron-updater + GitHub CI 自动发版 + 设置页检查更新 + 启动静默检查与标题栏「有新版本」提示） | ✅（接入就绪，待建仓库替换占位地址后实际发版） |

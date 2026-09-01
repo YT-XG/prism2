@@ -53,7 +53,7 @@
       </button>
     </section>
 
-    <!-- 画布：可拖拽 widget（合并记录框 + 贴到主页的便利贴 + 快捷文件夹）；支持从资源管理器拖放文件夹添加快捷入口 -->
+    <!-- 画布：可拖拽 widget（合并记录框 + 贴到主页的便利贴 + 快捷文件夹面板）；支持从资源管理器拖放文件夹添加快捷入口 -->
     <section
       ref="canvasRef"
       class="home-canvas"
@@ -196,21 +196,20 @@
         @resize-end="persistNoteSize"
       />
 
-      <!-- 快捷文件夹（可拖拽定位、可缩放尺寸；「显示」面板开关控制显隐） -->
-      <template v-if="modules.quickFolders">
-        <QuickFolderCard
-          v-for="(folder, index) in quickFolders"
-          :key="folder.id"
-          :folder="folder"
-          :canvas="getCanvas"
-          :fallback-pos="folderFallbackPos(index)"
-          :flash="flashFolderId === folder.id"
-          @open="openFolder"
-          @remove="requestRemoveFolder"
-          @drag-end="persistFolderPos"
-          @resize-end="persistFolderSize"
-        />
-      </template>
+      <!-- 快捷文件夹面板（一个可拖拽/可缩放框，框内列表行展示全部快捷文件夹；「显示」面板开关控制显隐） -->
+      <QuickFolderPanel
+        v-if="modules.quickFolders"
+        :folders="quickFolders"
+        :canvas="getCanvas"
+        :pos="qfPanelPos ?? qfDefaultPos()"
+        :size="qfPanelSize"
+        :flash-folder-id="flashFolderId"
+        @open="openFolder"
+        @remove="requestRemoveFolder"
+        @add="addQuickFolders"
+        @drag-end="persistQfPanelPos"
+        @resize-end="persistQfPanelSize"
+      />
     </section>
 
     <!-- 单条删除确认 -->
@@ -273,7 +272,7 @@ import UiButton from '@renderer/components/ui/UiButton.vue'
 import UiInput from '@renderer/components/ui/UiInput.vue'
 import UiDialog from '@renderer/components/ui/UiDialog.vue'
 import HomeNoteCard from '@renderer/components/HomeNoteCard.vue'
-import QuickFolderCard from '@renderer/components/QuickFolderCard.vue'
+import QuickFolderPanel from '@renderer/components/QuickFolderPanel.vue'
 import StickyNoteEditorDialog from '@renderer/components/StickyNoteEditorDialog.vue'
 import SnippetEditorDialog from '@renderer/components/SnippetEditorDialog.vue'
 import ClipboardHistoryEditorDialog from '@renderer/components/ClipboardHistoryEditorDialog.vue'
@@ -403,6 +402,73 @@ function startBoxResize(e: PointerEvent): void {
   startH = boxSize.value.h
   window.addEventListener('pointermove', onBoxResizeMove)
   window.addEventListener('pointerup', onBoxResizeUp)
+}
+
+// ---------------------------------------------------------------------------
+// 快捷文件夹面板（单个可拖拽/可缩放框，框内列表行展示全部快捷文件夹）
+// ---------------------------------------------------------------------------
+/** 面板位置的 localStorage 键（纯渲染端布局偏好，同最近记录框） */
+const QF_PANEL_POS_KEY = 'prism.home.quickFolderPanel'
+/** 面板尺寸的 localStorage 键 */
+const QF_PANEL_SIZE_KEY = 'prism.home.quickFolderPanelSize'
+/** 面板默认尺寸（px） */
+const QF_PANEL_DEFAULT_W = 300
+const QF_PANEL_DEFAULT_H = 380
+
+/** 未定位过时面板的默认位置：画布右上角（避开左上角的最近记录框） */
+function qfDefaultPos(): { x: number; y: number } {
+  const cw = canvasRef.value?.clientWidth ?? 860
+  return { x: Math.max(0, cw - qfPanelSize.value.w - 8), y: 8 }
+}
+
+function loadQfPanelPos(): { x: number; y: number } | null {
+  try {
+    const raw = localStorage.getItem(QF_PANEL_POS_KEY)
+    if (raw) {
+      const p = JSON.parse(raw) as { x?: unknown; y?: unknown }
+      if (typeof p?.x === 'number' && typeof p?.y === 'number') return { x: p.x, y: p.y }
+    }
+  } catch {
+    // 忽略损坏的缓存
+  }
+  return null
+}
+
+function loadQfPanelSize(): { w: number; h: number } {
+  try {
+    const raw = localStorage.getItem(QF_PANEL_SIZE_KEY)
+    if (raw) {
+      const p = JSON.parse(raw) as { w?: unknown; h?: unknown }
+      if (typeof p?.w === 'number' && typeof p?.h === 'number') return { w: p.w, h: p.h }
+    }
+  } catch {
+    // 忽略损坏的缓存
+  }
+  return { w: QF_PANEL_DEFAULT_W, h: QF_PANEL_DEFAULT_H }
+}
+
+const qfPanelSize = ref(loadQfPanelSize())
+/** 面板位置；null = 从未定位过（挂载后按真实画布宽度右对齐落库） */
+const qfPanelPos = ref<{ x: number; y: number } | null>(loadQfPanelPos())
+
+/** 面板拖拽结束：落库 */
+function persistQfPanelPos(payload: { x: number; y: number }): void {
+  qfPanelPos.value = payload
+  try {
+    localStorage.setItem(QF_PANEL_POS_KEY, JSON.stringify(payload))
+  } catch {
+    // 忽略持久化失败
+  }
+}
+
+/** 面板缩放结束：落库 */
+function persistQfPanelSize(payload: { w: number; h: number }): void {
+  qfPanelSize.value = payload
+  try {
+    localStorage.setItem(QF_PANEL_SIZE_KEY, JSON.stringify(payload))
+  } catch {
+    // 忽略持久化失败
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -627,14 +693,8 @@ async function persistNoteSize(payload: { id: number; w: number; h: number }): P
 // 快捷文件夹
 // ---------------------------------------------------------------------------
 
-/** 主页快捷文件夹列表（可拖拽卡片） */
+/** 主页快捷文件夹列表（面板内列表行展示） */
 const quickFolders = ref<QuickFolder[]>([])
-
-/** 未定位过（home_x/home_y 为 null）时的默认位置：画布右上角起始，按索引错位下落 */
-function folderFallbackPos(index: number): { x: number; y: number } {
-  const w = canvasRef.value?.clientWidth ?? 400
-  return { x: Math.max(0, w - 244 - index * 12), y: 76 + index * 32 }
-}
 
 async function fetchQuickFolders(): Promise<void> {
   quickFolders.value = await window.electronAPI.quickFolders.getFolders()
@@ -718,14 +778,6 @@ function requestRemoveFolder(folder: QuickFolder): void {
   deleteConfirm.value = true
 }
 
-async function persistFolderPos(payload: { id: number; x: number; y: number }): Promise<void> {
-  await window.electronAPI.quickFolders.setPosition(payload.id, payload.x, payload.y)
-}
-
-async function persistFolderSize(payload: { id: number; w: number; h: number }): Promise<void> {
-  await window.electronAPI.quickFolders.setSize(payload.id, payload.w, payload.h)
-}
-
 /** 打开主页便利贴大编辑框（新建，创建后默认贴主页） */
 function openCreateNote(): void {
   editingNote.value = null
@@ -800,7 +852,7 @@ async function saveHistory(payload: { content: string }): Promise<void> {
 
 /**
  * 计算新建便利贴的落点：从画布右上角向右下扫描，
- * 返回第一个既不与「最近记录框」相交、也不与现有已贴便利贴 / 快捷文件夹相交的位置。
+ * 返回第一个既不与「最近记录框」相交、也不与现有已贴便利贴 / 快捷文件夹面板相交的位置。
  */
 function nextNotePos(): { x: number; y: number } {
   const canvas = canvasRef.value
@@ -821,15 +873,13 @@ function nextNotePos(): { x: number; y: number } {
     const nh = n.home_h ?? NOTE_DEFAULT_H
     return { left: nx, top: ny, right: nx + nw, bottom: ny + nh }
   })
-  // 快捷文件夹卡一并纳入避让（默认宽 220×120，未定位用兜底位置）
-  const FOLDER_DEFAULT_W = 220
-  const FOLDER_DEFAULT_H = 120
-  quickFolders.value.forEach((f, i) => {
-    const fx = f.home_x ?? folderFallbackPos(i).x
-    const fy = f.home_y ?? folderFallbackPos(i).y
-    const fw = f.home_w ?? FOLDER_DEFAULT_W
-    const fh = f.home_h ?? FOLDER_DEFAULT_H
-    noteRects.push({ left: fx, top: fy, right: fx + fw, bottom: fy + fh })
+  // 快捷文件夹面板整体纳入避让（用当前面板位置/尺寸，未定位过用默认落点）
+  const qfp = qfPanelPos.value ?? qfDefaultPos()
+  noteRects.push({
+    left: qfp.x,
+    top: qfp.y,
+    right: qfp.x + qfPanelSize.value.w,
+    bottom: qfp.y + qfPanelSize.value.h
   })
   const overlaps = (r: { left: number; top: number; right: number; bottom: number }): boolean =>
     (boxRect !== null &&
@@ -951,6 +1001,16 @@ async function dismissLegacyImport(): Promise<void> {
 }
 
 onMounted(async () => {
+  // 快捷文件夹面板从未定位过：按真实画布宽度右对齐落库（挂载后画布尺寸才可知）
+  if (qfPanelPos.value === null) {
+    qfPanelPos.value = qfDefaultPos()
+    try {
+      localStorage.setItem(QF_PANEL_POS_KEY, JSON.stringify(qfPanelPos.value))
+    } catch {
+      // 忽略持久化失败
+    }
+  }
+
   await refreshAll()
   await fetchPinnedNotes()
   await fetchQuickFolders()
