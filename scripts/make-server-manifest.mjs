@@ -53,7 +53,6 @@ function classify(name) {
     if (n.includes('win')) return 'win'
     return null
   }
-  if (n.endsWith('.appimage') || n.endsWith('.tar.gz') || n.endsWith('.deb')) return 'linux'
   if (n.endsWith('.exe') || n.includes('-setup')) return 'win'
   return null
 }

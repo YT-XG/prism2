@@ -3,7 +3,6 @@
  * @description 平台分支：mac/win 走「统一自定义锚点(manifest) + 多线程下载引擎 + SHA-256 校验」，仅安装层不同；
  *  - mac：无签名原地替换 `.app`（无签名封条，可安全覆盖自身内容）→ relaunch；
  *  - win：下载 NSIS `*-setup.exe`，静默 `/S /D=<安装目录>` 覆盖安装 → 由安装器拉启新版；
- *  - linux：保留 electron-updater + GitHub provider。
  * 面向无签名（mac 无 Gatekeeper 复弹 / win 无 SmartScreen 阻塞），真正静默更新。
  *
  * 自更新源解析（**默认不暴露给用户，双源锚点**）：
@@ -14,9 +13,8 @@
  *
  * 所有状态变化经 BROADCAST.updateStatus 广播 + getStatus 主动查询，渲染端无需轮询。
  */
-import { app, ipcMain, net } from 'electron'
+import { app, ipcMain, net, shell } from 'electron'
 import log from 'electron-log'
-import { autoUpdater } from 'electron-updater'
 import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { createReadStream, existsSync } from 'node:fs'
@@ -73,7 +71,7 @@ class UpdateService {
   /** 安装进行中标记（防止重复触发） */
   private installing = false
 
-  /** 初始化：创建更新引擎 + 接线 electron-updater（仅 linux）+ 注册 IPC */
+  /** 初始化：创建更新引擎 + 注册 IPC */
   init(): void {
     if (this.wired) return
     this.wired = true
@@ -81,11 +79,6 @@ class UpdateService {
     this.engine = new MultiThreadDownloadEngine({
       onTaskUpdated: (task) => this.#onUpdateTask(task)
     })
-
-    // 仅 linux 走 electron-updater（mac/win 用统一锚点自定义更新）
-    if (process.platform === 'linux') {
-      this.#wireElectronUpdater()
-    }
 
     this.#registerIPC()
     log.info('[UpdateService] 初始化完成')
@@ -102,7 +95,7 @@ class UpdateService {
     setTimeout(() => void this.check(), 3000)
   }
 
-  /** 检查更新：mac/win 走统一锚点，linux 走 electron-updater */
+  /** 检查更新：mac/win 走统一自定义锚点 */
   async check(): Promise<UpdateStatusInfo> {
     if (!app.isPackaged) {
       this.#setStatus({
@@ -112,23 +105,11 @@ class UpdateService {
       return this.getStatus()
     }
 
-    if (process.platform === 'linux') {
-      this.#setStatus({ status: 'checking' })
-      try {
-        await autoUpdater.checkForUpdates()
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err)
-        log.error('[UpdateService] 检查更新失败:', message)
-        this.#setStatus({ status: 'error', error: message })
-      }
-      return this.getStatus()
-    }
-
     // mac / win → 统一自定义锚点
     return this.#checkCustom()
   }
 
-  /** 安装已下载的更新并重启（mac 原地替换 / win NSIS 静默 / linux electron-updater） */
+  /** 安装已下载的更新并重启（mac 原地替换 / win NSIS 静默） */
   quitAndInstall(): void {
     if (this.status.status !== 'downloaded') return
 
@@ -140,10 +121,8 @@ class UpdateService {
 
     if (process.platform === 'darwin') {
       void this.#installOnMac().catch(handleError)
-    } else if (process.platform === 'win32') {
-      void this.#installOnWindows().catch(handleError)
     } else {
-      autoUpdater.quitAndInstall()
+      void this.#installOnWindows().catch(handleError)
     }
   }
 
@@ -268,8 +247,7 @@ class UpdateService {
 
   /** 从 manifest 中选取当前平台的安装包（mac 优先 universal；win/linux 取该平台首项） */
   #pickBinary(manifest: UpdateManifest): UpdateManifestBinary | null {
-    const platform =
-      process.platform === 'darwin' ? 'mac' : process.platform === 'win32' ? 'win' : 'linux'
+    const platform = process.platform === 'darwin' ? 'mac' : 'win'
     const list = manifest.binaries.filter((b) => b.platform === platform)
     if (platform === 'mac') {
       return (
@@ -463,12 +441,32 @@ class UpdateService {
     log.info(`[UpdateService] 调用 NSIS 静默安装更新到: ${installDir}`)
 
     // 脱离父进程启动安装器，随即退出主进程；安装器接管覆盖安装并拉启新版。
-    spawn(setupPath, ['/S', `/D=${installDir}`], { detached: true, stdio: 'ignore' }).unref()
+    // 关键：用 shell 启动——Node 在 Windows 不带 shell 直接 spawn 下载的 exe 可能报 EFTYPE（系统不认作可执行文件），
+    // 经 cmd.exe 启动可绕开（v1 即 shell:true）；/D= 目录含空格时 cmd 会拆引号，本路径仅取 dirname，通常无空格。
+    try {
+      const child = spawn(setupPath, ['/S', `/D=${installDir}`], {
+        detached: true,
+        stdio: 'ignore',
+        shell: true
+      })
+      child.on('error', (err) => this.#onWinInstallSpawnError(err, setupPath))
+      child.unref()
+    } catch (err) {
+      this.#onWinInstallSpawnError(err, setupPath)
+    }
     // 延迟清理：安装完成后移除暂存的安装器
     setTimeout(() => {
       void rm(setupPath, { force: true }).catch(() => {})
     }, 2000)
     app.quit()
+  }
+
+  /** 安装器启动失败兜底：定位文件 + 提示手动安装，避免静默卡死 */
+  #onWinInstallSpawnError(err: unknown, setupPath: string): void {
+    const message = err instanceof Error ? err.message : String(err)
+    log.error('[UpdateService] 安装器启动失败:', message)
+    shell.showItemInFolder(setupPath)
+    this.#notifyError('自动安装失败', '系统拒绝运行更新安装器，已定位文件，请手动运行完成更新')
   }
 
   /** 在解压目录中找到 .app 顶层目录名 */
@@ -487,69 +485,6 @@ class UpdateService {
     } catch {
       return ''
     }
-  }
-
-  // ---------------------------------------------------------------------------
-  // electron-updater（非 mac）
-  // ---------------------------------------------------------------------------
-
-  /** 接线 electron-updater 事件 → 状态机 + 广播（仅非 mac 调用） */
-  #wireElectronUpdater(): void {
-    autoUpdater.logger = log
-    autoUpdater.autoDownload = true
-    autoUpdater.autoInstallOnAppQuit = true
-
-    autoUpdater.on('checking-for-update', () => {
-      this.#setStatus({ status: 'checking' })
-    })
-    autoUpdater.on('update-available', (info) => {
-      log.info('[UpdateService] 发现新版本:', info.version)
-      this.#setStatus({
-        status: 'available',
-        version: info.version,
-        releaseDate: info.releaseDate
-      })
-      notificationService.notify({
-        type: 'info',
-        source: 'update',
-        title: '发现新版本',
-        message: `v${info.version} 已发布，正在后台下载…`
-      })
-    })
-    autoUpdater.on('update-not-available', () => {
-      this.#setStatus({ status: 'up-to-date' })
-    })
-    autoUpdater.on('download-progress', (progress) => {
-      this.#setStatus({
-        status: 'downloading',
-        version: this.status.version,
-        progress: Math.round(progress.percent)
-      })
-    })
-    autoUpdater.on('update-downloaded', (info) => {
-      log.info('[UpdateService] 更新已下载:', info.version)
-      this.#setStatus({
-        status: 'downloaded',
-        version: info.version,
-        releaseNotes: typeof info.releaseNotes === 'string' ? info.releaseNotes : undefined
-      })
-      notificationService.notify({
-        type: 'success',
-        source: 'update',
-        title: '更新已就绪',
-        message: `v${info.version} 已下载，重启后生效`
-      })
-    })
-    autoUpdater.on('error', (err) => {
-      log.error('[UpdateService] 更新错误:', err)
-      this.#setStatus({ status: 'error', error: err.message })
-      notificationService.notify({
-        type: 'error',
-        source: 'update',
-        title: '更新检查失败',
-        message: err.message
-      })
-    })
   }
 
   // ---------------------------------------------------------------------------

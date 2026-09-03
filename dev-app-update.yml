@@ -1,7 +1,0 @@
-# 开发模式下的更新配置（electron-updater 用 `autoUpdater.forceDevUpdateConfig = true` 时读取）。
-# 注意：此文件在生产打包时被 electron-builder 排除（见 electron-builder.yml files 清单），
-# 打包后的更新地址取自打包时生成的 app-update.yml（由 publish 配置写入）。
-# 目标仓库：https://github.com/YT-XG/prism2
-provider: github
-owner: YT-XG
-repo: prism2

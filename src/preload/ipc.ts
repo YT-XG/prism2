@@ -232,7 +232,7 @@ export interface NotificationNewPayload {
   unread: number
 }
 
-/** 应用更新状态（mac 走自定义源 + 下载引擎；win/linux 走 electron-updater） */
+/** 应用更新状态（mac 走自定义源 + 下载引擎；win 走 NSIS 静默） */
 export type UpdateStatus =
   | 'idle' // 尚未检查
   | 'checking' // 正在检查更新
@@ -263,7 +263,7 @@ export interface UpdateStatusInfo {
 
 /** 自定义更新清单（latest.json）的一个平台二进制项 */
 export interface UpdateManifestBinary {
-  platform: 'mac' | 'win' | 'linux'
+  platform: 'mac' | 'win'
   arch: string
   /** 安装包下载地址（绝对 URL） */
   url: string

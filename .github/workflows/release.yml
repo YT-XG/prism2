@@ -116,8 +116,6 @@ jobs:
               n = name.lower()
               if n.endswith('.zip'):
                   return 'mac' if ('-mac' in n or 'mac-' in n or '-osx' in n) else ('win' if 'win' in n else None)
-              if n.endswith('.appimage') or n.endswith('.tar.gz') or n.endswith('.deb'):
-                  return 'linux'
               if n.endswith('.exe') or '-setup' in n:
                   return 'win'
               return None
