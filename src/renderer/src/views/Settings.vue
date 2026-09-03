@@ -7,6 +7,17 @@
     <div class="settings-body">
       <!-- 加载完成前不渲染，避免开关/快捷键等按默认值先渲染再跳到真实值 -->
       <template v-if="settingsLoaded">
+        <!-- macOS 专属：自动粘贴依赖「辅助功能」权限，引导用户授权 -->
+        <div v-if="platform === 'darwin'" class="mac-hint">
+          <div class="mac-hint__info">
+            <div class="mac-hint__title">macOS 需要「辅助功能」权限</div>
+            <div class="mac-hint__desc">
+              点击剪贴板历史项时通过 AppleScript 模拟按键自动粘贴；未授权时粘贴不会生效。
+            </div>
+          </div>
+          <button class="btn" type="button" @click="openAccessibility">打开系统设置</button>
+        </div>
+
         <section class="setting-group">
         <h3 class="group-title">通用</h3>
         <div class="setting-row">
@@ -296,6 +307,15 @@ import type {
 } from '@preload/ipc'
 
 const toast = useToast()
+
+/** 当前平台（mac 上显示「辅助功能」引导横幅等） */
+const platform = window.electronAPI.platform
+
+/** 打开 macOS「辅助功能」系统设置面板（模拟粘贴授权引导） */
+async function openAccessibility(): Promise<void> {
+  const r = await window.electronAPI.settings.openAccessibilitySettings()
+  if (!r.ok) toast.error(`打开设置失败：${r.error ?? '未知错误'}`)
+}
 
 const settings = ref<AppSettings>({
   shortcut: '',
@@ -637,6 +657,29 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   gap: var(--sp-5);
+}
+
+.mac-hint {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-selected-subtle);
+}
+
+.mac-hint__title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.mac-hint__desc {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 2px;
 }
 
 .group-title {

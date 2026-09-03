@@ -6,7 +6,7 @@
  * - 直接读取 @preload/ipc 的 AppSettings 类型（单一来源）。
  * - 移除旧版对 PopupManager / NoticeNew 的依赖（通知弹窗属后续迭代）。
  */
-import { app, globalShortcut, ipcMain } from 'electron'
+import { app, globalShortcut, ipcMain, shell } from 'electron'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import log from 'electron-log'
@@ -113,6 +113,31 @@ class SettingsService {
     // 快捷键录制期间暂停 / 恢复全局快捷键
     ipcMain.handle(SERVICE_CHANNELS.settings.suspendShortcuts, () => this.suspendShortcuts())
     ipcMain.handle(SERVICE_CHANNELS.settings.resumeShortcuts, () => this.resumeShortcuts())
+
+    ipcMain.handle(SERVICE_CHANNELS.settings.openAccessibilitySettings, () =>
+      this.openAccessibilitySettings()
+    )
+  }
+
+  /**
+   * 打开 macOS「辅助功能」系统设置面板。
+   * @description 点击剪贴板历史项后的自动粘贴通过 AppleScript（System Events keystroke）
+   * 模拟按键实现，macOS 要求应用获得「辅助功能」授权，否则静默失败。此方法引导用户直达设置面板。
+   * 非 mac 平台为 no-op（返回 ok）。
+   */
+  async openAccessibilitySettings(): Promise<{ ok: boolean; error?: string }> {
+    if (process.platform !== 'darwin') {
+      return { ok: true }
+    }
+    try {
+      await shell.openExternal(
+        'x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility'
+      )
+      return { ok: true }
+    } catch (err) {
+      log.error('[SettingsService] 打开辅助功能设置失败:', err)
+      return { ok: false, error: err instanceof Error ? err.message : String(err) }
+    }
   }
 
   /** 暂停全局快捷键（录制期间调用），录制完成后用 resumeShortcuts 恢复 */

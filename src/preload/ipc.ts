@@ -407,7 +407,9 @@ export const SERVICE_CHANNELS = {
     /** 暂停全局快捷键（快捷键录制期间避免误触发） */
     suspendShortcuts: 'to-service-SettingsService:suspendShortcuts',
     /** 恢复全局快捷键（按最新设置重新注册） */
-    resumeShortcuts: 'to-service-SettingsService:resumeShortcuts'
+    resumeShortcuts: 'to-service-SettingsService:resumeShortcuts',
+    /** 打开 macOS「辅助功能」系统设置面板（模拟粘贴需要该权限；非 mac 平台为 no-op） */
+    openAccessibilitySettings: 'to-service-SettingsService:openAccessibilitySettings'
   },
   clipboard: {
     getHistory: 'to-service-ClipboardService:getHistory',
@@ -549,6 +551,8 @@ export interface ElectronAPI {
     suspendShortcuts: () => Promise<void>
     /** 恢复全局快捷键（按最新设置重新注册） */
     resumeShortcuts: () => Promise<void>
+    /** 打开 macOS「辅助功能」系统设置面板（模拟粘贴需要该权限；非 mac 平台直接返回 ok） */
+    openAccessibilitySettings: () => Promise<{ ok: boolean; error?: string }>
   }
   clipboard: {
     getHistory: (limit?: number, offset?: number) => Promise<HistoryItem[]>

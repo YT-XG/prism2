@@ -40,6 +40,10 @@ mac:
   target:
     - dmg
     - zip
+  # 显式打 universal（x64 + arm64 合一），避免产物架构取决于 CI runner，
+  # 否则 Intel / Apple Silicon 只能二选一。electron-updater 按当前机器架构取对应 zip。
+  arch:
+    - universal
   icon: build/icon.png
 linux:
   target:

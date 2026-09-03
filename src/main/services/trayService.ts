@@ -32,7 +32,12 @@ class TrayService {
         { label: '退出', click: () => app.quit() }
       ])
       this.tray.setContextMenu(menu)
-      this.tray.on('click', () => windowFactory.getMainPageFrame().showCentered())
+      // macOS：设置 contextMenu 后左键点击会弹出菜单且同时触发 click 事件，
+      // 若再绑定 click 会导致「弹菜单 + 显示主窗口」同时发生；mac 上由菜单项「显示主界面」进入。
+      // Windows / Linux：左键点击显示主窗口，右键弹出菜单。
+      if (process.platform !== 'darwin') {
+        this.tray.on('click', () => windowFactory.getMainPageFrame().showCentered())
+      }
       log.info('[TrayService] 托盘已创建')
     } catch (err) {
       log.error('[TrayService] 初始化失败:', err)
