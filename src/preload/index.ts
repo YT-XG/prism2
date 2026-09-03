@@ -11,6 +11,8 @@ import type {
   BackupExportResult,
   BackupImportMode,
   BackupImportResult,
+  BackupInspectResult,
+  BackupSection,
   ClipboardRetention,
   ElectronAPI,
   HistoryItem,
@@ -138,9 +140,11 @@ const electronAPI: ElectronAPI = {
     deleteFavorite: (id: number) => ipcRenderer.invoke(C.deleteFavorite, id) as Promise<void>,
     clearFavorites: () => ipcRenderer.invoke(C.clearFavorites) as Promise<void>,
     writeText: (text: string) => ipcRenderer.invoke(C.writeText, text) as Promise<void>,
-    exportBackup: () => ipcRenderer.invoke(C.exportBackup) as Promise<BackupExportResult>,
-    importBackup: (mode: BackupImportMode) =>
-      ipcRenderer.invoke(C.importBackup, mode) as Promise<BackupImportResult>,
+    exportBackup: (sections: BackupSection[]) =>
+      ipcRenderer.invoke(C.exportBackup, sections) as Promise<BackupExportResult>,
+    inspectBackup: () => ipcRenderer.invoke(C.inspectBackup) as Promise<BackupInspectResult>,
+    importBackup: (path: string, sections: BackupSection[], mode: BackupImportMode) =>
+      ipcRenderer.invoke(C.importBackup, path, sections, mode) as Promise<BackupImportResult>,
     onNewItem: (cb: (item: HistoryItem) => void) => subscribe(BROADCAST.clipboardNew, (item) => cb(item as HistoryItem)),
     onHistoryChanged: (cb: () => void) => subscribe(BROADCAST.clipboardHistoryChanged, cb),
   },

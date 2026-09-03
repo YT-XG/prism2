@@ -31,9 +31,11 @@ import { SqliteStore } from './db/sqliteDatabase'
 import { inputService } from './inputService'
 import { settingsService } from './settingsService'
 import { notificationService } from './notificationService'
+import { stickyNotesService } from './stickyNotesService'
+import { quickFoldersService } from './quickFoldersService'
 import { windowFactory } from '../frame/WindowFactory'
 import { broadcast, minimizeWindowForPaste } from '../utils/platform'
-import { BACKUP_EXTENSION, BROADCAST, SERVICE_CHANNELS } from '@preload/ipc'
+import { BACKUP_EXTENSION, BACKUP_SECTIONS, BROADCAST, SERVICE_CHANNELS } from '@preload/ipc'
 import type {
   HistoryItem,
   FavoriteItem,
@@ -41,7 +43,9 @@ import type {
   ClipboardRetention,
   BackupImportMode,
   BackupExportResult,
-  BackupImportResult
+  BackupInspectResult,
+  BackupImportResult,
+  BackupSection
 } from '@preload/ipc'
 
 /** 轮询间隔（ms） */
@@ -60,9 +64,13 @@ interface BackupManifest {
   app: string
   formatVersion: number
   exportedAt: string
+  /** 本次写入的分区（用户勾选） */
+  sections: BackupSection[]
   historyCount: number
   favoriteCount: number
   imageCount: number
+  stickyNoteCount: number
+  quickFolderCount: number
 }
 
 class ClipboardService extends SqliteStore {
@@ -649,8 +657,37 @@ class ClipboardService extends SqliteStore {
     })
   }
 
-  /** 导出剪贴板记录备份：clipboard.db + 图片 + manifest，打包为 .prismbackup（zip） */
-  async exportBackup(): Promise<BackupExportResult> {
+  /** 校验备份 zip 的 manifest（app 标识 + 格式版本），返回解析结果或错误信息 */
+  #validateManifest(zip: AdmZip): { manifest: BackupManifest | null; error?: string } {
+    const entry = zip.getEntry('manifest.json')
+    if (!entry) {
+      return { manifest: null, error: '不是有效的 Prism 备份文件（缺少 manifest.json）' }
+    }
+    let manifest: BackupManifest
+    try {
+      manifest = JSON.parse(entry.getData().toString('utf-8'))
+    } catch {
+      return { manifest: null, error: '备份文件 manifest 解析失败' }
+    }
+    if (manifest.app !== 'prism2' || manifest.formatVersion !== 1) {
+      return {
+        manifest: null,
+        error: `不支持的备份格式（app=${manifest.app ?? '未知'}, version=${manifest.formatVersion ?? '未知'}）`
+      }
+    }
+    return { manifest }
+  }
+
+  /**
+   * 导出备份（zip 打包，扩展名 .prismbackup）。
+   * @param sections - 用户勾选的数据分区：clipboard（clipboard.db + 图片）/ stickyNotes（sticky-notes.db）/ quickFolders（quick-folders.db）
+   */
+  async exportBackup(sections: BackupSection[]): Promise<BackupExportResult> {
+    const selected = BACKUP_SECTIONS.filter((s) => sections.includes(s))
+    if (selected.length === 0) {
+      return { ok: false, canceled: false, error: '未选择任何要导出的数据' }
+    }
+
     // 先把内存中防抖中的变更落盘，保证备份的是最新数据
     this.save()
     const stamp = new Date()
@@ -659,9 +696,9 @@ class ClipboardService extends SqliteStore {
       .replace(/\.\d{3}Z$/, '')
       .replace('T', '-')
     const { canceled, filePath } = await dialog.showSaveDialog({
-      title: '导出剪贴板记录备份',
+      title: '导出备份',
       defaultPath: `Prism-backup-${stamp}${BACKUP_EXTENSION}`,
-      filters: [{ name: 'Prism 剪贴板备份', extensions: [BACKUP_EXTENSION.slice(1)] }]
+      filters: [{ name: 'Prism 备份', extensions: [BACKUP_EXTENSION.slice(1)] }]
     })
     if (canceled || !filePath) return { ok: false, canceled: true }
 
@@ -669,34 +706,52 @@ class ClipboardService extends SqliteStore {
       const historyCount = this.getHistoryCount()
       const favoriteCount = this.getFavorites().length
       const imageFiles = this.#listImageFiles()
+      const stickyNoteCount = stickyNotesService.getAll().length
+      const quickFolderCount = quickFoldersService.getAll().length
       const manifest: BackupManifest = {
         app: 'prism2',
         formatVersion: 1,
         exportedAt: new Date().toISOString(),
+        sections: selected,
         historyCount,
         favoriteCount,
-        imageCount: imageFiles.length
+        imageCount: imageFiles.length,
+        stickyNoteCount,
+        quickFolderCount
       }
 
       const zip = new AdmZip()
       zip.addFile('manifest.json', Buffer.from(JSON.stringify(manifest, null, 2), 'utf-8'))
-      if (existsSync(this.filePath)) zip.addFile('clipboard.db', readFileSync(this.filePath))
-      for (const f of imageFiles) {
-        const abs = this.#imagePath(f)
-        if (existsSync(abs)) zip.addLocalFile(abs, 'images')
+      if (selected.includes('clipboard')) {
+        if (existsSync(this.filePath)) zip.addFile('clipboard.db', readFileSync(this.filePath))
+        for (const f of imageFiles) {
+          const abs = this.#imagePath(f)
+          if (existsSync(abs)) zip.addLocalFile(abs, 'images')
+        }
+      }
+      if (selected.includes('stickyNotes')) {
+        const db = stickyNotesService.exportDb()
+        if (db) zip.addFile('sticky-notes.db', db)
+      }
+      if (selected.includes('quickFolders')) {
+        const db = quickFoldersService.exportDb()
+        if (db) zip.addFile('quick-folders.db', db)
       }
       zip.writeZip(filePath)
 
       log.info(
-        `[clipboard] backup exported: ${filePath} (history=${historyCount}, favorites=${favoriteCount}, images=${imageFiles.length})`
+        `[clipboard] backup exported: ${filePath} sections=${selected.join(',')} (history=${historyCount}, favorites=${favoriteCount}, images=${imageFiles.length}, notes=${stickyNoteCount}, folders=${quickFolderCount})`
       )
       return {
         ok: true,
         canceled: false,
         path: filePath,
+        sections: selected,
         historyCount,
         favoriteCount,
-        imageCount: imageFiles.length
+        imageCount: imageFiles.length,
+        stickyNoteCount,
+        quickFolderCount
       }
     } catch (err) {
       log.error('[clipboard] backup export failed:', err)
@@ -704,109 +759,173 @@ class ClipboardService extends SqliteStore {
     }
   }
 
-  /** 导入剪贴板记录备份：mode='merge' 保留双方；mode='replace' 清空后完全替换 */
-  async importBackup(mode: BackupImportMode): Promise<BackupImportResult> {
+  /**
+   * 导入备份第一步：弹打开对话框并检查备份内容。
+   * 按 zip 内实际存在的库文件判定可用分区（兼容旧版备份只含 clipboard.db），供渲染端勾选。
+   */
+  async inspectBackup(): Promise<BackupInspectResult> {
     const { canceled, filePaths } = await dialog.showOpenDialog({
-      title: '导入剪贴板记录备份',
+      title: '导入备份',
       properties: ['openFile'],
-      filters: [{ name: 'Prism 剪贴板备份', extensions: [BACKUP_EXTENSION.slice(1)] }]
+      filters: [{ name: 'Prism 备份', extensions: [BACKUP_EXTENSION.slice(1)] }]
     })
     if (canceled || filePaths.length === 0) return { ok: false, canceled: true }
 
     const srcPath = filePaths[0]
     try {
       const zip = new AdmZip(srcPath)
-      const manifestEntry = zip.getEntry('manifest.json')
-      const dbEntry = zip.getEntry('clipboard.db')
-      if (!manifestEntry || !dbEntry) {
-        return {
-          ok: false,
-          canceled: false,
-          error: '不是有效的 Prism 备份文件（缺少 manifest.json 或 clipboard.db）'
-        }
+      const check = this.#validateManifest(zip)
+      if (!check.manifest) {
+        return { ok: false, canceled: false, error: check.error }
       }
+      const sections: BackupSection[] = []
+      if (zip.getEntry('clipboard.db')) sections.push('clipboard')
+      if (zip.getEntry('sticky-notes.db')) sections.push('stickyNotes')
+      if (zip.getEntry('quick-folders.db')) sections.push('quickFolders')
+      if (sections.length === 0) {
+        return { ok: false, canceled: false, error: '备份文件内没有可导入的数据' }
+      }
+      return { ok: true, canceled: false, path: srcPath, sections }
+    } catch (err) {
+      log.error('[clipboard] backup inspect failed:', err)
+      return { ok: false, canceled: false, error: String((err as Error)?.message ?? err) }
+    }
+  }
 
-      let manifest: { app?: string; formatVersion?: number }
-      try {
-        manifest = JSON.parse(manifestEntry.getData().toString('utf-8'))
-      } catch {
-        return { ok: false, canceled: false, error: '备份文件 manifest 解析失败' }
-      }
-      if (manifest.app !== 'prism2' || manifest.formatVersion !== 1) {
-        return {
-          ok: false,
-          canceled: false,
-          error: `不支持的备份格式（app=${manifest.app ?? '未知'}, version=${manifest.formatVersion ?? '未知'}）`
-        }
-      }
+  /**
+   * 导入备份第二步：按用户勾选的分区导入指定备份文件。
+   * @param path - inspectBackup 返回的备份文件路径
+   * @param sections - 用户勾选的数据分区
+   * @param mode - merge 保留双方；replace 清空所选分区后完全替换
+   */
+  async importBackup(
+    path: string,
+    sections: BackupSection[],
+    mode: BackupImportMode
+  ): Promise<BackupImportResult> {
+    const selected = BACKUP_SECTIONS.filter((s) => sections.includes(s))
+    if (selected.length === 0) {
+      return { ok: false, canceled: false, error: '未选择任何要导入的数据' }
+    }
 
-      // 用独立的 sql.js 实例读取备份 DB，不改动当前服务实例的数据库
-      const SQL = await initSqlJs({
-        locateFile: (file) => join(app.getAppPath(), 'node_modules', 'sql.js', 'dist', file)
-      })
-      const backupDb = new SQL.Database(dbEntry.getData())
-      const backupHistory = this.#readTable(backupDb, 'SELECT * FROM clipboard_history')
-      const backupFavorites = this.#readTable(backupDb, 'SELECT * FROM favorites')
-      backupDb.close()
+    const srcPath = path
+    try {
+      const zip = new AdmZip(srcPath)
+      const check = this.#validateManifest(zip)
+      if (!check.manifest) {
+        return { ok: false, canceled: false, error: check.error }
+      }
 
       const importMode: BackupImportMode = mode === 'replace' ? 'replace' : 'merge'
       let importedHistory = 0
       let importedFavorites = 0
       let importedImages = 0
+      let importedStickyNotes = 0
+      let importedQuickFolders = 0
       let skippedHistory = 0
       let skippedFavorites = 0
       let skippedImages = 0
+      let skippedStickyNotes = 0
+      let skippedQuickFolders = 0
 
-      if (importMode === 'replace') {
-        this.run('DELETE FROM clipboard_history')
-        this.run('DELETE FROM favorites')
-        this.#clearImageFiles()
-      }
+      const wantClipboard = selected.includes('clipboard')
+      const wantNotes = selected.includes('stickyNotes')
+      const wantFolders = selected.includes('quickFolders')
 
-      for (const row of backupHistory) {
-        this.db?.run(
-          'INSERT OR IGNORE INTO clipboard_history (id, content, created_at, type) VALUES (?, ?, ?, ?)',
-          [row.id, row.content, row.created_at, row.type]
-        )
-        if ((this.db?.getRowsModified() ?? 0) > 0) {
-          importedHistory++
-        } else {
-          skippedHistory++
+      if (wantClipboard) {
+        const dbEntry = zip.getEntry('clipboard.db')
+        if (!dbEntry) {
+          return { ok: false, canceled: false, error: '备份文件缺少 clipboard.db' }
+        }
+
+        // 用独立的 sql.js 实例读取备份 DB，不改动当前服务实例的数据库
+        const SQL = await initSqlJs({
+          locateFile: (file) => join(app.getAppPath(), 'node_modules', 'sql.js', 'dist', file)
+        })
+        const backupDb = new SQL.Database(dbEntry.getData())
+        const backupHistory = this.#readTable(backupDb, 'SELECT * FROM clipboard_history')
+        const backupFavorites = this.#readTable(backupDb, 'SELECT * FROM favorites')
+        backupDb.close()
+
+        if (importMode === 'replace') {
+          this.run('DELETE FROM clipboard_history')
+          this.run('DELETE FROM favorites')
+          this.#clearImageFiles()
+        }
+
+        for (const row of backupHistory) {
+          this.db?.run(
+            'INSERT OR IGNORE INTO clipboard_history (id, content, created_at, type) VALUES (?, ?, ?, ?)',
+            [row.id, row.content, row.created_at, row.type]
+          )
+          if ((this.db?.getRowsModified() ?? 0) > 0) {
+            importedHistory++
+          } else {
+            skippedHistory++
+          }
+        }
+
+        for (const row of backupFavorites) {
+          this.db?.run(
+            'INSERT OR IGNORE INTO favorites (id, content, category, description, type, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+            [row.id, row.content, row.category, row.description, row.type === 'richtext' ? 'richtext' : 'text', row.created_at]
+          )
+          if ((this.db?.getRowsModified() ?? 0) > 0) {
+            importedFavorites++
+          } else {
+            skippedFavorites++
+          }
+        }
+
+        const imageEntries = zip
+          .getEntries()
+          .filter((e) => !e.isDirectory && e.entryName.startsWith('images/'))
+        for (const entry of imageEntries) {
+          const name = basename(entry.entryName)
+          if (!IMAGE_NAME_RE.test(name)) continue
+          const dest = this.#imagePath(name)
+          if (importMode === 'merge' && existsSync(dest)) {
+            skippedImages++
+            continue
+          }
+          writeFileSync(dest, entry.getData())
+          importedImages++
         }
       }
 
-      for (const row of backupFavorites) {
-        this.db?.run(
-          'INSERT OR IGNORE INTO favorites (id, content, category, description, type, created_at) VALUES (?, ?, ?, ?, ?, ?)',
-          [row.id, row.content, row.category, row.description, row.type === 'richtext' ? 'richtext' : 'text', row.created_at]
-        )
-        if ((this.db?.getRowsModified() ?? 0) > 0) {
-          importedFavorites++
-        } else {
-          skippedFavorites++
+      if (wantNotes) {
+        const entry = zip.getEntry('sticky-notes.db')
+        if (entry) {
+          const SQL = await initSqlJs({
+            locateFile: (file) => join(app.getAppPath(), 'node_modules', 'sql.js', 'dist', file)
+          })
+          const backupDb = new SQL.Database(entry.getData())
+          const r = stickyNotesService.importBackupData(backupDb, importMode)
+          backupDb.close()
+          importedStickyNotes = r.imported
+          skippedStickyNotes = r.skipped
         }
       }
 
-      const imageEntries = zip
-        .getEntries()
-        .filter((e) => !e.isDirectory && e.entryName.startsWith('images/'))
-      for (const entry of imageEntries) {
-        const name = basename(entry.entryName)
-        if (!IMAGE_NAME_RE.test(name)) continue
-        const dest = this.#imagePath(name)
-        if (importMode === 'merge' && existsSync(dest)) {
-          skippedImages++
-          continue
+      if (wantFolders) {
+        const entry = zip.getEntry('quick-folders.db')
+        if (entry) {
+          const SQL = await initSqlJs({
+            locateFile: (file) => join(app.getAppPath(), 'node_modules', 'sql.js', 'dist', file)
+          })
+          const backupDb = new SQL.Database(entry.getData())
+          const r = quickFoldersService.importBackupData(backupDb, importMode)
+          backupDb.close()
+          importedQuickFolders = r.imported
+          skippedQuickFolders = r.skipped
         }
-        writeFileSync(dest, entry.getData())
-        importedImages++
       }
 
       this.save()
-      this.#notifyHistoryChanged()
+      if (wantClipboard) this.#notifyHistoryChanged()
 
       log.info(
-        `[clipboard] backup imported: ${srcPath} mode=${importMode} (history+${importedHistory}/skip${skippedHistory}, favorites+${importedFavorites}/skip${skippedFavorites}, images+${importedImages}/skip${skippedImages})`
+        `[clipboard] backup imported: ${srcPath} mode=${importMode} sections=${selected.join(',')} (history+${importedHistory}/skip${skippedHistory}, favorites+${importedFavorites}/skip${skippedFavorites}, images+${importedImages}/skip${skippedImages}, notes+${importedStickyNotes}/skip${skippedStickyNotes}, folders+${importedQuickFolders}/skip${skippedQuickFolders})`
       )
       return {
         ok: true,
@@ -814,9 +933,13 @@ class ClipboardService extends SqliteStore {
         importedHistory,
         importedFavorites,
         importedImages,
+        importedStickyNotes,
+        importedQuickFolders,
         skippedHistory,
         skippedFavorites,
-        skippedImages
+        skippedImages,
+        skippedStickyNotes,
+        skippedQuickFolders
       }
     } catch (err) {
       log.error('[clipboard] backup import failed:', err)
@@ -973,9 +1096,12 @@ class ClipboardService extends SqliteStore {
 
     ipcMain.handle(C.writeText, (_e, text: string) => this.writeText(String(text ?? '')))
 
-    ipcMain.handle(C.exportBackup, () => this.exportBackup())
-    ipcMain.handle(C.importBackup, (_e, mode: BackupImportMode) =>
-      this.importBackup(mode === 'replace' ? 'replace' : 'merge')
+    ipcMain.handle(C.exportBackup, (_e, sections: BackupSection[]) =>
+      this.exportBackup(Array.isArray(sections) ? sections : [])
+    )
+    ipcMain.handle(C.inspectBackup, () => this.inspectBackup())
+    ipcMain.handle(C.importBackup, (_e, path: string, sections: BackupSection[], mode: BackupImportMode) =>
+      this.importBackup(String(path ?? ''), Array.isArray(sections) ? sections : [], mode)
     )
   }
 }

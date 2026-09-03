@@ -32,6 +32,12 @@ defineProps<{
   transform: scale(0.97);
 }
 
+.ui-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
 .ui-btn:focus-visible {
   outline: none;
   box-shadow: var(--ring);

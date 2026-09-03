@@ -11,12 +11,13 @@
  * - 所有 IPC handler 入参做类型收窄的防御性处理。
  */
 import { dialog, ipcMain, shell } from 'electron'
-import { existsSync, statSync } from 'node:fs'
+import { existsSync, readFileSync, statSync } from 'node:fs'
 import { basename } from 'node:path'
 import log from 'electron-log'
+import type { Database } from 'sql.js'
 import { SqliteStore } from './db/sqliteDatabase'
 import { SERVICE_CHANNELS } from '@preload/ipc'
-import type { QuickFolder, QuickFolderOpenResult } from '@preload/ipc'
+import type { BackupImportMode, QuickFolder, QuickFolderOpenResult } from '@preload/ipc'
 
 class QuickFoldersService extends SqliteStore {
   constructor() {
@@ -160,6 +161,66 @@ class QuickFoldersService extends SqliteStore {
     const ph = Number.isFinite(h) ? Math.max(0, Math.floor(h)) : 0
     this.run('UPDATE quick_folders SET home_w = ?, home_h = ? WHERE id = ?', [pw, ph, id])
     this.save()
+  }
+
+  // -------------------------------------------------------------------------
+  // 备份导出 / 导入（由 ClipboardService 备份流程调用，不注册独立 IPC）
+  // -------------------------------------------------------------------------
+
+  /** 导出：返回当前库文件字节（供备份打包）；库未就绪返回 null */
+  exportDb(): Buffer | null {
+    if (!this.db) return null
+    this.save()
+    try {
+      return readFileSync(this.filePath)
+    } catch (err) {
+      log.error('[QuickFoldersService] exportDb 失败:', err)
+      return null
+    }
+  }
+
+  /**
+   * 从外部备份库导入快捷文件夹（merge=按 id INSERT OR IGNORE 保留双方；replace=清空后完全替换）。
+   * @param db - 备份 zip 中解析出的独立 sql.js 实例（只读，由调用方负责 close）
+   * @returns 导入/跳过计数
+   */
+  importBackupData(
+    db: Database,
+    mode: BackupImportMode
+  ): { imported: number; skipped: number } {
+    const res = db.exec('SELECT * FROM quick_folders')
+    const cols = res[0]?.columns ?? []
+    const rows = res[0]?.values ?? []
+    if (mode === 'replace') this.run('DELETE FROM quick_folders')
+
+    let imported = 0
+    let skipped = 0
+    for (const row of rows) {
+      const o: Record<string, unknown> = {}
+      cols.forEach((c, i) => (o[c] = row[i]))
+      this.db?.run(
+        'INSERT OR IGNORE INTO quick_folders (id, path, name, alias, home_x, home_y, home_w, home_h, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [
+          o.id,
+          o.path,
+          o.name,
+          o.alias,
+          o.home_x,
+          o.home_y,
+          o.home_w,
+          o.home_h,
+          o.sort_order,
+          o.created_at
+        ]
+      )
+      if ((this.db?.getRowsModified() ?? 0) > 0) {
+        imported++
+      } else {
+        skipped++
+      }
+    }
+    this.save()
+    return { imported, skipped }
   }
 
   /** 在系统资源管理器中打开文件夹 */

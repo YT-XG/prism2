@@ -112,6 +112,16 @@ export interface ClipboardRetention {
  */
 export type BackupImportMode = 'merge' | 'replace'
 
+/** 备份可选数据分区（导出/导入时用户勾选的数据类别） */
+export type BackupSection = 'clipboard' | 'stickyNotes' | 'quickFolders'
+
+/** 全部备份分区（导出勾选默认值；导入按备份内实际包含的分区子集） */
+export const BACKUP_SECTIONS: readonly BackupSection[] = [
+  'clipboard',
+  'stickyNotes',
+  'quickFolders'
+]
+
 /** 导出备份结果 */
 export interface BackupExportResult {
   ok: boolean
@@ -121,24 +131,45 @@ export interface BackupExportResult {
   path?: string
   /** 失败原因（ok=false 时） */
   error?: string
+  /** 实际写入备份的分区（用户勾选） */
+  sections?: BackupSection[]
   historyCount?: number
   favoriteCount?: number
   imageCount?: number
+  stickyNoteCount?: number
+  quickFolderCount?: number
+}
+
+/** 导入前检查备份文件的结果（弹打开对话框后返回可用分区与文件路径） */
+export interface BackupInspectResult {
+  ok: boolean
+  /** 用户取消（未选择文件） */
+  canceled: boolean
+  /** 失败原因（ok=false 时） */
+  error?: string
+  /** 备份文件路径（用户确认勾选后回传 importBackup 使用） */
+  path?: string
+  /** 备份内实际可用的数据分区（仅含文件里存在的类别，兼容旧版备份只含 clipboard） */
+  sections?: BackupSection[]
 }
 
 /** 导入备份结果 */
 export interface BackupImportResult {
   ok: boolean
-  /** 用户取消（未选择文件） */
+  /** 用户取消（导入阶段无对话框，恒为 false，保留字段供类型统一） */
   canceled: boolean
   /** 失败原因（ok=false 时） */
   error?: string
   importedHistory?: number
   importedFavorites?: number
   importedImages?: number
+  importedStickyNotes?: number
+  importedQuickFolders?: number
   skippedHistory?: number
   skippedFavorites?: number
   skippedImages?: number
+  skippedStickyNotes?: number
+  skippedQuickFolders?: number
 }
 
 /** 应用设置 */
@@ -400,6 +431,7 @@ export const SERVICE_CHANNELS = {
     clearFavorites: 'to-service-ClipboardService:clearFavorites',
     writeText: 'to-service-ClipboardService:writeText',
     exportBackup: 'to-service-ClipboardService:exportBackup',
+    inspectBackup: 'to-service-ClipboardService:inspectBackup',
     importBackup: 'to-service-ClipboardService:importBackup'
   },
   stickyNotes: {
@@ -554,10 +586,16 @@ export interface ElectronAPI {
     deleteFavorite: (id: number) => Promise<void>
     clearFavorites: () => Promise<void>
     writeText: (text: string) => Promise<void>
-    /** 导出剪贴板记录备份（弹保存对话框；zip 格式，扩展名 .prismbackup） */
-    exportBackup: () => Promise<BackupExportResult>
-    /** 导入剪贴板记录备份（弹打开对话框；mode 指定合并/替换） */
-    importBackup: (mode: BackupImportMode) => Promise<BackupImportResult>
+    /** 导出备份（弹保存对话框；sections 为用户勾选的数据分区；zip 打包，扩展名 .prismbackup） */
+    exportBackup: (sections: BackupSection[]) => Promise<BackupExportResult>
+    /** 导入备份第一步：弹打开对话框并检查备份内容，返回可用分区与文件路径（供用户勾选后再导入） */
+    inspectBackup: () => Promise<BackupInspectResult>
+    /** 导入备份第二步：按所选分区导入指定备份文件（mode 指定合并/替换） */
+    importBackup: (
+      path: string,
+      sections: BackupSection[],
+      mode: BackupImportMode
+    ) => Promise<BackupImportResult>
     onNewItem: (cb: (item: HistoryItem) => void) => () => void
     /** 历史变更（新增/删除/清空/导入）通知，用于侧栏计数等 UI 刷新 */
     onHistoryChanged: (cb: () => void) => () => void

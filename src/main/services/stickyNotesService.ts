@@ -8,9 +8,12 @@
  * - 所有 IPC handler 入参做类型收窄的防御性处理。
  */
 import { ipcMain } from 'electron'
+import { readFileSync } from 'node:fs'
+import log from 'electron-log'
+import type { Database } from 'sql.js'
 import { SqliteStore } from './db/sqliteDatabase'
 import { SERVICE_CHANNELS } from '@preload/ipc'
-import type { StickyNote, StickyNoteColor } from '@preload/ipc'
+import type { BackupImportMode, StickyNote, StickyNoteColor } from '@preload/ipc'
 
 /** 合法便利贴颜色（非法值回落默认） */
 const COLORS: readonly StickyNoteColor[] = ['lavender', 'mint', 'yellow', 'blue', 'violet']
@@ -133,6 +136,66 @@ class StickyNotesService extends SqliteStore {
       id
     ])
     this.save()
+  }
+
+  // -------------------------------------------------------------------------
+  // 备份导出 / 导入（由 ClipboardService 备份流程调用，不注册独立 IPC）
+  // -------------------------------------------------------------------------
+
+  /** 导出：返回当前库文件字节（供备份打包）；库未就绪返回 null */
+  exportDb(): Buffer | null {
+    if (!this.db) return null
+    this.save()
+    try {
+      return readFileSync(this.filePath)
+    } catch (err) {
+      log.error('[StickyNotesService] exportDb 失败:', err)
+      return null
+    }
+  }
+
+  /**
+   * 从外部备份库导入便利贴（merge=按 id INSERT OR IGNORE 保留双方；replace=清空后完全替换）。
+   * @param db - 备份 zip 中解析出的独立 sql.js 实例（只读，由调用方负责 close）
+   * @returns 导入/跳过计数
+   */
+  importBackupData(
+    db: Database,
+    mode: BackupImportMode
+  ): { imported: number; skipped: number } {
+    const res = db.exec('SELECT * FROM sticky_notes')
+    const cols = res[0]?.columns ?? []
+    const rows = res[0]?.values ?? []
+    if (mode === 'replace') this.run('DELETE FROM sticky_notes')
+
+    let imported = 0
+    let skipped = 0
+    for (const row of rows) {
+      const o: Record<string, unknown> = {}
+      cols.forEach((c, i) => (o[c] = row[i]))
+      this.db?.run(
+        'INSERT OR IGNORE INTO sticky_notes (id, content, color, pinned, home_x, home_y, home_w, home_h, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [
+          o.id,
+          o.content,
+          normalizeColor(o.color),
+          o.pinned ? 1 : 0,
+          o.home_x,
+          o.home_y,
+          o.home_w,
+          o.home_h,
+          o.created_at,
+          o.updated_at
+        ]
+      )
+      if ((this.db?.getRowsModified() ?? 0) > 0) {
+        imported++
+      } else {
+        skipped++
+      }
+    }
+    this.save()
+    return { imported, skipped }
   }
 
   private registerIPC(): void {

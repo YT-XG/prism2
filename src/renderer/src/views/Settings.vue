@@ -113,14 +113,14 @@
         <div class="setting-row">
           <div class="row-info">
             <div class="row-name">导出备份</div>
-            <div class="row-desc">将剪贴板历史、收藏与图片打包为 .prismbackup 文件，便于留存或分享</div>
+            <div class="row-desc">将剪贴板历史、片段收藏与图片、便利贴、快捷文件夹打包为 .prismbackup 文件，导出前可勾选数据类别</div>
           </div>
           <button class="btn" type="button" @click="exportBackup">导出</button>
         </div>
         <div class="setting-row">
           <div class="row-info">
             <div class="row-name">导入备份</div>
-            <div class="row-desc">从 .prismbackup 文件恢复记录；合并保留双方，替换则清空后完全导入</div>
+            <div class="row-desc">从 .prismbackup 文件恢复数据；可勾选要导入的类别，合并保留双方，替换则清空所选类别后完全导入</div>
           </div>
           <div class="import-actions">
             <div class="cm-pills">
@@ -236,6 +236,43 @@
           <UiButton variant="danger" @click="confirmDeleteData">移入回收站</UiButton>
         </template>
       </UiDialog>
+
+      <UiDialog
+        :model-value="backupDialog !== null"
+        :title="backupDialog === 'export' ? '导出备份' : '导入备份'"
+        :overlay-close="false"
+        @update:model-value="backupDialog = null"
+      >
+        <p class="backup-dialog__hint">
+          {{ backupDialog === 'export' ? '选择要导出到 .prismbackup 文件的数据类别：' : '该备份文件中包含以下数据，选择要导入的类别：' }}
+        </p>
+        <div class="backup-dialog__options">
+          <label
+            v-for="opt in BACKUP_OPTIONS"
+            :key="opt.section"
+            class="backup-option"
+            :class="{ 'is-disabled': backupDialog === 'import' && !importAvailable.includes(opt.section) }"
+          >
+            <input
+              type="checkbox"
+              class="backup-option__check"
+              :checked="backupSelected.includes(opt.section)"
+              :disabled="backupDialog === 'import' && !importAvailable.includes(opt.section)"
+              @change="toggleBackupSection(opt.section, ($event.target as HTMLInputElement).checked)"
+            />
+            <span class="backup-option__info">
+              <span class="backup-option__name">{{ opt.label }}</span>
+              <span class="backup-option__desc">{{ opt.desc }}</span>
+            </span>
+          </label>
+        </div>
+        <template #footer>
+          <UiButton variant="ghost" @click="backupDialog = null">取消</UiButton>
+          <UiButton variant="primary" :disabled="backupSelected.length === 0" @click="confirmBackup">
+            {{ backupDialog === 'export' ? '导出' : '导入' }}
+          </UiButton>
+        </template>
+      </UiDialog>
     </div>
   </div>
 </template>
@@ -252,6 +289,7 @@ import { subscribeOnUnmounted } from '@renderer/composables/useIpcListener'
 import type {
   AppSettings,
   BackupImportMode,
+  BackupSection,
   LegacyCleanupState,
   LegacyDataDir,
   UpdateStatusInfo
@@ -321,27 +359,105 @@ const IMPORT_MODES: { value: BackupImportMode; label: string }[] = [
 /** 当前选择的导入合并方式 */
 const importMode = ref<BackupImportMode>('merge')
 
-/** 导出剪贴板记录备份 */
-async function exportBackup(): Promise<void> {
-  const r = await window.electronAPI.clipboard.exportBackup()
-  if (r.canceled) return
-  if (r.ok) {
-    toast.success(`已导出：${r.path}（历史 ${r.historyCount}、收藏 ${r.favoriteCount}、图片 ${r.imageCount}）`)
-  } else {
-    toast.error(`导出失败：${r.error ?? '未知错误'}`)
-  }
+/** 备份数据分区选项（导出/导入勾选弹窗展示） */
+const BACKUP_OPTIONS: { section: BackupSection; label: string; desc: string }[] = [
+  { section: 'clipboard', label: '剪贴板数据', desc: '历史记录、片段收藏与图片' },
+  { section: 'stickyNotes', label: '便利贴', desc: '全部便利贴（含贴主页的便签）' },
+  { section: 'quickFolders', label: '快捷文件夹', desc: '主页快捷打开的文件夹列表' }
+]
+
+/** 当前备份勾选弹窗：export=导出 / import=导入 / null=关闭 */
+const backupDialog = ref<'export' | 'import' | null>(null)
+/** 弹窗内用户勾选的数据分区 */
+const backupSelected = ref<BackupSection[]>([])
+/** 导入弹窗中备份文件实际可用的分区（其余项置灰禁用） */
+const importAvailable = ref<BackupSection[]>([])
+/** 导入弹窗选中的备份文件路径（inspectBackup 返回，确认导入时回传） */
+const importBackupPath = ref('')
+
+/** 勾选 / 取消某个备份分区 */
+function toggleBackupSection(section: BackupSection, on: boolean): void {
+  backupSelected.value = on
+    ? [...backupSelected.value, section]
+    : backupSelected.value.filter((s) => s !== section)
 }
 
-/** 导入剪贴板记录备份（按所选合并方式） */
+/** 导出：弹出勾选列表（默认全选），确认后导出所选分区 */
+function exportBackup(): void {
+  backupSelected.value = BACKUP_OPTIONS.map((o) => o.section)
+  importAvailable.value = []
+  backupDialog.value = 'export'
+}
+
+/** 导入：先选文件并检查备份内容，再弹出可用分区勾选列表 */
 async function importBackup(): Promise<void> {
-  const r = await window.electronAPI.clipboard.importBackup(importMode.value)
+  const r = await window.electronAPI.clipboard.inspectBackup()
+  if (r.canceled) return
+  if (!r.ok || !r.path) {
+    toast.error(`导入失败：${r.error ?? '未知错误'}`)
+    return
+  }
+  importBackupPath.value = r.path
+  importAvailable.value = r.sections ?? []
+  backupSelected.value = [...importAvailable.value]
+  backupDialog.value = 'import'
+}
+
+/** 备份勾选弹窗确认：按当前模式（导出/导入）执行 */
+async function confirmBackup(): Promise<void> {
+  const mode = backupDialog.value
+  if (!mode) return
+  const sections = backupSelected.value
+  backupDialog.value = null
+  if (sections.length === 0) return
+
+  if (mode === 'export') {
+    // 传普通数组副本（ref 的 value 是响应式 Proxy，直接过 IPC 结构化克隆会失败）
+    const r = await window.electronAPI.clipboard.exportBackup([...sections])
+    if (r.canceled) return
+    if (r.ok) {
+      const parts: string[] = []
+      if (sections.includes('clipboard')) {
+        parts.push(`历史 ${r.historyCount ?? 0}、收藏 ${r.favoriteCount ?? 0}、图片 ${r.imageCount ?? 0}`)
+      }
+      if (sections.includes('stickyNotes')) parts.push(`便利贴 ${r.stickyNoteCount ?? 0}`)
+      if (sections.includes('quickFolders')) parts.push(`快捷文件夹 ${r.quickFolderCount ?? 0}`)
+      toast.success(`已导出：${r.path}（${parts.join('、')}）`)
+    } else {
+      toast.error(`导出失败：${r.error ?? '未知错误'}`)
+    }
+    return
+  }
+
+  const r = await window.electronAPI.clipboard.importBackup(
+    importBackupPath.value,
+    [...sections],
+    importMode.value
+  )
   if (r.canceled) return
   if (r.ok) {
-    toast.success(
-      importMode.value === 'replace'
-        ? `已替换导入：历史 ${r.importedHistory}、收藏 ${r.importedFavorites}、图片 ${r.importedImages}`
-        : `已合并导入：历史 +${r.importedHistory}（跳过 ${r.skippedHistory}）、收藏 +${r.importedFavorites}（跳过 ${r.skippedFavorites}）、图片 +${r.importedImages}（跳过 ${r.skippedImages}）`
-    )
+    const parts: string[] = []
+    if (importMode.value === 'replace') {
+      if (sections.includes('clipboard')) {
+        parts.push(`历史 ${r.importedHistory ?? 0}、收藏 ${r.importedFavorites ?? 0}、图片 ${r.importedImages ?? 0}`)
+      }
+      if (sections.includes('stickyNotes')) parts.push(`便利贴 ${r.importedStickyNotes ?? 0}`)
+      if (sections.includes('quickFolders')) parts.push(`快捷文件夹 ${r.importedQuickFolders ?? 0}`)
+      toast.success(`已替换导入：${parts.join('、')}`)
+    } else {
+      if (sections.includes('clipboard')) {
+        parts.push(
+          `历史 +${r.importedHistory ?? 0}（跳过 ${r.skippedHistory ?? 0}）、收藏 +${r.importedFavorites ?? 0}（跳过 ${r.skippedFavorites ?? 0}）、图片 +${r.importedImages ?? 0}（跳过 ${r.skippedImages ?? 0}）`
+        )
+      }
+      if (sections.includes('stickyNotes')) {
+        parts.push(`便利贴 +${r.importedStickyNotes ?? 0}（跳过 ${r.skippedStickyNotes ?? 0}）`)
+      }
+      if (sections.includes('quickFolders')) {
+        parts.push(`快捷文件夹 +${r.importedQuickFolders ?? 0}（跳过 ${r.skippedQuickFolders ?? 0}）`)
+      }
+      toast.success(`已合并导入：${parts.join('、')}`)
+    }
   } else {
     toast.error(`导入失败：${r.error ?? '未知错误'}`)
   }
@@ -698,6 +814,71 @@ onMounted(async () => {
   font-size: 14px;
   color: var(--text-secondary);
   line-height: 1.6;
+}
+
+/* 备份导出/导入勾选弹窗 */
+.backup-dialog__hint {
+  margin: 0 0 var(--sp-3);
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+
+.backup-dialog__options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.backup-option {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-3);
+  padding: var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background-color var(--duration-fast) var(--ease-out-soft),
+    border-color var(--duration-fast) var(--ease-out-soft);
+}
+
+.backup-option:hover {
+  background: var(--bg-selected-subtle);
+  border-color: var(--border-strong, var(--border));
+}
+
+.backup-option.is-disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.backup-option.is-disabled:hover {
+  background: transparent;
+}
+
+.backup-option__check {
+  margin-top: 2px;
+  width: 15px;
+  height: 15px;
+  accent-color: var(--brand);
+  cursor: inherit;
+}
+
+.backup-option__info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.backup-option__name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.backup-option__desc {
+  font-size: 12px;
+  color: var(--text-muted);
 }
 
 /* 旧版本（Prism v1）区块 */
