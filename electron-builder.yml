@@ -46,6 +46,11 @@ mac:
         - universal
   # electron-builder 26：arch 需在 target 对象内声明（不认 mac.arch 扁平写法）。
   # universal = x64 + arm64 合一，避免产物架构取决于 CI runner。
+  #
+  # 确定性、无空格产物名（用 ${name}=prism2 而非 productName="Prism 2"）：
+  # 避免 GitHub 资产名带空格导致的 .blockmap "already exists" 422（zip 名已被替换成 -，
+  # 但 blockmap 保留空格，上传/覆盖判定冲突）。无空格后 zip 与 blockmap 命名一致。
+  artifactName: ${name}-${version}-${arch}-${os}.${ext}
   icon: build/icon.png
 linux:
   target:
