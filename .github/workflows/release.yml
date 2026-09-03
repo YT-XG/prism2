@@ -19,21 +19,27 @@ permissions:
   contents: write
 
 jobs:
-  # 先清掉该 tag 的旧 release（存在才删）：保证重跑/重建时从全新 release 开始，
-  # 避免 electron-builder --publish always 对已存在同名资产报 422 already_exists（如 .blockmap）。
-  clean-release:
-    name: Clean existing release (if re-run)
+  # 由这一个 job 唯一地准备好「空 release」：删掉该 tag 旧 release（存在才删）再新建空的。
+  # build 依赖它：这样 win/mac 的 electron-builder 只会往已存在的 release 里添加各自资产，
+  # 既不会再出现「同名资产 422」，也不会出现「win/mac 并发创建同一个 release 撞车」。
+  prepare-release:
+    name: Prepare fresh GitHub release
     runs-on: ubuntu-latest
     steps:
-      - name: Delete release for this tag (ignore if none)
+      - name: Delete existing release for tag (if re-run)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "cleaning release: $GITHUB_REF_NAME"
-          gh release delete --repo "${GITHUB_REPOSITORY}" "$GITHUB_REF_NAME" --yes || echo "no release to delete (fresh run)"
+          echo "preparing release: $GITHUB_REF_NAME"
+          gh release delete --repo "${GITHUB_REPOSITORY}" "$GITHUB_REF_NAME" --yes || echo "no existing release (fresh run)"
+      - name: Create fresh release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create --repo "${GITHUB_REPOSITORY}" "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes "prism2 ${GITHUB_REF_NAME}"
 
   build:
-    needs: clean-release
+    needs: prepare-release
     strategy:
       fail-fast: false
       matrix:
