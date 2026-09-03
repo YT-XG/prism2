@@ -63,6 +63,7 @@ src/
     ├── views/                    # MainPage / Home / ClipboardManager / StickyNotes / Notifications / NotificationPopup（自绘通知浮窗页） / SearchView（全局搜索独立窗页）/ Settings / DownloadManager（多线程下载管理页）
     └── router/  types.d.ts
 scripts/import-legacy-db.mjs      # 旧剪贴板数据一次性导入（已由应用内 legacyImportService 承接）
+scripts/make-server-manifest.mjs  # 生成自托管服务器版 latest.json（url 指向服务器绝对 https + sha256；见 ../docs/prism2/self-host-update.md）
 .github/workflows/release.yml     # 打 v* tag 时 win/mac 自动打包并发 GitHub Release（已去掉 Linux 构建）
 dev-app-update.yml                # 开发模式 electron-updater 配置（打包时被排除）
 ../docs/prism2/                     # 文档已集中到工作区根 docs/prism2/（含 design-ref/ 参考图）
@@ -87,7 +88,7 @@ dev-app-update.yml                # 开发模式 electron-updater 配置（打�
 
 - **自动打包**：`.github/workflows/release.yml` 在打 `v*` tag 时于 **win + mac** 构建并 `electron-builder --publish always` 发布到 GitHub Release（`linux` 已从 CI 去掉）；`package-manifest` job 汇总产物生成自定义 `latest.json` 上传到该 release，并推送一份到 Gitee 锚点仓库（需配置 `GITEE_TOKEN/GITEE_USER/GITEE_ANCHOR_REPO` secret）。
 - **自动更新（唯一锚点 + 平台分支安装）**：
-  - **唯一锚点**：`https://github.com/{githubRepo}/releases/latest/download/latest.json`（GitHub「latest」别名，永远指向最新 release 的 `latest.json`）。**换服务器不改客户端**——在该锚点的 `latest.json` 加 `redirect`（指向新清单）+ `mirrors[]`（二进制备用源），客户端自动跟随。`githubRepo` 是唯一的源（不暴露给用户，默认即更新源）。
+  - **唯一锚点**：`https://github.com/{UPDATE_ANCHOR_REPO}/releases/latest/download/latest.json`（GitHub「latest」别名，永远指向最新 release 的 `latest.json`）。**换服务器不改客户端**——在该锚点的 `latest.json` 加 `redirect`（指向新清单）+ `mirrors[]`（二进制备用源），客户端自动跟随。`UPDATE_ANCHOR_REPO`（`src/main/services/updateService.ts` 常量）是唯一源（构建期常量，**不读持久化设置**，避免 settings.json 残留旧值污染更新源）。
   - **检测 + 下载（mac/win 统一）**：`updateService` 读锚点 manifest（`redirect` 跟随 + `binaries` 按平台取安装包）→ `semver` 比较 → 多线程下载引擎下载到 `userData/update-staging/<version>/` → SHA-256 校验。
   - **安装（仅此层平台分支）**：mac 无签名**原地替换 `.app`**（`Contents` 原子替换 + 失败回滚 + relaunch，无 Gatekeeper 复弹）；win 下载 NSIS `*-setup.exe`，`/S /D=<安装目录>` 静默覆盖安装（需 Windows 真机实测）；linux 保留 electron-updater。
 - UI：设置页「检查更新」+ 启动（打包后）延迟 3s 静默检查；发现新版本自动下载，标题栏「有新版本」胶囊（下载完成点击安装并重启）+ 左上角品牌圆点变黄闪烁，设置页展示进度与「安装并重启」；更新下载复用 `downloadEngine`（独立实例，不混入用户下载列表）。
