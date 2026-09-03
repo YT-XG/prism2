@@ -6,10 +6,11 @@
  *  - linux：保留 electron-updater + GitHub provider。
  * 面向无签名（mac 无 Gatekeeper 复弹 / win 无 SmartScreen 阻塞），真正静默更新。
  *
- * 自更新源解析（**默认不暴露给用户，唯一锚点**）：
- *  - 唯一锚点：`https://github.com/{UPDATE_ANCHOR_REPO}/releases/latest/download/latest.json`（GitHub「latest」别名，永远指向最新 release 的清单；UPDATE_ANCHOR_REPO 为构建期常量，不读设置）。
- * manifest.redirect 支持整站迁移：换服务器时只需在旧锚点的 latest.json 里加 `redirect`（指向新清单）与/或 `mirrors`（二进制备用源），
- * 已安装客户端零改动即可跟随。binaries 按当前平台取安装包；下载按 url → mirrors 后缀拼接。
+ * 自更新源解析（**默认不暴露给用户，双源锚点**）：
+ *  - 主源：`https://gitee.com/{GITEE_ANCHOR_REPO}/raw/{GITEE_ANCHOR_BRANCH}/latest.json`（Gitee raw，国内访问好；CI 每次发版 `git push -f gitee master` 覆盖该文件，等效「始终最新」；均为构建期常量，不读设置）。
+ *  - 兜底：`https://github.com/{UPDATE_ANCHOR_REPO}/releases/latest/download/latest.json`（GitHub「latest」别名，永远指向最新 release 的清单；旧客户端 v2.0.4–v2.0.8 仍唯一指向这里，必须一直可达且自包含）。
+ * manifest.redirect 支持整站迁移：换服务器时只需在锚点的 latest.json 里加 `redirect`（指向新清单）与/或 `mirrors`（二进制备用源，字段已声明、下载引擎暂未消费），
+ * 已安装客户端零改动即可跟随。binaries 按当前平台取安装包；下载按 url。
  *
  * 所有状态变化经 BROADCAST.updateStatus 广播 + getStatus 主动查询，渲染端无需轮询。
  */
@@ -32,10 +33,20 @@ import type { UpdateManifest, UpdateManifestBinary, UpdateStatusInfo } from '@pr
 
 /**
  * 更新锚点仓库（owner/repo）——构建期唯一来源，**不读持久化设置**。
- * 换服务器/换仓库时只需改这个常量（或让该仓库的 latest.json 加 redirect/mirrors 指向新地址），客户端零改动。
+ * 新客户端主源 = Gitee raw（国内访问好），兜底 = 下方 GitHub「latest」别名；旧客户端（v2.0.4–v2.0.8）仍只读 GitHub。
+ * 换服务器/换仓库时只需改这些常量（或让该仓库的 latest.json 加 redirect/mirrors 指向新地址），客户端零改动。
  * 刻意不读取 AppSettings.githubRepo，避免用户 settings.json 里残留的旧值覆盖新默认值导致更新源错误（如曾 404 到旧仓库）。
  */
 const UPDATE_ANCHOR_REPO = 'YT-XG/prism2'
+
+/**
+ * Gitee 锚点仓库（owner/repo）——构建期常量，须与 release.yml 的 GITEE_ANCHOR_REPO secret 完全一致。
+ * Gitee 无 GitHub「latest」别名，改用 `raw/{branch}/{file}` 稳定路径：CI 每次发版 `git push -f gitee master`
+ * 覆盖该文件，等效「始终最新」。与 GitHub 锚点同一位（yt-xg/prism2，空仓库，master 分支）。
+ */
+const GITEE_ANCHOR_REPO = 'yt-xg/prism2'
+const GITEE_ANCHOR_BRANCH = 'master'
+const GITEE_ANCHOR_FILE = 'latest.json'
 
 class UpdateService {
   /** 当前更新状态（默认 idle，currentVersion 在加载时按 app.getVersion() 填充） */
@@ -245,10 +256,14 @@ class UpdateService {
     throw new Error('更新清单重定向层数过多')
   }
 
-  /** 计算 manifest 源列表：唯一锚点 = GitHub「latest」别名（永远指向最新 release 的 latest.json）。
+  /** 计算 manifest 源列表：主源 = Gitee raw（国内访问好，CI 每次发版 `git push -f gitee master` 覆盖该文件，等效「始终最新」）；
+   *  兜底 = GitHub「latest」别名（旧客户端 v2.0.4–v2.0.8 仍唯一指向这里，必须一直可达且自包含）。
    *  换服务器时无需改客户端——只需在该锚点的 latest.json 里加 `redirect`/`mirrors`，客户端自动跟随。 */
   #manifestSources(): string[] {
-    return [`https://github.com/${UPDATE_ANCHOR_REPO}/releases/latest/download/latest.json`]
+    return [
+      `https://gitee.com/${GITEE_ANCHOR_REPO}/raw/${GITEE_ANCHOR_BRANCH}/${GITEE_ANCHOR_FILE}`,
+      `https://github.com/${UPDATE_ANCHOR_REPO}/releases/latest/download/latest.json`
+    ]
   }
 
   /** 从 manifest 中选取当前平台的安装包（mac 优先 universal；win/linux 取该平台首项） */

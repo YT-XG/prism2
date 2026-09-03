@@ -36,7 +36,7 @@ src/
 │   │   ├── stickyNotesService.ts # 便利贴（sql.js 持久化，无广播）
 │   │   ├── quickFoldersService.ts # 快捷文件夹（主页快捷打开，sql.js 持久化 + 系统文件夹多选/拖放路径批量添加 + 行拖拽排序持久化 + 自定义别名 + 失效路径实时标记 + shell.openPath）
 │   │   ├── inputService.ts       # 模拟粘贴（平台分支）
-│   │   ├── updateService.ts      # 应用更新（唯一锚点 GitHub latest.json；mac/win 统一检测+下载+sha256；mac 原地替换 / win NSIS 静默 / linux electron-updater；redirect/mirrors 换服务器不改客户端）
+│   │   ├── updateService.ts      # 应用更新（Gitee 主源 + GitHub 兜底 latest.json；mac/win 统一检测+下载+sha256；mac 原地替换 / win NSIS 静默 / linux electron-updater；redirect/mirrors 换服务器不改客户端）
 │   │   ├── downloadService.ts    # 多线程下载服务（core/downloadEngine 封装 + 任务持久化 download-tasks.json + IPC + broadcast）
 │   │   ├── legacyImportService.ts # 旧版 v1 剪贴板数据一键导入（读 v1 userData/Prism/clipboard.db 合并）
 │   │   ├── legacyCleanupService.ts # 旧版 v1 安装检测/静默卸载/旧数据选择性删除 + 运行期系统残留清理（注册表 + NSIS /S / shell.trashItem）
@@ -86,14 +86,14 @@ dev-app-update.yml                # 开发模式 electron-updater 配置（打�
 
 ## 更新与发版
 
-- **自动打包**：`.github/workflows/release.yml` 在打 `v*` tag 时于 **win + mac** 构建并 `electron-builder --publish always` 发布到 GitHub Release（`linux` 已从 CI 去掉）；`package-manifest` job 汇总产物生成自定义 `latest.json` 上传到该 release，并推送一份到 Gitee 锚点仓库（需配置 `GITEE_TOKEN/GITEE_USER/GITEE_ANCHOR_REPO` secret）。
-- **自动更新（唯一锚点 + 平台分支安装）**：
-  - **唯一锚点**：`https://github.com/{UPDATE_ANCHOR_REPO}/releases/latest/download/latest.json`（GitHub「latest」别名，永远指向最新 release 的 `latest.json`）。**换服务器不改客户端**——在该锚点的 `latest.json` 加 `redirect`（指向新清单）+ `mirrors[]`（二进制备用源），客户端自动跟随。`UPDATE_ANCHOR_REPO`（`src/main/services/updateService.ts` 常量）是唯一源（构建期常量，**不读持久化设置**，避免 settings.json 残留旧值污染更新源）。
+- **自动打包**：`.github/workflows/release.yml` 在打 `v*` tag 时于 **win + mac** 构建并 `electron-builder --publish always` 发布到 GitHub Release（`linux` 已从 CI 去掉）；`package-manifest` job 汇总产物生成自定义 `latest.json` 上传到该 release，并推送一份到 Gitee 锚点仓库（需配置 `GITEE_TOKEN/GITEE_USER/GITEE_ANCHOR_REPO` secret），随后校验 Gitee 锚点 raw 的 `version` 与本次 tag 一致（防止跳点停留旧版）。
+- **自动更新（Gitee 主源 + GitHub 兜底 + 平台分支安装）**：
+  - **主源**：`https://gitee.com/{GITEE_ANCHOR_REPO}/raw/{GITEE_ANCHOR_BRANCH}/latest.json`（Gitee raw，国内访问好；CI 每次发版 `git push -f gitee master` 覆盖该文件，等效「始终最新」）。**兜底**：`https://github.com/{UPDATE_ANCHOR_REPO}/releases/latest/download/latest.json`（GitHub「latest」别名，永远指向最新 release；**旧客户端 v2.0.4–v2.0.8 仍唯一指向这里，必须一直可达且自包含**）。**换服务器不改客户端**——在该锚点的 `latest.json` 加 `redirect`（指向新清单）+ `mirrors[]`（二进制备用源，字段已声明、下载引擎暂未消费），客户端自动跟随。`UPDATE_ANCHOR_REPO`/`GITEE_ANCHOR_REPO`（`src/main/services/updateService.ts` 常量）是唯一源（构建期常量，**不读持久化设置**，避免 settings.json 残留旧值污染更新源）。
   - **检测 + 下载（mac/win 统一）**：`updateService` 读锚点 manifest（`redirect` 跟随 + `binaries` 按平台取安装包）→ `semver` 比较 → 多线程下载引擎下载到 `userData/update-staging/<version>/` → SHA-256 校验。
   - **安装（仅此层平台分支）**：mac 无签名**原地替换 `.app`**（`Contents` 原子替换 + 失败回滚 + relaunch，无 Gatekeeper 复弹）；win 下载 NSIS `*-setup.exe`，`/S /D=<安装目录>` 静默覆盖安装（需 Windows 真机实测）；linux 保留 electron-updater。
 - UI：设置页「检查更新」+ 启动（打包后）延迟 3s 静默检查；发现新版本自动下载，标题栏「有新版本」胶囊（下载完成点击安装并重启）+ 左上角品牌圆点变黄闪烁，设置页展示进度与「安装并重启」；更新下载复用 `downloadEngine`（独立实例，不混入用户下载列表）。
 - **旧版升级到 v2**：v1 的 `githubRepo` 默认指向本仓库，v1 用户检查更新会看到 v2 并下载安装；两者并存，v2 内一键导入 v1 数据。
-- ⚠️ 仓库地址占位：`electron-builder.yml`、`.github/workflows/release.yml`、`dev-app-update.yml` 与 v1 `settingsService.ts` 的 githubRepo 均为 `YT-XG/prism2` 占位，建好新仓库后需统一替换。
+- ⚠️ 仓库地址占位：`electron-builder.yml`、`.github/workflows/release.yml`、`dev-app-update.yml` 与 v1 `settingsService.ts` 的 githubRepo 均为 `YT-XG/prism2` 占位；`updateService.ts` 的 `GITEE_ANCHOR_REPO` 为 `yt-xg/prism2`（须与 CI 的 `GITEE_ANCHOR_REPO` secret 一致），建好正式仓库后需统一替换。
 
 ## 迁移进度
 
@@ -105,7 +105,7 @@ dev-app-update.yml                # 开发模式 electron-updater 配置（打�
 | 快捷文件夹（主页「快捷入口」弹系统文件夹多选 / 从资源管理器拖放添加 → 主页快捷文件夹整合为一个可拖拽/缩放面板，框内列表行展示 + 行拖拽排序（持久化 sort_order）+ 行内重命名自定义别名（持久化 alias，别名优先展示、留空还原文件夹名），单击行在资源管理器打开 + 成功高亮，失效路径置灰标记，行操作「重命名/打开/移除」悬浮与聚焦可及；Ctrl/Cmd+K 全局搜索（别名/名称/路径）也可直接打开；「显示」面板开关控制显隐） | ✅ |
 | 便利贴（本地便签，增删改 + 富文本大编辑框 + 贴到主页可拖拽定位/自由缩放 + 主页点击编辑/一键创建默认贴主页） | ✅ |
 | 功能搜索（命令面板，Ctrl/Cmd+K） | ✅ |
-| 自动更新（唯一锚点 GitHub latest.json；mac/win 统一检测+下载+sha256 校验；mac 原地替换 / win NSIS 静默 / linux electron-updater；CI 自动生成 latest.json；换服务器只改锚点 redirect/mirrors、不改客户端） | ✅（接入就绪，待建仓库替换占位地址后实际发版） |
+| 自动更新（Gitee 主源 + GitHub 兜底 latest.json；mac/win 统一检测+下载+sha256 校验；mac 原地替换 / win NSIS 静默 / linux electron-updater；CI 自动生成 latest.json 并推送 Gitee 锚点 + 校验；换服务器只改锚点 redirect/mirrors、不改客户端） | ✅（接入就绪，待建仓库替换占位地址后实际发版） |
 | 下载管理（多线程分片下载引擎 + 任务持久化 + 主页/侧栏入口 + 下载管理页：进度/速度/ETA + 暂停/继续/取消/移除 + 打开文件所在目录） | ✅ |
 | 通知中心（持久化历史 + 未读/已读 + 自绘通知浮窗统一呈现（主窗口隐藏与否都弹，可承载链接/翻译等操作，不依赖系统通知）；剪贴板复制仅浮窗提醒不入中心，其余来源（更新等）落库 + 托盘未读 tooltip） | ✅ |
 | 旧版数据引导导入（主页横幅一键合并 v1 剪贴板数据） | ✅ |
