@@ -7,7 +7,7 @@
  * 面向无签名（mac 无 Gatekeeper 复弹 / win 无 SmartScreen 阻塞），真正静默更新。
  *
  * 自更新源解析（**默认不暴露给用户，唯一锚点**）：
- *  - 唯一锚点：`https://github.com/{githubRepo}/releases/latest/download/latest.json`（GitHub「latest」别名，永远指向最新 release 的清单）。
+ *  - 唯一锚点：`https://github.com/{UPDATE_ANCHOR_REPO}/releases/latest/download/latest.json`（GitHub「latest」别名，永远指向最新 release 的清单；UPDATE_ANCHOR_REPO 为构建期常量，不读设置）。
  * manifest.redirect 支持整站迁移：换服务器时只需在旧锚点的 latest.json 里加 `redirect`（指向新清单）与/或 `mirrors`（二进制备用源），
  * 已安装客户端零改动即可跟随。binaries 按当前平台取安装包；下载按 url → mirrors 后缀拼接。
  *
@@ -26,10 +26,16 @@ import semver from 'semver'
 import AdmZip from 'adm-zip'
 import { broadcast } from '../utils/platform'
 import { notificationService } from './notificationService'
-import { settingsService } from './settingsService'
 import { MultiThreadDownloadEngine } from '../core/downloadEngine'
 import { BROADCAST, SERVICE_CHANNELS } from '@preload/ipc'
 import type { UpdateManifest, UpdateManifestBinary, UpdateStatusInfo } from '@preload/ipc'
+
+/**
+ * 更新锚点仓库（owner/repo）——构建期唯一来源，**不读持久化设置**。
+ * 换服务器/换仓库时只需改这个常量（或让该仓库的 latest.json 加 redirect/mirrors 指向新地址），客户端零改动。
+ * 刻意不读取 AppSettings.githubRepo，避免用户 settings.json 里残留的旧值覆盖新默认值导致更新源错误（如曾 404 到旧仓库）。
+ */
+const UPDATE_ANCHOR_REPO = 'YT-XG/prism2'
 
 class UpdateService {
   /** 当前更新状态（默认 idle，currentVersion 在加载时按 app.getVersion() 填充） */
@@ -242,10 +248,7 @@ class UpdateService {
   /** 计算 manifest 源列表：唯一锚点 = GitHub「latest」别名（永远指向最新 release 的 latest.json）。
    *  换服务器时无需改客户端——只需在该锚点的 latest.json 里加 `redirect`/`mirrors`，客户端自动跟随。 */
   #manifestSources(): string[] {
-    const repo = settingsService.getAll().githubRepo?.trim()
-    if (!repo) return []
-    const github = `https://github.com/${repo}/releases/latest/download/latest.json`
-    return [github]
+    return [`https://github.com/${UPDATE_ANCHOR_REPO}/releases/latest/download/latest.json`]
   }
 
   /** 从 manifest 中选取当前平台的安装包（mac 优先 universal；win/linux 取该平台首项） */
