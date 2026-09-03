@@ -1,5 +1,6 @@
 # 自动打包发版：打 `v*` tag（如 v2.0.0）或手动触发时，
-# 在三平台分别构建安装包并发布到 GitHub Release（electron-builder --publish always）。
+# 在 win/mac 分别构建安装包并发布到 GitHub Release（electron-builder --publish always）。
+# 重跑会先清空该 tag 的旧 release（clean-release job），再全量重建，避免同名资产冲突。
 #
 # 前置要求：
 #   1. 仓库设置 Settings → Actions → General → Workflow permissions 勾选 Read and write permissions；
@@ -18,7 +19,21 @@ permissions:
   contents: write
 
 jobs:
+  # 先清掉该 tag 的旧 release（存在才删）：保证重跑/重建时从全新 release 开始，
+  # 避免 electron-builder --publish always 对已存在同名资产报 422 already_exists（如 .blockmap）。
+  clean-release:
+    name: Clean existing release (if re-run)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete release for this tag (ignore if none)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "cleaning release: $GITHUB_REF_NAME"
+          gh release delete --repo "${GITHUB_REPOSITORY}" "$GITHUB_REF_NAME" --yes || echo "no release to delete (fresh run)"
+
   build:
+    needs: clean-release
     strategy:
       fail-fast: false
       matrix:
