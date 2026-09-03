@@ -267,9 +267,11 @@ import {
   Check,
   GripVertical,
   Pencil,
-  FolderPlus
+  FolderPlus,
+  Download
 } from '@lucide/vue'
 import type { Component } from 'vue'
+import { useRouter } from 'vue-router'
 import UiButton from '@renderer/components/ui/UiButton.vue'
 import UiInput from '@renderer/components/ui/UiInput.vue'
 import UiDialog from '@renderer/components/ui/UiDialog.vue'
@@ -297,6 +299,7 @@ import type {
 
 const toast = useToast()
 const { modules } = useHomeModules()
+const router = useRouter()
 
 /** 合并记录框位置的 localStorage 键（纯渲染端布局偏好） */
 const BOX_POS_KEY = 'prism.home.recentBox'
@@ -544,24 +547,36 @@ const deleteTargetName = computed(() => {
     : ''
 })
 
-/** 快捷入口卡（图标 + 名称 + 动作） */
-const entries: Array<{ label: string; icon: Component; action: () => void }> = [
-  {
-    label: '新增便利贴',
-    icon: StickyNoteIcon,
-    action: openCreateNote
-  },
-  {
-    label: '新增片段',
-    icon: Star,
-    action: openCreateSnippet
-  },
-  {
-    label: '快捷文件夹',
-    icon: FolderPlus,
-    action: addQuickFolders
+/** 快捷入口卡（图标 + 名称 + 动作）；「下载管理」按模块显隐开关（modules.downloadManager）决定是否展示 */
+const entries = computed<Array<{ label: string; icon: Component; action: () => void }>>(() => {
+  const list: Array<{ label: string; icon: Component; action: () => void }> = [
+    {
+      label: '新增便利贴',
+      icon: StickyNoteIcon,
+      action: openCreateNote
+    },
+    {
+      label: '新增片段',
+      icon: Star,
+      action: openCreateSnippet
+    },
+    {
+      label: '快捷文件夹',
+      icon: FolderPlus,
+      action: addQuickFolders
+    }
+  ]
+  if (modules.value.downloadManager) {
+    list.push({
+      label: '下载管理',
+      icon: Download,
+      action: () => {
+        void router.push('/mainPage/downloads')
+      }
+    })
   }
-]
+  return list
+})
 
 /** 点击复制：写剪贴板 → 最小化归还焦点 → 模拟粘贴，并展示短暂「已复制」反馈 */
 async function handleCopy(

@@ -232,7 +232,7 @@ export interface NotificationNewPayload {
   unread: number
 }
 
-/** 应用更新状态（electron-updater 事件驱动） */
+/** 应用更新状态（mac 走自定义源 + 下载引擎；win/linux 走 electron-updater） */
 export type UpdateStatus =
   | 'idle' // 尚未检查
   | 'checking' // 正在检查更新
@@ -260,6 +260,75 @@ export interface UpdateStatusInfo {
   /** 补充说明（如开发模式提示） */
   message?: string
 }
+
+/** 自定义更新清单（latest.json）的一个平台二进制项 */
+export interface UpdateManifestBinary {
+  platform: 'mac' | 'win' | 'linux'
+  arch: string
+  /** 安装包下载地址（绝对 URL） */
+  url: string
+  /** SHA-256 校验值（下载后校验，防篡改/防断包） */
+  sha256: string
+  /** 字节数（可选，供 UI 展示大小） */
+  size?: number
+}
+
+/**
+ * 应用更新清单（自定义源，Gitee 锚点 / GitHub 双回退）。
+ * 客户端解析顺序：redirect(跟随新清单) → binaries 取当前平台+架构 → 下载按 url → mirrors 后缀拼接。
+ */
+export interface UpdateManifest {
+  version: string
+  /** 发布说明（可选） */
+  notes?: string
+  /** 未来整站迁移：指向新 manifest 完整 URL；非空且非自指则跟随（深度≤2） */
+  redirect?: string | null
+  /** 二进制备用下载源 base URL 列表（与 url 的 asset 路径后缀拼接） */
+  mirrors?: string[]
+  binaries: UpdateManifestBinary[]
+}
+
+/** 下载任务状态 */
+export type DownloadTaskStatus = 'downloading' | 'paused' | 'completed' | 'failed' | 'canceled'
+
+/** 下载任务快照（渲染端 + 引擎共享，主进程单一来源） */
+export interface DownloadTaskSnapshot {
+  id: string
+  url: string
+  savePath: string
+  fileName: string
+  /** 文件总大小（字节） */
+  totalBytes: number
+  /** 已下载字节数 */
+  downloadedBytes: number
+  /** 下载进度 0-1 */
+  progress: number
+  /** 下载速度（字节/秒） */
+  speedBytesPerSecond: number
+  /** 预计完成时间戳 */
+  estimatedFinishAt: number | null
+  /** 下载线程数 */
+  threads: number
+  status: DownloadTaskStatus
+  /** 错误信息（failed 时有值） */
+  errorMessage?: string
+  createdAt: number
+  updatedAt: number
+}
+
+/** 开始下载 IPC 载荷（渲染端新建下载） */
+export interface StartDownloadPayload {
+  url: string
+  /** 保存路径（可选，默认 下载目录/文件名） */
+  savePath?: string
+  /** 下载线程数（可选，默认 8） */
+  threads?: number
+}
+
+/** 开始/恢复下载结果 */
+export type StartDownloadResult =
+  | { ok: true; task: DownloadTaskSnapshot }
+  | { ok: false; message: string }
 
 /** 旧版（v1）数据导入状态 */
 export interface LegacyImportState {
@@ -466,6 +535,17 @@ export const SERVICE_CHANNELS = {
     check: 'to-service-UpdateService:check',
     quitAndInstall: 'to-service-UpdateService:quitAndInstall'
   },
+  download: {
+    start: 'to-service-DownloadService:start',
+    pause: 'to-service-DownloadService:pause',
+    resume: 'to-service-DownloadService:resume',
+    cancel: 'to-service-DownloadService:cancel',
+    remove: 'to-service-DownloadService:remove',
+    list: 'to-service-DownloadService:list',
+    pickSavePath: 'to-service-DownloadService:pickSavePath',
+    getDefaultDir: 'to-service-DownloadService:getDefaultDir',
+    openFolder: 'to-service-DownloadService:openFolder'
+  },
   legacyImport: {
     getState: 'to-service-LegacyImportService:getState',
     import: 'to-service-LegacyImportService:import',
@@ -499,7 +579,8 @@ export const BROADCAST = {
   clipboardNew: 'broadcast:clipboard-new',
   clipboardHistoryChanged: 'broadcast:clipboard-history-changed',
   updateStatus: 'broadcast:update-status',
-  notificationNew: 'broadcast:notification-new'
+  notificationNew: 'broadcast:notification-new',
+  downloadTaskUpdated: 'broadcast:download-task-updated'
 } as const
 
 // ---------------------------------------------------------------------------
@@ -644,6 +725,28 @@ export interface ElectronAPI {
     quitAndInstall: () => Promise<void>
     /** 订阅更新状态变化（返回取消函数） */
     onStatus: (cb: (info: UpdateStatusInfo) => void) => () => void
+  }
+  download: {
+    /** 新建下载任务（url 必填，savePath/threads 可选） */
+    start: (payload: StartDownloadPayload) => Promise<StartDownloadResult>
+    /** 暂停下载任务 */
+    pause: (taskId: string) => Promise<boolean>
+    /** 恢复已暂停的任务 */
+    resume: (taskId: string) => Promise<StartDownloadResult>
+    /** 取消下载任务 */
+    cancel: (taskId: string) => Promise<boolean>
+    /** 移除任务（仅 completed/failed/canceled 可移除） */
+    remove: (taskId: string) => Promise<boolean>
+    /** 获取全部任务列表（按创建时间倒序） */
+    list: () => Promise<DownloadTaskSnapshot[]>
+    /** 弹出系统保存对话框，返回用户选择的保存路径（取消返回 null） */
+    pickSavePath: (suggestedName?: string) => Promise<string | null>
+    /** 获取默认下载目录 */
+    getDefaultDir: () => Promise<string>
+    /** 在系统默认文件管理器中定位到某文件所在目录 */
+    openFolder: (path: string) => Promise<void>
+    /** 订阅任务更新（进度/速度/状态变化，返回取消函数） */
+    onTaskUpdated: (cb: (task: DownloadTaskSnapshot) => void) => () => void
   }
   legacyImport: {
     /** 获取旧版数据导入状态（是否检测到 v1 数据库、是否已完成） */

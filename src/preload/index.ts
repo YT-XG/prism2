@@ -14,6 +14,7 @@ import type {
   BackupInspectResult,
   BackupSection,
   ClipboardRetention,
+  DownloadTaskSnapshot,
   ElectronAPI,
   HistoryItem,
   LegacyCleanupResult,
@@ -26,6 +27,8 @@ import type {
   NotificationNewPayload,
   QuickFolder,
   SetPagePayload,
+  StartDownloadPayload,
+  StartDownloadResult,
   StickyNote,
   StickyNoteColor,
   UpdateStatusInfo
@@ -37,6 +40,7 @@ const S = SERVICE_CHANNELS.settings
 const N = SERVICE_CHANNELS.stickyNotes
 const QF = SERVICE_CHANNELS.quickFolders
 const U = SERVICE_CHANNELS.update
+const D = SERVICE_CHANNELS.download
 const L = SERVICE_CHANNELS.legacyImport
 const LC = SERVICE_CHANNELS.legacyCleanup
 const NT = SERVICE_CHANNELS.notification
@@ -189,6 +193,23 @@ const electronAPI: ElectronAPI = {
     quitAndInstall: () => ipcRenderer.invoke(U.quitAndInstall) as Promise<void>,
     onStatus: (cb: (info: UpdateStatusInfo) => void) =>
       subscribe(BROADCAST.updateStatus, (info) => cb(info as UpdateStatusInfo))
+  },
+
+  download: {
+    start: (payload: StartDownloadPayload) =>
+      ipcRenderer.invoke(D.start, payload) as Promise<StartDownloadResult>,
+    pause: (taskId: string) => ipcRenderer.invoke(D.pause, taskId) as Promise<boolean>,
+    resume: (taskId: string) =>
+      ipcRenderer.invoke(D.resume, taskId) as Promise<StartDownloadResult>,
+    cancel: (taskId: string) => ipcRenderer.invoke(D.cancel, taskId) as Promise<boolean>,
+    remove: (taskId: string) => ipcRenderer.invoke(D.remove, taskId) as Promise<boolean>,
+    list: () => ipcRenderer.invoke(D.list) as Promise<DownloadTaskSnapshot[]>,
+    pickSavePath: (suggestedName?: string) =>
+      ipcRenderer.invoke(D.pickSavePath, suggestedName) as Promise<string | null>,
+    getDefaultDir: () => ipcRenderer.invoke(D.getDefaultDir) as Promise<string>,
+    openFolder: (path: string) => ipcRenderer.invoke(D.openFolder, path) as Promise<void>,
+    onTaskUpdated: (cb: (task: DownloadTaskSnapshot) => void) =>
+      subscribe(BROADCAST.downloadTaskUpdated, (task) => cb(task as DownloadTaskSnapshot))
   },
 
   legacyImport: {

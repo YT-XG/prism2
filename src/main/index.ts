@@ -12,6 +12,7 @@ import { clipboardService } from './services/clipboardService'
 import { stickyNotesService } from './services/stickyNotesService'
 import { quickFoldersService } from './services/quickFoldersService'
 import { updateService } from './services/updateService'
+import { downloadService } from './services/downloadService'
 import { legacyImportService } from './services/legacyImportService'
 import { legacyCleanupService } from './services/legacyCleanupService'
 import { notificationService } from './services/notificationService'
@@ -59,6 +60,7 @@ app.whenReady().then(async () => {
   await notificationService.init()
   updateService.init()
   updateService.checkOnStartup()
+  downloadService.init()
   legacyImportService.init()
   legacyCleanupService.init()
   logService.init()

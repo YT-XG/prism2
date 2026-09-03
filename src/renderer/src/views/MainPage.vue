@@ -54,6 +54,16 @@
             >{{ unread > 99 ? '99+' : unread }}</span>
             <span v-else-if="unread && collapsed" class="nav-dot" />
           </RouterLink>
+          <RouterLink
+            class="nav-item"
+            :title="collapsed ? '下载管理' : undefined"
+            to="/mainPage/downloads"
+          >
+            <Download :size="16" :stroke-width="1.6" />
+            <Transition name="nav-fade">
+              <span v-if="!collapsed" class="nav-item__label">下载管理</span>
+            </Transition>
+          </RouterLink>
         </div>
 
         <div class="nav-group">
@@ -109,7 +119,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { House, ClipboardList, StickyNote, Bell, Settings2, ChevronsLeft, ChevronsRight } from '@lucide/vue'
+import { House, ClipboardList, StickyNote, Bell, Settings2, ChevronsLeft, ChevronsRight, Download } from '@lucide/vue'
 import UiDialog from '@renderer/components/ui/UiDialog.vue'
 import UiButton from '@renderer/components/ui/UiButton.vue'
 import { useToast } from '@renderer/composables/useToast'
