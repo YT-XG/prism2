@@ -22,7 +22,9 @@ const DEFAULT_SETTINGS: AppSettings = {
   // 默认开启开机自启动（登录系统时自动运行）
   autoStart: true,
   updateSource: 'github',
-  githubRepo: 'YT-XG/electron-vite-learn',
+  // 更新锚点仓库（owner/repo）默认值，与 electron-builder.yml / release.yml 的 publish.owner/repo 一致；
+  // 建好真实仓库后需整体替换为实际 owner/repo。
+  githubRepo: 'YT-XG/prism2',
   clipboardRetentionValue: 1,
   clipboardAutoClean: true,
   clipboardRetentionUnit: 'month',
