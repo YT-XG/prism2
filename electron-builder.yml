@@ -35,7 +35,11 @@ nsis:
   # 产物名带 -setup 后缀，旧版（v1）更新逻辑按 `*-setup.exe` 精确匹配安装包
   artifactName: ${name}-${version}-setup.${ext}
 mac:
-  target: dmg
+  # dmg 用于首次安装分发，zip 用于 Squirrel.Mac / electron-updater 自动更新
+  # （electron-updater 在 mac 上必须有 zip target 才能生成 latest-mac.yml，否则报 "ZIP file not provided"）
+  target:
+    - dmg
+    - zip
   icon: build/icon.png
 linux:
   target:
