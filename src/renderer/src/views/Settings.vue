@@ -153,7 +153,7 @@
         <div class="setting-row">
           <div class="row-info">
             <div class="row-name">检查更新</div>
-            <div class="row-desc">当前版本 v{{ updateStatus.currentVersion }}，从 GitHub Releases 自动检查</div>
+            <div class="row-desc">当前版本 v{{ updateStatus.currentVersion }}，自动从更新源检查</div>
           </div>
           <button class="btn" type="button" :disabled="updateBusy" @click="checkUpdate">
             {{ updateStatus.status === 'checking' ? '检查中…' : '检查更新' }}

@@ -27,8 +27,6 @@ jobs:
             args: --win
           - os: macos-latest
             args: --mac
-          - os: ubuntu-latest
-            args: --linux
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
@@ -54,3 +52,93 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npx electron-builder --publish always ${{ matrix.args }}
+
+      - name: Upload installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ matrix.os }}
+          path: dist/**
+          if-no-files-found: error
+
+  # 汇总三平台产物：生成自定义更新清单 latest.json，上传到 GitHub Release，并推送到 Gitee 锚点仓库。
+  package-manifest:
+    name: Package manifest (latest.json)
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download built installers
+        uses: actions/download-artifact@v4
+        with:
+          path: dist-all
+          merge-multiple: true
+
+      - name: Generate latest.json + upload to GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, os
+          from urllib.parse import quote
+          tag = os.environ['GITHUB_REF_NAME']
+          version = tag[1:] if tag.startswith('v') else tag
+          repo = os.environ['GITHUB_REPOSITORY']
+          base = f"https://github.com/{repo}/releases/download/{tag}"
+
+          def sha256(path):
+              h = hashlib.sha256()
+              with open(path, 'rb') as f:
+                  for c in iter(lambda: f.read(1 << 20), b''):
+                      h.update(c)
+              return h.hexdigest()
+
+          def classify(name):
+              n = name.lower()
+              if n.endswith('.zip'):
+                  return 'mac' if ('-mac' in n or 'mac-' in n or '-osx' in n) else ('win' if 'win' in n else None)
+              if n.endswith('.appimage') or n.endswith('.tar.gz') or n.endswith('.deb'):
+                  return 'linux'
+              if n.endswith('.exe') or '-setup' in n:
+                  return 'win'
+              return None
+
+          binaries = []
+          seen = set()
+          for root, _, names in os.walk('dist-all'):
+              for name in names:
+                  platform = classify(name)
+                  if not platform or platform in seen:
+                      continue
+                  seen.add(platform)
+                  arch = next((a for a in ('universal', 'x64', 'arm64') if a in name), 'unknown')
+                  binaries.append({
+                      'platform': platform,
+                      'arch': arch,
+                      'url': f"{base}/{quote(name)}",
+                      'sha256': sha256(os.path.join(root, name))
+                  })
+
+          manifest = {'version': version, 'notes': '', 'redirect': None, 'mirrors': [], 'binaries': binaries}
+          with open('latest.json', 'w', encoding='utf-8') as f:
+              json.dump(manifest, f, ensure_ascii=False, indent=2)
+          print(json.dumps(manifest, ensure_ascii=False, indent=2))
+          PY
+          gh release upload "$GITHUB_REF_NAME" latest.json --clobber
+
+      - name: Push latest.json to Gitee anchor
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+          GITEE_USER: ${{ secrets.GITEE_USER }}
+          GITEE_ANCHOR_REPO: ${{ secrets.GITEE_ANCHOR_REPO }}
+        run: |
+          if [ -z "$GITEE_TOKEN" ] || [ -z "$GITEE_USER" ] || [ -z "$GITEE_ANCHOR_REPO" ]; then
+            echo "Gitee anchor secrets 未配置，跳过 Gitee 推送。"
+            exit 0
+          fi
+          git init
+          git config user.email "action@users.noreply.github.com"
+          git config user.name "GitHub Actions"
+          git add latest.json
+          git commit -m "release ${GITHUB_REF_NAME}"
+          git branch -M master
+          git remote add gitee "https://${GITEE_USER}:${GITEE_TOKEN}@gitee.com/${GITEE_ANCHOR_REPO}.git"
+          git push -f gitee master
