@@ -306,6 +306,12 @@ onMounted(async () => {
       upsertTask(task)
     })
   )
+  // 窗口重新显示时刷新：隐藏期间 onlyVisible 广播被跳过，避免「下载完成后进度卡在旧值」等陈旧状态
+  subscribeOnUnmounted(() =>
+    window.electronAPI.window.onWindowEvent('reShow', () => {
+      void refreshTasks()
+    })
+  )
 })
 </script>
 

@@ -43,6 +43,12 @@ export interface CategoryItem {
   count: number
 }
 
+/** 片段游标分页游标（keyset：按 created_at DESC, id DESC 定位「下一页的起点 = 上一页末项」） */
+export interface FavoritesCursor {
+  createdAt: number
+  id: number
+}
+
 /** 便利贴颜色（对应粉彩强调 token） */
 export type StickyNoteColor = 'lavender' | 'mint' | 'yellow' | 'blue' | 'violet'
 
@@ -491,8 +497,8 @@ export const SERVICE_CHANNELS = {
     getRetentionState: 'to-service-ClipboardService:getRetentionState',
     setRetentionState: 'to-service-ClipboardService:setRetentionState',
     clickItem: 'to-service-ClipboardService:clickItem',
-    getImageData: 'to-service-ClipboardService:getImageData',
     getFavorites: 'to-service-ClipboardService:getFavorites',
+    getFavoritesCount: 'to-service-ClipboardService:getFavoritesCount',
     getFavoritesByCategory: 'to-service-ClipboardService:getFavoritesByCategory',
     getCategories: 'to-service-ClipboardService:getCategories',
     searchSnippets: 'to-service-ClipboardService:searchSnippets',
@@ -651,9 +657,14 @@ export interface ElectronAPI {
     setRetentionState: (partial: Partial<ClipboardRetention>) => Promise<void>
     /** 点击历史项：写剪贴板 → 隐藏窗口 → 恢复焦点 → 模拟粘贴（richtext 写 HTML+纯文本，保留格式） */
     clickItem: (payload: { content: string; type: HistoryItemType }) => Promise<void>
-    /** 读取图片记录为 data URL（仅 type='image'，返回空串表示不可用） */
-    getImageData: (filename: string) => Promise<string>
-    getFavorites: () => Promise<FavoriteItem[]>
+    /** 片段列表（游标分页：limit 每页条数；before 为上一页末项的游标，缺省取最新一页；category 按分类过滤）。Home 用 getFavorites(10) 取最新 10 条 */
+    getFavorites: (
+      limit?: number,
+      before?: FavoritesCursor,
+      category?: string
+    ) => Promise<FavoriteItem[]>
+    /** 片段总数（主页计数用，避免拉全表数 length） */
+    getFavoritesCount: () => Promise<number>
     getFavoritesByCategory: (category: string) => Promise<FavoriteItem[]>
     getCategories: () => Promise<CategoryItem[]>
     searchSnippets: (keyword: string) => Promise<FavoriteItem[]>

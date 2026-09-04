@@ -19,11 +19,16 @@ export abstract class SqliteStore {
   /** 数据库文件完整路径（userData 目录下） */
   protected filePath = ''
 
+  /** 落盘防抖定时器（子类若自带服务级防抖定时器，请用不同的名字避免与基类冲突） */
+  private persistTimer: ReturnType<typeof setTimeout> | null = null
+
   constructor(
     /** 数据库文件名，如 'clipboard.db' */
     protected readonly dbFileName: string,
     /** 日志前缀，用于区分不同服务 */
-    protected readonly logTag: string
+    protected readonly logTag: string,
+    /** 落盘防抖间隔（ms）：高频写入合并为一次，避免整库同步导出阻塞主进程 */
+    protected readonly saveDebounceMs = 300
   ) {}
 
   /**
@@ -70,8 +75,40 @@ export abstract class SqliteStore {
     return row?.id ?? 0
   }
 
-  /** 将内存数据库写入磁盘 */
+  /**
+   * 将内存数据库写入磁盘（防抖调度）。
+   * sql.js 的 db 在内存即改即生效（run 后查询即读到最新），此处只延迟「文件落盘」，
+   * 把高频写入（拖拽/连续复制）合并为一次整库导出，避免每帧同步 serialize + writeFile 阻塞主进程。
+   */
   protected save(): void {
+    if (!this.db) return
+    if (this.persistTimer) return
+    this.persistTimer = setTimeout(() => {
+      this.persistTimer = null
+      this.persist()
+    }, this.saveDebounceMs)
+  }
+
+  /** 立即落盘：取消防抖定时器并同步写盘（导出备份/导入/关进程等需强一致场景用） */
+  protected saveNow(): void {
+    if (this.persistTimer) {
+      clearTimeout(this.persistTimer)
+      this.persistTimer = null
+    }
+    this.persist()
+  }
+
+  /** 冲刷待落盘变更（close()/stop() 时调用，正常退出不丢数据） */
+  protected flushSave(): void {
+    if (this.persistTimer) {
+      clearTimeout(this.persistTimer)
+      this.persistTimer = null
+    }
+    this.persist()
+  }
+
+  /** 真正执行一次内存→磁盘的全量导出 */
+  private persist(): void {
     if (!this.db) return
     try {
       writeFileSync(this.filePath, Buffer.from(this.db.export()))
@@ -83,7 +120,7 @@ export abstract class SqliteStore {
   /** 关闭数据库并落盘 */
   protected close(): void {
     if (!this.db) return
-    this.save()
+    this.flushSave()
     this.db.close()
     this.db = null
   }

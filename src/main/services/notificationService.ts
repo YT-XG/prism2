@@ -21,6 +21,12 @@ import type { NotificationItem, NotificationNewPayload, NotificationSource, Noti
 /** 去重窗口：同来源+标题+内容在窗口期内重复仅刷新时间（ms） */
 const DEDUP_WINDOW_MS = 30_000
 
+/** 落盘防抖（ms）：通知写入/已读等高频操作不至于每次全量写盘 */
+const SAVE_DEBOUNCE_MS = 500
+
+/** 通知库硬上限：仅保留最近 N 条，避免 sql.js 常驻内存与落盘无限增长（超出部分连同其未读状态一并淘汰） */
+const MAX_NOTIFICATIONS = 500
+
 /** notify 入参 */
 export interface NotificationInput {
   type: NotificationType
@@ -32,6 +38,9 @@ export interface NotificationInput {
 }
 
 class NotificationService extends SqliteStore {
+  /** 落盘防抖定时器：连续写入/已读合并为一次全量导出写盘 */
+  private saveTimer: ReturnType<typeof setTimeout> | null = null
+
   constructor() {
     super('notifications.db', 'NotificationService')
   }
@@ -59,9 +68,32 @@ class NotificationService extends SqliteStore {
     trayService.setUnread(this.getUnread())
   }
 
-  /** 停止服务：落盘并关闭数据库 */
+  /** 停止服务：冲刷防抖落盘并关闭数据库 */
   stop(): void {
+    if (this.saveTimer) {
+      clearTimeout(this.saveTimer)
+      this.saveTimer = null
+    }
     this.close()
+  }
+
+  /** 落盘防抖：高频写入合并为一次全量导出（服务级防抖后立即持久化，避免再叠加基类防抖延迟） */
+  #saveDebounced(): void {
+    if (this.saveTimer) return
+    this.saveTimer = setTimeout(() => {
+      this.saveTimer = null
+      this.#trim()
+      this.saveNow()
+    }, SAVE_DEBOUNCE_MS)
+  }
+
+  /** 通知库上限：仅保留最近 MAX_NOTIFICATIONS 条，防止常驻内存与落盘随历史无限增长 */
+  #trim(): void {
+    if (!this.db) return
+    this.run(
+      'DELETE FROM notifications WHERE id NOT IN (SELECT id FROM notifications ORDER BY created_at DESC, id DESC LIMIT ?)',
+      [MAX_NOTIFICATIONS]
+    )
   }
 
   /**
@@ -99,7 +131,7 @@ class NotificationService extends SqliteStore {
         )
         id = this.lastInsertId()
       }
-      this.save()
+      this.#saveDebounced()
 
       const stored = this.one<NotificationItem>('SELECT * FROM notifications WHERE id = ?', [id])
       if (!stored) return
@@ -122,12 +154,16 @@ class NotificationService extends SqliteStore {
 
     // 投递：统一唤起自绘通知浮窗（主窗口隐藏与否都弹），浮窗渲染端订阅 onNew 展示
     windowFactory.getNotificationFrame().showPopups()
-    broadcast(BROADCAST.notificationNew, { item, unread } satisfies NotificationNewPayload)
+    broadcast(BROADCAST.notificationNew, { item, unread } satisfies NotificationNewPayload, {
+      onlyVisible: true
+    })
   }
 
-  /** 全部通知记录（按时间倒序） */
+  /** 全部通知记录（按时间倒序，至多 200 条，避免列表与 DOM 无界增长） */
   getList(): NotificationItem[] {
-    return this.all<NotificationItem>('SELECT * FROM notifications ORDER BY created_at DESC, id DESC')
+    return this.all<NotificationItem>(
+      'SELECT * FROM notifications ORDER BY created_at DESC, id DESC LIMIT 200'
+    )
   }
 
   /** 未读数 */
@@ -138,21 +174,21 @@ class NotificationService extends SqliteStore {
   /** 标记单条已读 */
   markRead(id: number): void {
     this.run('UPDATE notifications SET read = 1 WHERE id = ?', [id])
-    this.save()
+    this.#saveDebounced()
     trayService.setUnread(this.getUnread())
   }
 
   /** 全部标记已读 */
   markAllRead(): void {
     this.run('UPDATE notifications SET read = 1 WHERE read = 0')
-    this.save()
+    this.#saveDebounced()
     trayService.setUnread(0)
   }
 
   /** 清空全部通知 */
   clear(): void {
     this.run('DELETE FROM notifications')
-    this.save()
+    this.#saveDebounced()
     trayService.setUnread(0)
   }
 

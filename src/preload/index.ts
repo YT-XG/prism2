@@ -16,6 +16,8 @@ import type {
   ClipboardRetention,
   DownloadTaskSnapshot,
   ElectronAPI,
+  FavoritesCursor,
+  FavoriteItem,
   HistoryItem,
   LegacyCleanupResult,
   LegacyCleanupState,
@@ -122,9 +124,9 @@ const electronAPI: ElectronAPI = {
       ipcRenderer.invoke(C.setRetentionState, partial) as Promise<void>,
     clickItem: (payload: { content: string; type: 'text' | 'image' | 'richtext' }) =>
       ipcRenderer.invoke(C.clickItem, payload) as Promise<void>,
-    getImageData: (filename: string) =>
-      ipcRenderer.invoke(C.getImageData, filename) as Promise<string>,
-    getFavorites: () => ipcRenderer.invoke(C.getFavorites),
+    getFavorites: (limit?: number, before?: FavoritesCursor, category?: string) =>
+      ipcRenderer.invoke(C.getFavorites, limit, before, category) as Promise<FavoriteItem[]>,
+    getFavoritesCount: () => ipcRenderer.invoke(C.getFavoritesCount) as Promise<number>,
     getFavoritesByCategory: (category: string) =>
       ipcRenderer.invoke(C.getFavoritesByCategory, category),
     getCategories: () => ipcRenderer.invoke(C.getCategories),

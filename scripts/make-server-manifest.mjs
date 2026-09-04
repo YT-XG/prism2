@@ -19,7 +19,7 @@
  */
 import { createHash } from 'node:crypto'
 import { readdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs'
-import { basename, join } from 'node:path'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { dirname } from 'node:path'
 

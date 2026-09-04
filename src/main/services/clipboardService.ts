@@ -25,7 +25,7 @@ import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import log from 'electron-log'
-import initSqlJs, { type Database } from 'sql.js'
+import initSqlJs, { type Database, type SqlValue } from 'sql.js'
 import AdmZip from 'adm-zip'
 import { SqliteStore } from './db/sqliteDatabase'
 import { inputService } from './inputService'
@@ -45,19 +45,22 @@ import type {
   BackupExportResult,
   BackupInspectResult,
   BackupImportResult,
-  BackupSection
+  BackupSection,
+  FavoritesCursor
 } from '@preload/ipc'
 
 /** 轮询间隔（ms） */
 const POLL_INTERVAL_MS = 1000
+/** 图片廉价签名采样字节数：只读前缀即可判断剪贴板图片是否变化，避免每轮整图读取 + 全量 SHA-1 */
+const SAMPLE_BYTES = 4096
 /** 自动清理执行间隔（ms，每小时一次） */
 const CLEANUP_INTERVAL_MS = 60 * 60 * 1000
 /** 落盘防抖（ms）：高频复制时不至于每秒全量写盘 */
 const SAVE_DEBOUNCE_MS = 2000
 /** 保留期配置变更后的延迟清理（ms）：把 value/unit/autoClean 的连续改动合并为一次最终清理，避免中间态误删 */
 const CLEANUP_DEBOUNCE_MS = 5000
-/** 图片文件名合法格式（防御路径穿越） */
-const IMAGE_NAME_RE = /^[\w.-]+$/
+/** 图片文件名合法格式（防御路径穿越；与 imageProtocol.ts 保持一致，禁用纯 `.`/`..`/首尾点） */
+const IMAGE_NAME_RE = /^[\w-]+(?:\.[\w-]+)*$/
 
 /** 备份文件内 manifest.json 的结构（app 标识 + 格式版本用于校验） */
 interface BackupManifest {
@@ -91,6 +94,9 @@ class ClipboardService extends SqliteStore {
 
   /** 上次剪贴板内容签名（text:<内容> / image:<sha1>，用于去重） */
   private lastSignature = ''
+
+  /** 上次剪贴板图片的廉价签名（image:<字节数>:<前4KB sha1>）：内容未变时跳过整图读取 */
+  private lastCheapSig = ''
 
   /** 当前自动清除策略 */
   private retention: ClipboardRetention = {
@@ -173,7 +179,7 @@ class ClipboardService extends SqliteStore {
     if (this.saveTimer) {
       clearTimeout(this.saveTimer)
       this.saveTimer = null
-      this.save()
+      this.saveNow()
     }
     this.close()
   }
@@ -209,6 +215,7 @@ class ClipboardService extends SqliteStore {
       } else if (!sig) {
         // 剪贴板被清空：重置基线，之后再次复制相同内容可重新记录（置顶）
         this.lastSignature = ''
+        this.lastCheapSig = ''
       }
     } catch (err) {
       log.error('[ClipboardService] 轮询失败:', err)
@@ -228,11 +235,26 @@ class ClipboardService extends SqliteStore {
       const mime = item.types.find((t) => t.startsWith('image/'))
       if (!mime) continue
       const blob = (await item.getType(mime)) as Blob
+      if (blob.size === 0) continue
+
+      // 廉价预检：只读前 SAMPLE_BYTES 字节 + 大小，判断图片是否变化。
+      // 截屏在剪贴板长期停留时，稳态轮询不必每 1s 整图读入 + 全量 SHA-1，显著降 CPU/内存。
+      const sample = Buffer.from(await (blob.slice(0, SAMPLE_BYTES)).arrayBuffer())
+      const cheapSig = `image:${blob.size}:${createHash('sha1').update(sample).digest('hex')}`
+      if (cheapSig === this.lastCheapSig) {
+        // 内容未变：沿用上次完整签名，不读全图、不做全量哈希
+        return { sig: this.lastSignature, image: null }
+      }
+
+      // 变化（或首次）：全量读取 + 完整 SHA-1（用于去重文件名与入库），仅在此时发生一次
       const buf = Buffer.from(await blob.arrayBuffer())
       if (buf.length === 0) continue
+      this.lastCheapSig = cheapSig
       return { sig: 'image:' + createHash('sha1').update(buf).digest('hex'), image: { buf, mime } }
     }
     const text = await clipboard.readText()
+    // 剪贴板当前为文本（离开图片态）：遗忘上次图片缓存，保证之后重新复制同一图片仍能触发置顶去重
+    this.lastCheapSig = ''
     return { sig: text ? `text:${text}` : '', image: null }
   }
 
@@ -328,12 +350,12 @@ class ClipboardService extends SqliteStore {
     }
   }
 
-  /** 落盘防抖：短时间多次写入合并为一次全量导出 */
+  /** 落盘防抖：短时间多次写入合并为一次全量导出（服务级防抖后立即持久化，避免再叠加基类防抖延迟） */
   #saveDebounced(): void {
     if (this.saveTimer) return
     this.saveTimer = setTimeout(() => {
       this.saveTimer = null
-      this.save()
+      this.saveNow()
     }, SAVE_DEBOUNCE_MS)
   }
 
@@ -382,8 +404,34 @@ class ClipboardService extends SqliteStore {
     return this.one<{ count: number }>('SELECT COUNT(*) AS count FROM clipboard_history')?.count ?? 0
   }
 
-  getFavorites(): FavoriteItem[] {
-    return this.all<FavoriteItem>('SELECT * FROM favorites ORDER BY created_at DESC')
+  getFavorites(limit?: number, before?: FavoritesCursor, category?: string): FavoriteItem[] {
+    // limit 缺省为单页上限（避免无界增长时全量经 IPC 传表）；before 为 keyset 游标（上一页末项），
+    // category 存在时按分类过滤并在该分类内继续游标分页
+    const safeLimit =
+      typeof limit === 'number' && Number.isFinite(limit) ? Math.max(1, Math.floor(limit)) : 200
+    const params: SqlValue[] = []
+    const conds: string[] = []
+
+    if (before && Number.isFinite(before.createdAt) && Number.isFinite(before.id)) {
+      // keyset：ORDER BY created_at DESC, id DESC 对应的稳定翻页条件（避免 OFFSET 在新插入置顶项时漂移）
+      conds.push('(created_at < ? OR (created_at = ? AND id < ?))')
+      params.push(before.createdAt, before.createdAt, before.id)
+    }
+    if (category) {
+      conds.push('category = ?')
+      params.push(category)
+    }
+    const where = conds.length ? `WHERE ${conds.join(' AND ')}` : ''
+    params.push(safeLimit)
+
+    return this.all<FavoriteItem>(
+      `SELECT * FROM favorites ${where} ORDER BY created_at DESC, id DESC LIMIT ?`,
+      params
+    )
+  }
+
+  getFavoritesCount(): number {
+    return this.one<{ count: number }>('SELECT COUNT(*) AS count FROM favorites')?.count ?? 0
   }
 
   getFavoritesByCategory(category: string): FavoriteItem[] {
@@ -401,19 +449,9 @@ class ClipboardService extends SqliteStore {
 
   searchFavorites(keyword: string): FavoriteItem[] {
     return this.all<FavoriteItem>(
-      "SELECT * FROM favorites WHERE content LIKE ? ESCAPE '\\' OR description LIKE ? ESCAPE '\\' ORDER BY created_at DESC",
+      "SELECT * FROM favorites WHERE content LIKE ? ESCAPE '\\' OR description LIKE ? ESCAPE '\\' ORDER BY created_at DESC LIMIT 200",
       [`%${this.#escapeLike(keyword)}%`, `%${this.#escapeLike(keyword)}%`]
     )
-  }
-
-  /** 读取图片为 data URL（渲染端预览用）；文件名非法或不存在返回空串 */
-  getImageData(filename: string): string {
-    if (!IMAGE_NAME_RE.test(filename)) return ''
-    const path = this.#imagePath(filename)
-    if (!existsSync(path)) return ''
-    const ext = filename.split('.').pop()?.toLowerCase()
-    const mime = ext === 'jpg' ? 'image/jpeg' : `image/${ext ?? 'png'}`
-    return `data:${mime};base64,` + readFileSync(path).toString('base64')
   }
 
   /** LIKE 通配符转义（% _ \），配合 ESCAPE '\' 使用 */
@@ -689,7 +727,7 @@ class ClipboardService extends SqliteStore {
     }
 
     // 先把内存中防抖中的变更落盘，保证备份的是最新数据
-    this.save()
+    this.saveNow()
     const stamp = new Date()
       .toISOString()
       .replace(/[-:]/g, '')
@@ -921,7 +959,7 @@ class ClipboardService extends SqliteStore {
         }
       }
 
-      this.save()
+      this.saveNow()
       if (wantClipboard) this.#notifyHistoryChanged()
 
       log.info(
@@ -993,7 +1031,7 @@ class ClipboardService extends SqliteStore {
         skippedFavorites++
       }
     }
-    this.save()
+    this.saveNow()
     this.#notifyHistoryChanged()
     return { importedHistory, importedFavorites, skippedHistory, skippedFavorites }
   }
@@ -1019,9 +1057,6 @@ class ClipboardService extends SqliteStore {
     ipcMain.handle(C.getRetentionState, () => this.getRetentionState())
     ipcMain.handle(C.setRetentionState, (_e, partial: Partial<ClipboardRetention>) =>
       this.setRetentionState(partial ?? {})
-    )
-    ipcMain.handle(C.getImageData, (_e, filename: string) =>
-      this.getImageData(String(filename ?? ''))
     )
 
     ipcMain.handle(C.clickItem, async (e, payload: { content?: string; type?: string }) => {
@@ -1064,7 +1099,10 @@ class ClipboardService extends SqliteStore {
       await inputService.pasteToPreviousWindow()
     })
 
-    ipcMain.handle(C.getFavorites, () => this.getFavorites())
+    ipcMain.handle(C.getFavorites, (_e, limit?: number, before?: FavoritesCursor, category?: string) =>
+      this.getFavorites(limit, before, String(category ?? '') || undefined)
+    )
+    ipcMain.handle(C.getFavoritesCount, () => this.getFavoritesCount())
     ipcMain.handle(C.getFavoritesByCategory, (_e, category: string) =>
       this.getFavoritesByCategory(String(category ?? ''))
     )

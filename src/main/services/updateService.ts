@@ -498,7 +498,7 @@ class UpdateService {
       ...patch,
       currentVersion: app.getVersion()
     }
-    broadcast(BROADCAST.updateStatus, this.getStatus())
+    broadcast(BROADCAST.updateStatus, this.getStatus(), { onlyVisible: true })
   }
 
   /** 通知错误（受通知中心开关控制） */

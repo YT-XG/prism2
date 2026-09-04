@@ -17,8 +17,8 @@ import { legacyImportService } from './services/legacyImportService'
 import { legacyCleanupService } from './services/legacyCleanupService'
 import { notificationService } from './services/notificationService'
 import { logService } from './services/logService'
-
-let isQuitting = false
+import { registerImageScheme, registerImageProtocolHandler } from './utils/imageProtocol'
+import { isAppQuitting, markQuitting } from './utils/appState'
 
 // ── 全局错误捕获 ──
 process.on('uncaughtException', (error) => {
@@ -35,6 +35,9 @@ log.transports.file.level = 'info'
 log.transports.console.level = 'info'
 log.info('[App] 启动，系统:', JSON.stringify({ os: `${platform()} ${release()}`, arch, electron: process.versions.electron, node: process.versions.node }))
 
+// ── 剪贴板图片自定义协议：须在 app ready 前注册特权 ──
+registerImageScheme()
+
 // ── 单实例锁 ──
 if (!app.requestSingleInstanceLock()) {
   app.quit()
@@ -46,6 +49,9 @@ if (!app.requestSingleInstanceLock()) {
 
 app.whenReady().then(async () => {
   electronApp.setAppUserModelId('com.prism.next')
+
+  // 注册剪贴板图片自定义协议（渲染端 <img> 直接引用，免 base64 过 IPC）
+  registerImageProtocolHandler()
 
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)
@@ -77,7 +83,7 @@ app.whenReady().then(async () => {
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
-    if (isQuitting) {
+    if (isAppQuitting()) {
       windowFactory.closeAll()
       trayService.destroy()
       app.quit()
@@ -86,7 +92,7 @@ app.on('window-all-closed', () => {
 })
 
 app.on('before-quit', () => {
-  isQuitting = true
+  markQuitting()
   log.info('[App] 退出，清理资源...')
   clipboardService.stop()
   stickyNotesService.stop()

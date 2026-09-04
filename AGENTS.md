@@ -28,11 +28,11 @@ src/
 ├── main/                         # 主进程
 │   ├── index.ts                  # 入口：单实例、生命周期、服务初始化、托盘
 │   ├── core/downloadEngine/      # 多线程分片下载引擎（Range 探测/分片并发/断点续传/背压写队列/退避重试；纯主进程，无 IPC）
-│   ├── frame/                    # BaseFrame v2 + WindowFactory + MainPageFrame + NotificationFrame（自绘通知浮窗）+ SearchFrame（全局搜索独立窗）；全局快捷键 Ctrl+K 经 SearchFrame.toggle() 唤起独立搜索窗口
+│   ├── frame/                    # BaseFrame v2 + WindowFactory + MainPageFrame + NotificationFrame（自绘通知浮窗）+ SearchFrame（全局搜索独立窗）；全局快捷键 Ctrl+K 经 SearchFrame.toggle() 唤起独立搜索窗口；MainPageFrame 的 `show` 事件统一向渲染端发 `reShow`（App 入场动画 + 各视图重显兜底刷新）
 │   ├── services/                 # services/ 复数；模块级单例 + 构造器注册 IPC
-│   │   ├── db/sqliteDatabase.ts  # SQLite 公共基类（init/save/run/all/one）
+│   │   ├── db/sqliteDatabase.ts  # SQLite 公共基类（init/run/all/one + save()防抖/saveNow()/flushSave() 落盘）
 │   │   ├── settingsService.ts
-│   │   ├── clipboardService.ts
+│   │   ├── clipboardService.ts   # 剪贴板（历史/收藏/检索/保留期/导入/图片自定义协议；片段游标分页 getFavorites(limit,before,category)；图片廉价签名去重；服务级落盘防抖 SAVE_DEBOUNCE_MS=2000）
 │   │   ├── stickyNotesService.ts # 便利贴（sql.js 持久化，无广播）
 │   │   ├── quickFoldersService.ts # 快捷文件夹（主页快捷打开，sql.js 持久化 + 系统文件夹多选/拖放路径批量添加 + 行拖拽排序持久化 + 自定义别名 + 失效路径实时标记 + shell.openPath）
 │   │   ├── inputService.ts       # 模拟粘贴（平台分支）
@@ -45,6 +45,8 @@ src/
 │   │   └── trayService.ts
 │   └── utils/platform.ts         # broadcast()
 │   └── utils/windowState.ts      # 主窗口尺寸/最大化状态持久化（userData/window-state.json）
+│   └── utils/imageProtocol.ts    # prism-image 自定义协议（渲染端 <img> 直接读 userData/clipboard-images，免 base64 过 IPC）
+│   └── utils/appState.ts         # 应用级共享状态（退出标志 isAppQuitting/markQuitting，before-quit 与 BaseFrame 关闭逻辑共用）
 ├── preload/
 │   ├── ipc.ts                    # 【核心】通道名常量 + 数据模型 + ElectronAPI（唯一来源）
 │   ├── index.ts                  # contextBridge 暴露类型化 electronAPI

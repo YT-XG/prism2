@@ -214,6 +214,9 @@ onMounted(() => {
   animation: card-in var(--duration-enter) var(--ease-out-soft) backwards;
   animation-delay: var(--note-delay, 0ms);
   transition: transform 160ms var(--ease-out-soft), box-shadow var(--duration-base) var(--ease-out-soft);
+  /* 长网格原生虚拟化：未进入视口的卡片跳过布局/绘制 */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 120px;
 }
 
 .note:hover {

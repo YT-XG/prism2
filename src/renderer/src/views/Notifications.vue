@@ -104,9 +104,10 @@ function cardDelay(index: number): Record<string, string> {
 
 onMounted(() => {
   void refresh()
-  // 查看期间有新通知 → 实时刷新列表（避免停留在旧数据）
+  // 查看期间有新通知 → 由 useNotifications 单例订阅（init 已在主窗口壳注册）统一刷新列表
+  // 窗口重新显示时刷新列表：隐藏期间 onlyVisible 广播被跳过，避免通知列表停留旧数据
   subscribeOnUnmounted(() =>
-    window.electronAPI.notification.onNew(() => {
+    window.electronAPI.window.onWindowEvent('reShow', () => {
       void refresh()
     })
   )
@@ -185,6 +186,9 @@ onMounted(() => {
     box-shadow var(--duration-fast) var(--ease-out-soft);
   animation: card-in var(--duration-enter) var(--ease-out-soft) backwards;
   animation-delay: var(--notif-delay, 0ms);
+  /* 长列表原生虚拟化：未进入视口的卡片跳过布局/绘制 */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 72px;
 }
 
 .notif-list :deep(.ui-notif:hover) {

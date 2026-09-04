@@ -8,23 +8,25 @@
  */
 import { ref } from 'vue'
 import type { NotificationItem } from '@preload/ipc'
-import { subscribeOnUnmounted } from './useIpcListener'
 
 const items = ref<NotificationItem[]>([])
 const unread = ref(0)
 /** 是否已从主进程拉取过列表（用于决定 onNew 时是否顺带刷新列表） */
 const loaded = ref(false)
 
-/** 订阅新通知到达：刷新未读（已加载列表则同步刷新）。需在组件 setup 内调用。 */
+/** 是否已注册 onNew 订阅（模块级单例只注册一次，避免主窗口壳与通知页各自订阅导致双重刷新） */
+let subscribed = false
+
+/** 订阅新通知到达：刷新未读（已加载列表则同步刷新）。需在组件 setup 内调用（幂等）。 */
 function init(): void {
-  subscribeOnUnmounted(() =>
-    window.electronAPI.notification.onNew((payload) => {
-      unread.value = payload.unread
-      if (loaded.value) {
-        void refresh()
-      }
-    })
-  )
+  if (subscribed) return
+  subscribed = true
+  window.electronAPI.notification.onNew((payload) => {
+    unread.value = payload.unread
+    if (loaded.value) {
+      void refresh()
+    }
+  })
 }
 
 /** 全量刷新（列表 + 未读），通知中心页使用 */

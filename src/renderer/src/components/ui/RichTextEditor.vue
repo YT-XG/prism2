@@ -58,14 +58,14 @@
       :class="{ 'is-empty': isEmpty }"
       :data-placeholder="placeholder"
       contenteditable="true"
-      @input="emitContent"
-      @blur="emitContent"
+      @input="emitContent()"
+      @blur="emitContent(true)"
     ></div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, nextTick, type Component } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, type Component } from 'vue'
 import {
   Bold,
   Italic,
@@ -125,7 +125,7 @@ function exec(command: string, value?: string): void {
   // 焦点保持在编辑区（@mousedown.prevent 已保证），execCommand 对当前选区生效
   editor.value?.focus()
   document.execCommand(command, false, value)
-  emitContent()
+  emitContent(true)
 }
 
 // ---------------------------------------------------------------------------
@@ -146,7 +146,7 @@ function applyLink(): void {
   if (url) {
     editor.value?.focus()
     document.execCommand('createLink', false, url)
-    emitContent()
+    emitContent(true)
   }
   linkOpen.value = false
 }
@@ -156,9 +156,25 @@ function closeLink(): void {
   linkUrl.value = ''
 }
 
-/** 同步编辑区内容 → v-model */
-function emitContent(): void {
-  if (editor.value) emit('update:modelValue', editor.value.innerHTML)
+/** 同步编辑区内容 → v-model（打字防抖合并；工具条/失焦用 immediate 立即发） */
+let emitTimer: ReturnType<typeof setTimeout> | null = null
+
+function emitContent(immediate = false): void {
+  if (!editor.value) return
+  if (immediate) {
+    if (emitTimer) {
+      clearTimeout(emitTimer)
+      emitTimer = null
+    }
+    emit('update:modelValue', editor.value.innerHTML)
+    return
+  }
+  // 打字路径：防抖合并，避免每次击键全量 innerHTML 序列化 + 父级 canSave 的 stripHtml 重算
+  if (emitTimer) return
+  emitTimer = setTimeout(() => {
+    emitTimer = null
+    if (editor.value) emit('update:modelValue', editor.value.innerHTML)
+  }, 200)
 }
 
 /** 去除 HTML 标签得到纯文本（用于空态判断 / 提示条） */
@@ -179,6 +195,15 @@ watch(
 
 onMounted(() => {
   if (editor.value) editor.value.innerHTML = props.modelValue ?? ''
+})
+
+onBeforeUnmount(() => {
+  if (emitTimer) {
+    clearTimeout(emitTimer)
+    emitTimer = null
+    // 冲刷最后一次未发射的内容：卸载前若还有 200ms 防抖在途（且未触发 blur），立即发射，避免编辑后立刻卸载丢最后输入
+    if (editor.value) emit('update:modelValue', editor.value.innerHTML)
+  }
 })
 </script>
 

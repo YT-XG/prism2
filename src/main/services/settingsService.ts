@@ -40,6 +40,8 @@ class SettingsService {
   private filePath = ''
   /** 快捷键是否处于暂停状态（设置页录制新快捷键期间为 true，避免误触发现行快捷键） */
   private shortcutsSuspended = false
+  /** 落盘防抖定时器：连续设置变更合并为一次写盘 */
+  private saveTimer: ReturnType<typeof setTimeout> | null = null
 
   /** 初始化：加载配置 + 应用开机自启动 + 注册全局快捷键 */
   init(): void {
@@ -57,7 +59,7 @@ class SettingsService {
 
   update(partial: Partial<AppSettings>): void {
     this.settings = { ...this.settings, ...partial }
-    this.#save()
+    this.#saveDebounced()
     if (partial.shortcut !== undefined || partial.snippetShortcut !== undefined || partial.searchBoxShortcut !== undefined) {
       this.#registerAllShortcuts()
     }
@@ -69,7 +71,22 @@ class SettingsService {
   }
 
   destroy(): void {
+    // 冲刷未落盘的防抖变更，再注销全局快捷键
+    if (this.saveTimer) {
+      clearTimeout(this.saveTimer)
+      this.saveTimer = null
+      this.#save()
+    }
     globalShortcut.unregisterAll()
+  }
+
+  /** 落盘防抖：快速连续变更合并为一次全量写盘 */
+  #saveDebounced(): void {
+    if (this.saveTimer) return
+    this.saveTimer = setTimeout(() => {
+      this.saveTimer = null
+      this.#save()
+    }, 300)
   }
 
   #save(): void {

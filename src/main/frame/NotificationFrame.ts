@@ -33,8 +33,7 @@ export default class NotificationFrame extends BaseFrame {
     icon: appIcon,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
-      sandbox: false,
-      backgroundThrottling: false
+      sandbox: false
     }
   }
 

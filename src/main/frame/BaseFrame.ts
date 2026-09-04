@@ -8,6 +8,7 @@ import { BrowserWindow, BrowserWindowConstructorOptions, ipcMain } from 'electro
 import { join } from 'node:path'
 import { is } from '@electron-toolkit/utils'
 import { WINDOW_CHANNELS } from '@preload/ipc'
+import { isAppQuitting } from '../utils/appState'
 
 type IPCOnHandler = {
   channel: string
@@ -22,8 +23,6 @@ type IPCHandleHandler = {
 }
 
 type IPCHandler = IPCOnHandler | IPCHandleHandler
-
-const isQuitting = false
 
 export default abstract class BaseFrame {
   protected window: BrowserWindow | null = null
@@ -101,7 +100,7 @@ export default abstract class BaseFrame {
     this.recvOne(WINDOW_CHANNELS.baseFrame.toMain.closeWindow, (event) => {
       const senderWindow = BrowserWindow.fromWebContents(event.sender)
       if (senderWindow && !senderWindow.isDestroyed()) {
-        if (isQuitting) senderWindow.close()
+        if (isAppQuitting()) senderWindow.close()
         else senderWindow.hide()
       }
     })
@@ -132,7 +131,7 @@ export default abstract class BaseFrame {
   /** 关闭窗口（非退出时隐藏到托盘，退出时真正关闭） */
   close(): void {
     if (this.window && !this.window.isDestroyed()) {
-      if (isQuitting) this.window.close()
+      if (isAppQuitting()) this.window.close()
       else this.window.hide()
     }
   }

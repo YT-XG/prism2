@@ -100,7 +100,7 @@
     </div>
 
     <!-- 列表 -->
-    <div class="cm-body">
+    <div ref="cmBodyRef" class="cm-body">
       <Transition name="view" mode="out-in">
         <div :key="activeTab" class="cm-view">
           <div v-if="!displayList.length" class="cm-empty">
@@ -137,9 +137,10 @@
                       class="cm-card__content"
                     >
                       <img
-                        :src="imageCache[item.content]"
+                        :src="imageUrl(item.content)"
                         class="cm-card__image"
                         alt="剪贴板图片"
+                        loading="lazy"
                       />
                     </div>
                     <div
@@ -226,6 +227,11 @@
                   </div>
                 </div>
               </TransitionGroup>
+              <!-- 滚动到底自动加载下一页（IntersectionObserver 触发）；哨兵在收藏页渲染完成后被 observe -->
+              <div ref="favSentinelRef" class="cm-fav-sentinel" aria-hidden="true">
+                <span v-if="favLoading" class="cm-fav-end">加载中…</span>
+                <span v-else-if="!favFilterTerm && !favHasMore && favoritesList.length" class="cm-fav-end">已到底</span>
+              </div>
             </template>
           </div>
         </div>
@@ -281,7 +287,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import { History, Star, Search, Plus, Trash2, Pencil, Check, SquareCheckBig, X } from '@lucide/vue'
 import UiPillTab from '@renderer/components/ui/UiPillTab.vue'
 import UiInput from '@renderer/components/ui/UiInput.vue'
@@ -294,7 +300,7 @@ import ClipboardHistoryEditorDialog from '@renderer/components/ClipboardHistoryE
 import { subscribeOnUnmounted } from '@renderer/composables/useIpcListener'
 import { useToast } from '@renderer/composables/useToast'
 import { openPlaceholderDialog } from '@renderer/composables/useSnippetPlaceholder'
-import type { HistoryItem, FavoriteItem, CategoryItem, ClipboardRetention } from '@preload/ipc'
+import type { HistoryItem, FavoriteItem, CategoryItem, ClipboardRetention, FavoritesCursor } from '@preload/ipc'
 
 const toast = useToast()
 
@@ -306,6 +312,8 @@ const categories = ref<CategoryItem[]>([])
 const selectedCategory = ref('')
 const keyword = ref('')
 const favKeyword = ref('')
+/** 片段搜索防抖后的过滤词（避免 computed 内每键全量过滤） */
+const favFilterTerm = ref('')
 const retention = ref<ClipboardRetention>({ autoClean: true, value: 1, unit: 'month' })
 /** 保留策略是否已从主进程加载完成：加载前不渲染开关，避免默认值「开」先闪现再跳到真实值 */
 const retentionLoaded = ref(false)
@@ -326,28 +334,54 @@ const deleteTarget = ref<DisplayItem | null>(null)
 const deleteConfirm = ref(false)
 /** 批量删除确认弹窗开关 */
 const batchDeleteConfirm = ref(false)
-/** 图片记录的 data URL 缓存（content 文件名 → data URL） */
-const imageCache = ref<Record<string, string>>({})
 /** 最近一次点击复制的记录 id（用于展示「已复制」反馈） */
 const justCopiedId = ref<number | null>(null)
 /** 「已复制」反馈复位定时器 */
 let copiedTimer: ReturnType<typeof setTimeout> | null = null
+/** 搜索防抖定时器 */
+let searchTimer: ReturnType<typeof setTimeout> | null = null
+/** 搜索请求序号（竞态守卫：只采纳最后一次） */
+let searchSeq = 0
+/** 片段搜索防抖定时器 + 竞态序号 */
+let favSearchTimer: ReturnType<typeof setTimeout> | null = null
+let favSearchSeq = 0
+/** 历史记录实时增长上限：持续复制时裁剪尾部，避免无界 DOM 增长（getHistory 基线 100，此处放宽） */
+const HISTORY_MAX = 300
 
 type DisplayItem = HistoryItem | FavoriteItem
+
+/** 片段游标分页：每次拉取一页，页面滑到底再取下一页（keyset 按 created_at DESC, id DESC，插入置顶项不漂移） */
+const FAV_PAGE_SIZE = 100
+/** 片段搜索结果（搜索态；分类在客户端再过滤） */
+const favSearchResults = ref<FavoriteItem[]>([])
+/** 下一页游标（上一页末项的 created_at+id）；null 表示无历史页 */
+const favCursor = ref<FavoritesCursor | null>(null)
+/** 是否还有下一页（上一页取满即保守认为可能还有） */
+const favHasMore = ref(false)
+/** 是否正在加载下一页 / 首页 */
+const favLoading = ref(false)
+/** 滚动容器（.cm-body，作为 IntersectionObserver 的 root） */
+const cmBodyRef = ref<HTMLElement | null>(null)
+/** 片段列表底部哨兵：滚动到它即加载下一页 */
+const favSentinelRef = ref<HTMLElement | null>(null)
+/** IntersectionObserver 实例（卸载时断开） */
+let favObserver: IntersectionObserver | null = null
+
+/** 片段展示列表：搜索态用服务器结果（分类客户端过滤），否则用 keyset 累积列表（分类已在服务端过滤） */
+const favDisplayList = computed<FavoriteItem[]>(() => {
+  if (favFilterTerm.value) {
+    let list = favSearchResults.value
+    if (selectedCategory.value) list = list.filter((i) => i.category === selectedCategory.value)
+    return list
+  }
+  return favoritesList.value
+})
 
 const displayList = computed<DisplayItem[]>(() => {
   if (activeTab.value === 'history') {
     return keyword.value ? searchResults.value : historyList.value
   }
-  let filtered = favoritesList.value
-  if (selectedCategory.value) filtered = filtered.filter((i) => i.category === selectedCategory.value)
-  if (favKeyword.value) {
-    const kw = favKeyword.value.toLowerCase()
-    filtered = filtered.filter(
-      (i) => i.content.toLowerCase().includes(kw) || (i.description && i.description.toLowerCase().includes(kw))
-    )
-  }
-  return filtered
+  return favDisplayList.value
 })
 
 const tint = (index: number): string =>
@@ -402,41 +436,127 @@ function formatClock(ts: number): string {
   return `${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
-async function fetchHistory(): Promise<void> {
-  historyList.value = await window.electronAPI.clipboard.getHistory(100, 0)
-  void loadImages(historyList.value)
+/** 剪贴板图片协议 URL（渲染端 <img> 直接引用，免 base64 过 IPC） */
+function imageUrl(filename: string): string {
+  return `prism-image://clipboard-images/${filename}`
 }
 
-/** 懒加载图片记录的预览 data URL */
-async function loadImages(items: HistoryItem[]): Promise<void> {
-  const targets = items.filter((i) => i.type === 'image' && !imageCache.value[i.content])
-  if (!targets.length) return
-  const urls = await Promise.all(
-    targets.map((i) => window.electronAPI.clipboard.getImageData(i.content))
-  )
-  targets.forEach((item, i) => {
-    if (urls[i]) imageCache.value[item.content] = urls[i]
-  })
-}
-async function fetchFavorites(): Promise<void> {
-  favoritesList.value = await window.electronAPI.clipboard.getFavorites()
+async function fetchHistory(): Promise<void> {
+  historyList.value = await window.electronAPI.clipboard.getHistory(100, 0)
 }
 async function fetchCategories(): Promise<void> {
   categories.value = await window.electronAPI.clipboard.getCategories()
 }
 
-async function switchTab(tab: 'history' | 'favorites'): Promise<void> {
-  activeTab.value = tab
-  exitSelectMode()
-  if (tab === 'history') await fetchHistory()
-  else {
-    await fetchFavorites()
-    await fetchCategories()
+/** 片段 keyset 分页：reset=true 取第一页，false 用上一页末项游标取下一页 */
+async function loadFavorites(reset: boolean): Promise<void> {
+  if (favLoading.value) return
+  if (!reset && !favHasMore.value) return
+  favLoading.value = true
+  try {
+    const page = await window.electronAPI.clipboard.getFavorites(
+      FAV_PAGE_SIZE,
+      reset ? undefined : (favCursor.value ?? undefined),
+      selectedCategory.value || undefined
+    )
+    favoritesList.value = reset ? page : [...favoritesList.value, ...page]
+    const last = page[page.length - 1]
+    favCursor.value = last ? { createdAt: last.created_at, id: last.id } : null
+    // 取满一页即保守认为可能还有更多（最后一次不足一页时置 false，终止加载）
+    favHasMore.value = page.length === FAV_PAGE_SIZE
+  } finally {
+    favLoading.value = false
   }
 }
 
-watch(keyword, async (val) => {
-  searchResults.value = val.trim() ? await window.electronAPI.clipboard.searchHistory(val) : []
+/** 片段搜索（服务器侧按关键字），分类在客户端过滤 */
+async function searchFavoritesServer(keyword: string): Promise<void> {
+  const kw = keyword.trim()
+  if (!kw) {
+    favSearchResults.value = []
+    await loadFavorites(true)
+    return
+  }
+  favSearchResults.value = await window.electronAPI.clipboard.searchSnippets(kw)
+}
+
+/** 当前收藏态刷新入口：搜索态走服务器检索，否则重置回第一页 */
+function refreshFavorites(): void {
+  favCursor.value = null
+  favHasMore.value = false
+  if (favFilterTerm.value) void searchFavoritesServer(favFilterTerm.value)
+  else void loadFavorites(true)
+}
+
+async function fetchFavorites(): Promise<void> {
+  await refreshFavorites()
+}
+
+/** 片段列表滚动到底自动加载下一页（以 .cm-body 为 root；哨兵在切到收藏页、渲染完成后再 observe） */
+function setupFavObserver(): void {
+  if (!favObserver) {
+    favObserver = new IntersectionObserver(
+      (entries) => {
+        if (!entries.some((e) => e.isIntersecting)) return
+        // 搜索态结果为一组有界集，不走滚动分页
+        if (favFilterTerm.value) return
+        if (favHasMore.value && !favLoading.value) void loadFavorites(false)
+      },
+      { root: cmBodyRef.value, rootMargin: '120px 0px' }
+    )
+  }
+  if (favSentinelRef.value) favObserver.observe(favSentinelRef.value)
+}
+
+async function switchTab(tab: 'history' | 'favorites'): Promise<void> {
+  activeTab.value = tab
+  exitSelectMode()
+  if (tab === 'history') {
+    await fetchHistory()
+  } else {
+    await fetchFavorites()
+    await fetchCategories()
+    // 等哨兵渲染进 DOM 后再建立滚动分页观察
+    await nextTick()
+    setupFavObserver()
+  }
+}
+
+watch(keyword, (val) => {
+  const seq = ++searchSeq
+  if (searchTimer) clearTimeout(searchTimer)
+  searchTimer = setTimeout(async () => {
+    searchTimer = null
+    const kw = val.trim()
+    if (!kw) {
+      searchResults.value = []
+      return
+    }
+    const results = await window.electronAPI.clipboard.searchHistory(kw)
+    // 竞态守卫：仅采纳最后一次输入对应的结果
+    if (seq === searchSeq) searchResults.value = results
+  }, 200)
+})
+
+// 片段搜索防抖：与历史 keyword 一致 200ms；为空走 keyset 分页，非空走服务器检索
+watch(favKeyword, (val) => {
+  const seq = ++favSearchSeq
+  if (favSearchTimer) clearTimeout(favSearchTimer)
+  favSearchTimer = setTimeout(() => {
+    favSearchTimer = null
+    if (seq !== favSearchSeq) return
+    favFilterTerm.value = val.trim()
+    if (favFilterTerm.value) void searchFavoritesServer(favFilterTerm.value)
+    else void loadFavorites(true)
+  }, 200)
+})
+
+// 分类变化：重置分页回到第一页（搜索态在客户端按分类过滤）
+watch(selectedCategory, () => {
+  favCursor.value = null
+  favHasMore.value = false
+  if (favFilterTerm.value) void searchFavoritesServer(favFilterTerm.value)
+  else void loadFavorites(true)
 })
 
 async function copyItem(item: Pick<HistoryItem, 'content' | 'type'>): Promise<void> {
@@ -646,7 +766,10 @@ onMounted(async () => {
       // 新增或"置顶"（重复复制）：移除旧位置后插到最前
       historyList.value = historyList.value.filter((h) => h.id !== item.id)
       historyList.value.unshift(item)
-      if (item.type === 'image') void loadImages([item])
+      // 封顶：持续复制时裁剪尾部，避免列表无界增长导致 DOM 与重渲染膨胀
+      if (historyList.value.length > HISTORY_MAX) {
+        historyList.value.length = HISTORY_MAX
+      }
     })
   )
 
@@ -656,6 +779,14 @@ onMounted(async () => {
       void fetchHistory()
     })
   )
+
+  // 窗口重新显示时刷新当前页：隐藏期间 onlyVisible 广播被跳过，避免历史/片段停留旧数据
+  subscribeOnUnmounted(() =>
+    window.electronAPI.window.onWindowEvent('reShow', () => {
+      if (activeTab.value === 'history') void fetchHistory()
+      else refreshFavorites()
+    })
+  )
 })
 
 onBeforeUnmount(() => {
@@ -663,6 +794,16 @@ onBeforeUnmount(() => {
     clearTimeout(copiedTimer)
     copiedTimer = null
   }
+  if (searchTimer) {
+    clearTimeout(searchTimer)
+    searchTimer = null
+  }
+  if (favSearchTimer) {
+    clearTimeout(favSearchTimer)
+    favSearchTimer = null
+  }
+  favObserver?.disconnect()
+  favObserver = null
 })
 </script>
 
@@ -831,6 +972,19 @@ onBeforeUnmount(() => {
   gap: var(--sp-3);
 }
 
+/* 片段列表底部哨兵（滚动到底自动加载下一页）：轻量占位，不参与交互 */
+.cm-fav-sentinel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--sp-3) 0 var(--sp-1);
+  min-height: 20px;
+}
+.cm-fav-end {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
 .cm-day__label {
   padding: 0 var(--sp-1) var(--sp-2);
   font-size: 12px;
@@ -874,6 +1028,9 @@ onBeforeUnmount(() => {
   cursor: pointer;
   transition: transform 160ms var(--ease-out-soft), box-shadow var(--duration-base) var(--ease-out-soft),
     border-color var(--duration-base) var(--ease-out-soft);
+  /* 长列表原生虚拟化：未进入视口的卡片跳过布局/绘制，显著降大列表渲染与内存 */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 88px;
 }
 
 /* 顶部品牌色细高光条：hover 时浮现，营造"面板"层次 */

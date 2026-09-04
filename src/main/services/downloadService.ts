@@ -178,14 +178,27 @@ class DownloadService {
   /** 持久化定时器 */
   private persistTimer: NodeJS.Timeout | null = null
 
-  /** 是否已初始化 */
+  /** 引擎与任务快照是否已初始化（懒加载，首次使用时才创建） */
   private initialized = false
+
+  /** IPC 处理器是否已注册 */
+  private ipcRegistered = false
 
   /**
    * 初始化下载服务
-   * @description 注册 IPC 处理器，加载持久化任务
+   * @description 仅注册 IPC 处理器（轻量）；加载持久化任务与创建引擎延迟到首次调用
    */
   init(): void {
+    if (this.ipcRegistered) return
+    this.ipcRegistered = true
+    this.registerIPC()
+    log.info('[Download] 已注册 IPC，引擎按首次调用懒初始化')
+  }
+
+  /**
+   * 懒初始化：首次使用时加载持久化任务并创建下载引擎（幂等）
+   */
+  private ensureInitialized(): void {
     if (this.initialized) return
     this.initialized = true
 
@@ -200,9 +213,6 @@ class DownloadService {
     this.engine = new MultiThreadDownloadEngine({
       onTaskUpdated: (task) => this.emitToRenderer(task)
     })
-
-    // 注册 IPC 处理器
-    this.registerIPC()
 
     log.info('[Download] 服务初始化完成，已加载', this.taskSnapshotMap.size, '个任务')
   }
@@ -253,6 +263,7 @@ class DownloadService {
     ipcMain.handle(
       D.start,
       async (_event, payload?: StartDownloadPayload): Promise<StartDownloadResult> => {
+        this.ensureInitialized()
         try {
           const normalized = normalizeStartPayload(payload)
           if (!normalized.url) {
@@ -276,6 +287,7 @@ class DownloadService {
 
     // 暂停下载
     ipcMain.handle(D.pause, (_event, taskId: unknown) => {
+      this.ensureInitialized()
       const id = typeof taskId === 'string' ? taskId.trim() : ''
       if (!id) return false
       return this.engine!.pauseDownload(id)
@@ -285,6 +297,7 @@ class DownloadService {
     ipcMain.handle(
       D.resume,
       async (_event, taskId: unknown): Promise<StartDownloadResult> => {
+        this.ensureInitialized()
         try {
           const id = typeof taskId === 'string' ? taskId.trim() : ''
           if (!id) return { ok: false, message: '任务标识不能为空' }
@@ -301,6 +314,7 @@ class DownloadService {
 
     // 取消下载
     ipcMain.handle(D.cancel, (_event, taskId: unknown) => {
+      this.ensureInitialized()
       const id = typeof taskId === 'string' ? taskId.trim() : ''
       if (!id) return false
       return this.engine!.cancelDownload(id)
@@ -308,6 +322,7 @@ class DownloadService {
 
     // 移除任务
     ipcMain.handle(D.remove, (_event, taskId: unknown) => {
+      this.ensureInitialized()
       const id = typeof taskId === 'string' ? taskId.trim() : ''
       if (!id) return false
       return this.removeTask(id)
@@ -315,6 +330,7 @@ class DownloadService {
 
     // 获取任务列表
     ipcMain.handle(D.list, () => {
+      this.ensureInitialized()
       return this.listTasks()
     })
 
@@ -373,7 +389,7 @@ class DownloadService {
   private emitToRenderer(task: EngineDownloadTaskSnapshot): void {
     this.upsertTaskSnapshot(task)
     this.schedulePersist()
-    broadcast(BROADCAST.downloadTaskUpdated, task)
+    broadcast(BROADCAST.downloadTaskUpdated, task, { onlyVisible: true })
   }
 
   /**

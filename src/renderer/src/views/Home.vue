@@ -107,9 +107,10 @@
               >
                 <img
                   v-if="item.type === 'image'"
-                  :src="imageCache[item.content]"
+                  :src="imageUrl(item.content)"
                   class="row__thumb"
                   alt="剪贴板图片"
+                  loading="lazy"
                 />
                 <span v-else class="row__text">{{ itemText(item) }}</span>
                 <span class="row__time">{{ formatTime(item.created_at) }}</span>
@@ -494,8 +495,6 @@ const snippetCount = ref(0)
 const categoryCount = ref(0)
 /** 分类建议（新增片段弹窗的 datalist 联想） */
 const snippetCategories = ref<CategoryItem[]>([])
-/** 图片记录 data URL 缓存 */
-const imageCache = ref<Record<string, string>>({})
 /** 最近复制反馈（kind-id 复合键，区分历史/片段 id 同值） */
 const copiedKey = ref<string | null>(null)
 let copiedTimer: ReturnType<typeof setTimeout> | null = null
@@ -606,29 +605,19 @@ function rowDelay(index: number): Record<string, string> {
   return { '--row-delay': `${Math.min(index, 8) * 40}ms` }
 }
 
-/** 懒加载图片记录的预览 data URL */
-async function loadImages(items: HistoryItem[]): Promise<void> {
-  const targets = items.filter((i) => i.type === 'image' && !imageCache.value[i.content])
-  if (!targets.length) return
-  const urls = await Promise.all(
-    targets.map((i) => window.electronAPI.clipboard.getImageData(i.content))
-  )
-  targets.forEach((item, i) => {
-    if (urls[i]) imageCache.value[item.content] = urls[i]
-  })
+/** 剪贴板图片协议 URL（渲染端 <img> 直接引用，免 base64 过 IPC） */
+function imageUrl(filename: string): string {
+  return `prism-image://clipboard-images/${filename}`
 }
 
 async function fetchRecent(): Promise<void> {
   recentHistory.value = await window.electronAPI.clipboard.getHistory(10, 0)
-  void loadImages(recentHistory.value)
-  const favorites = await window.electronAPI.clipboard.getFavorites()
-  recentSnippets.value = favorites.slice(0, 10)
+  recentSnippets.value = await window.electronAPI.clipboard.getFavorites(10)
 }
 
 async function fetchStats(): Promise<void> {
   historyCount.value = await window.electronAPI.clipboard.getHistoryCount()
-  const favorites = await window.electronAPI.clipboard.getFavorites()
-  snippetCount.value = favorites.length
+  snippetCount.value = await window.electronAPI.clipboard.getFavoritesCount()
   const cats = await window.electronAPI.clipboard.getCategories()
   snippetCategories.value = cats
   categoryCount.value = cats.length
@@ -648,7 +637,6 @@ async function runSearch(q: string): Promise<void> {
   }
   const r = await searchGlobal(trimmed)
   searchResults.value = { history: r.history, snippets: r.snippets }
-  void loadImages(r.history)
 }
 
 watch(keyword, (val) => {
@@ -1057,7 +1045,6 @@ onMounted(async () => {
       recentHistory.value = recentHistory.value.filter((h) => h.id !== item.id)
       recentHistory.value.unshift(item)
       if (recentHistory.value.length > 10) recentHistory.value.pop()
-      if (item.type === 'image') void loadImages([item])
     })
   )
 

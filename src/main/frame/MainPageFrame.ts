@@ -40,8 +40,7 @@ export default class MainPageFrame extends BaseFrame {
     icon: appIcon,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
-      sandbox: false,
-      backgroundThrottling: false
+      sandbox: false
     }
   }
 
@@ -78,6 +77,13 @@ export default class MainPageFrame extends BaseFrame {
     })
 
     window.hide()
+
+    // 窗口每次被显示（托盘/通知/搜索再唤起，以及任务栏恢复）都通知渲染端：
+    // App.vue 播入场动画，MainPage/Home/剪贴板/下载/通知等视图据此重新拉取权威数据。
+    // 用 `show` 事件而非在各 show 入口手动发 reShow，覆盖任务栏恢复等 OS 触发的显示路径。
+    window.on('show', () => {
+      if (!window.isDestroyed()) this.sendOne(mainPage.toRenderer.reShow)
+    })
     return window
   }
 
@@ -130,7 +136,6 @@ export default class MainPageFrame extends BaseFrame {
       this.#cancelHide()
       this.#centerOnScreen()
       this.window!.show()
-      this.sendOne(mainPage.toRenderer.reShow)
     }
   }
 
@@ -153,7 +158,6 @@ export default class MainPageFrame extends BaseFrame {
       this.#cancelHide()
       this.#centerOnScreen()
       this.window!.show()
-      this.sendOne(mainPage.toRenderer.reShow)
     }
     this.sendOne(mainPage.toRenderer.setPage, { page })
   }

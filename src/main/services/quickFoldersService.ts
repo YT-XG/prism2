@@ -170,7 +170,7 @@ class QuickFoldersService extends SqliteStore {
   /** 导出：返回当前库文件字节（供备份打包）；库未就绪返回 null */
   exportDb(): Buffer | null {
     if (!this.db) return null
-    this.save()
+    this.saveNow()
     try {
       return readFileSync(this.filePath)
     } catch (err) {
@@ -219,7 +219,7 @@ class QuickFoldersService extends SqliteStore {
         skipped++
       }
     }
-    this.save()
+    this.saveNow()
     return { imported, skipped }
   }
 

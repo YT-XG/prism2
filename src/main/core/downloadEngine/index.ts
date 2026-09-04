@@ -157,6 +157,9 @@ function toTaskSnapshot(task: InternalTask): DownloadTaskSnapshot {
  * @description 支持多线程分片下载、暂停/恢复/取消、实时进度追踪
  */
 export class MultiThreadDownloadEngine {
+  /** 引擎内任务数上限（与服务层 MAX_PERSISTED_TASKS 保持一致），防止终态任务无界滞留内存 */
+  private static readonly MAX_TASKS = 200
+
   /** 任务映射表 */
   private readonly tasks = new Map<string, InternalTask>()
 
@@ -273,6 +276,7 @@ export class MultiThreadDownloadEngine {
     task.abortControllers.clear()
     this.emitTask(task, true)
     void this.cleanupTaskFiles(task)
+    this.trimTaskMap()
     log.info(`[DownloadEngine] 任务已取消: ${taskId}`)
     return true
   }
@@ -380,6 +384,21 @@ export class MultiThreadDownloadEngine {
     this.tasks.delete(taskId)
     void this.cleanupTaskFiles(task)
     return true
+  }
+
+  /**
+   * 裁剪最旧的非活动任务（completed/failed/canceled），保持 Map 有界。
+   * 任务进入终态后调用，超出上限时按更新时间从旧到新移除。
+   */
+  private trimTaskMap(): void {
+    if (this.tasks.size <= MultiThreadDownloadEngine.MAX_TASKS) return
+    const inactive = Array.from(this.tasks.values())
+      .filter((t) => t.status !== 'downloading' && t.status !== 'paused')
+      .sort((a, b) => a.updatedAt - b.updatedAt)
+    const excess = this.tasks.size - MultiThreadDownloadEngine.MAX_TASKS
+    for (const task of inactive.slice(0, excess)) {
+      this.tasks.delete(task.id)
+    }
   }
 
   /**
@@ -566,6 +585,7 @@ export class MultiThreadDownloadEngine {
     task.status = 'completed'
     task.updatedAt = Date.now()
     this.emitTask(task, true)
+    this.trimTaskMap()
   }
 
   /**
@@ -950,6 +970,7 @@ export class MultiThreadDownloadEngine {
       task.updatedAt = Date.now()
       this.emitTask(task, true)
       void this.cleanupTaskFiles(task)
+      this.trimTaskMap()
       return
     }
 
@@ -960,5 +981,6 @@ export class MultiThreadDownloadEngine {
     task.updatedAt = Date.now()
     this.emitTask(task, true)
     void this.cleanupTaskFiles(task)
+    this.trimTaskMap()
   }
 }
