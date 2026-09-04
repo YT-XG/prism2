@@ -652,7 +652,10 @@ async function quickFavorite(item: HistoryItem): Promise<void> {
     '',
     item.type === 'richtext' ? 'richtext' : 'text'
   )
-  await fetchStats()
+  // 收藏即新增片段：刷新右侧「片段」列（recentSnippets）而不只刷新计数；
+  // 搜索态下右列读 searchResults.snippets，需同步重跑搜索。
+  await refreshAll()
+  if (searching.value) await runSearch(keyword.value)
   toast.success('已收藏')
 }
 

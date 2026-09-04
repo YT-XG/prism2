@@ -85,7 +85,7 @@ const activeIndex = ref(0)
 const inputRef = ref<HTMLInputElement | null>(null)
 const listRef = ref<HTMLDivElement | null>(null)
 
-/** 由共享搜索结果组装面板列表：功能 ∪ 快捷文件夹 ∪ 剪贴板历史 ∪ 片段。
+/** 由共享搜索结果组装面板列表：功能 ∪ 快捷文件夹 ∪ 片段 ∪ 剪贴板历史（片段优先于历史）。
  *  每个条目的 run 自行管理关窗时机：
  *  - 剪贴板/片段粘贴：独立窗仅关本地面板，窗口最小化与焦点交还由主进程 clickItem 统一处理
  *    （渲染端不再先 searchClose，否则 hide 后焦点交还不可靠，SendKeys 的 ^v 会发到搜索窗）；
@@ -150,7 +150,7 @@ function buildItems(r: GlobalSearchResult): PaletteItem[] {
       }
     }
   }))
-  return [...featureItems, ...folderItems, ...historyItems, ...snippetItems]
+  return [...featureItems, ...folderItems, ...snippetItems, ...historyItems]
 }
 
 /** 在系统资源管理器中打开快捷文件夹（失败给出 Toast 反馈） */
