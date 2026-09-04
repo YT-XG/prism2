@@ -26,20 +26,35 @@
           </div>
 
           <div ref="listRef" class="palette-body">
-            <button
+            <div
               v-for="(item, index) in items"
               :key="item.id"
-              type="button"
-              class="palette-item"
+              class="palette-cell"
               :class="{ 'is-active': index === activeIndex }"
-              @click="run(item)"
               @mouseenter="activeIndex = index"
             >
-              <component :is="item.icon" :size="15" :stroke-width="1.6" class="palette-item__icon" />
-              <span class="palette-item__title">{{ item.title }}</span>
-              <span v-if="item.subtitle" class="palette-item__sub">{{ item.subtitle }}</span>
-              <kbd v-if="item.kind !== 'feature'" class="palette-kbd">↵</kbd>
-            </button>
+              <button type="button" class="palette-item" @click="run(item)">
+                <component :is="item.icon" :size="15" :stroke-width="1.6" class="palette-item__icon" />
+                <span class="palette-item__title">{{ item.title }}</span>
+                <span v-if="item.subtitle" class="palette-item__sub">{{ item.subtitle }}</span>
+                <kbd v-if="item.kind !== 'feature'" class="palette-kbd">↵</kbd>
+              </button>
+              <div v-if="item.chips?.length" class="palette-chips">
+                <button
+                  v-for="w in item.chips"
+                  :key="w"
+                  type="button"
+                  class="palette-chip"
+                  :title="`粘贴「${w}」`"
+                  @click="pasteWord(w, item)"
+                >
+                  {{ w }}
+                </button>
+                <span v-if="(item.chipMore ?? 0) > 0" class="palette-chip palette-chip--more">
+                  +{{ item.chipMore }}
+                </span>
+              </div>
+            </div>
 
             <div v-if="!items.length" class="palette-empty">无匹配结果</div>
           </div>
@@ -59,6 +74,7 @@ import { useGlobalSearch, type GlobalSearchResult } from '@renderer/composables/
 import { useToast } from '@renderer/composables/useToast'
 import { subscribeOnUnmounted } from '@renderer/composables/useIpcListener'
 import { itemText } from '@renderer/composables/useClipboardText'
+import { splitWords } from '@renderer/composables/useWordSplit'
 import { openPlaceholderDialog } from '@renderer/composables/useSnippetPlaceholder'
 import type { QuickFolder } from '@preload/ipc'
 
@@ -77,8 +93,17 @@ interface PaletteItem {
   icon: Component
   title: string
   subtitle?: string
+  /** 历史条目可拆出的分词（前几个）；点某词即只粘贴该词 */
+  chips?: string[]
+  /** 超出展示上限的剩余词数，用于「+N」折叠示意 */
+  chipMore?: number
+  /** 分词快捷粘贴的源内容（仅 history 条目有） */
+  target?: { content: string; type: string }
   run: () => void
 }
+
+/** 全局搜索历史条目单个结果上最多展示的分词胶囊数（紧凑面板空间有限，比卡片略少） */
+const MAX_SEARCH_CHIPS = 3
 
 const items = ref<PaletteItem[]>([])
 const activeIndex = ref(0)
@@ -119,19 +144,26 @@ function buildItems(r: GlobalSearchResult): PaletteItem[] {
       if (!props.standalone) closePanel()
     }
   }))
-  const historyItems: PaletteItem[] = r.history.map((h) => ({
-    id: `history-${h.id}`,
-    kind: 'history',
-    icon: History,
-    title: itemText(h),
-    subtitle: '剪贴板',
-    run: () => {
-      // 独立窗口：仅关本地面板（窗口最小化与焦点交还由主进程 clickItem 统一处理），再执行粘贴
-      if (props.standalone) close()
-      void window.electronAPI.clipboard.clickItem({ content: h.content, type: h.type })
-      if (!props.standalone) closePanel()
+  const historyItems: PaletteItem[] = r.history.map((h) => {
+    const words = splitWords(itemText(h))
+    const hasChips = words.length >= 2
+    return {
+      id: `history-${h.id}`,
+      kind: 'history',
+      icon: History,
+      title: itemText(h),
+      subtitle: '剪贴板',
+      chips: hasChips ? words.slice(0, MAX_SEARCH_CHIPS) : undefined,
+      chipMore: hasChips ? words.length - MAX_SEARCH_CHIPS : undefined,
+      target: { content: h.content, type: h.type },
+      run: () => {
+        // 独立窗口：仅关本地面板（窗口最小化与焦点交还由主进程 clickItem 统一处理），再执行粘贴
+        if (props.standalone) close()
+        void window.electronAPI.clipboard.clickItem({ content: h.content, type: h.type })
+        if (!props.standalone) closePanel()
+      }
     }
-  }))
+  })
   const snippetItems: PaletteItem[] = r.snippets.map((s) => ({
     id: `snippet-${s.id}`,
     kind: 'snippet',
@@ -170,6 +202,14 @@ function run(item: PaletteItem): void {
   item.run()
 }
 
+/** 点某个分词胶囊：只粘贴该词（复用 clickItem 粘贴链路；独立窗先关面板由主进程统一最小化/交还焦点） */
+function pasteWord(word: string, item: PaletteItem): void {
+  if (!item.target) return
+  if (props.standalone) close()
+  void window.electronAPI.clipboard.clickItem({ content: word, type: 'text' })
+  if (!props.standalone) closePanel()
+}
+
 function scrollActive(): void {
   const el = listRef.value?.children[activeIndex.value]
   el?.scrollIntoView({ block: 'nearest' })
@@ -181,6 +221,8 @@ function onKeydown(e: KeyboardEvent): void {
     closePanel()
     return
   }
+  // 焦点落在分词胶囊上：方向键/回车交给原生处理（回车触发该胶囊粘贴本身），不与主列表导航冲突
+  if ((e.target as HTMLElement | null)?.closest?.('.palette-chip')) return
   if (!items.value.length) return
   if (e.key === 'ArrowDown') {
     e.preventDefault()
@@ -301,6 +343,20 @@ function onBlur(): void {
   padding: var(--sp-2);
 }
 
+/* 结果条目单元：主按钮 + 可选分词胶囊行 */
+.palette-cell {
+  border-radius: var(--radius-sm);
+}
+
+.palette-cell:hover,
+.palette-cell.is-active {
+  background: var(--bg-hover);
+}
+
+.palette-cell.is-active .palette-item__icon {
+  color: var(--brand);
+}
+
 .palette-item {
   display: flex;
   align-items: center;
@@ -309,20 +365,54 @@ function onBlur(): void {
   min-height: 36px;
   padding: 0 var(--sp-3);
   border: none;
-  border-radius: var(--radius-sm);
+  border-radius: inherit;
   background: transparent;
   text-align: left;
   cursor: pointer;
   transition: background-color var(--duration-fast) var(--ease-out-soft);
 }
 
-.palette-item:hover,
-.palette-item.is-active {
-  background: var(--bg-hover);
+/* 自动拆词胶囊：点某词只粘贴该词；与剪贴板卡片 .chip 视觉一致 */
+.palette-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1) var(--sp-2);
+  padding: 0 var(--sp-3) var(--sp-2);
 }
 
-.palette-item.is-active .palette-item__icon {
-  color: var(--brand);
+.palette-chip {
+  padding: 2px var(--sp-2);
+  border: none;
+  border-radius: var(--radius-pill);
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-secondary);
+  background: var(--bg-selected-subtle);
+  cursor: pointer;
+  transition: background-color var(--duration-fast) var(--ease-out-soft),
+    color var(--duration-fast) var(--ease-out-soft);
+}
+
+.palette-chip:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.palette-chip:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+
+/* 超展示上限的折叠示意：纯展示，不可点击 */
+.palette-chip--more {
+  cursor: default;
+  background: transparent;
+  color: var(--text-muted);
+}
+
+.palette-chip--more:hover {
+  background: transparent;
+  color: var(--text-muted);
 }
 
 .palette-item__icon {

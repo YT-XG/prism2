@@ -54,14 +54,14 @@ src/
 └── renderer/src/
     ├── assets/styles/            # tokens.css / animations.css / main.css
     ├── components/ui/            # 设计系统组件层（含 RichTextEditor.vue 富文本编辑器、UiShortcutRecorder.vue 快捷键录制组件（点击录制组合键，Esc 取消 / Backspace 清除，录制期间经 settings.suspendShortcuts 暂停全局快捷键））
-    ├── components/FeatureSearchPanel.vue  # 功能搜索命令面板（Ctrl/Cmd+K 独立搜索窗 SearchFrame 与主页内嵌共用；功能跳转 + 剪贴板/片段/快捷文件夹数据搜索，文件夹回车即在资源管理器打开；standalone 模式铺满独立窗、失焦自动隐藏、开关无过渡，重开由主进程 SearchFrame 每次显示时发的 show 事件（onSearchShow）显式驱动，不依赖 visibilitychange；与主页合并记录框共用同一全局搜索逻辑 useGlobalSearch）
+    ├── components/FeatureSearchPanel.vue  # 功能搜索命令面板（Ctrl/Cmd+K 独立搜索窗 SearchFrame 与主页内嵌共用；功能跳转 + 剪贴板/片段/快捷文件夹数据搜索，文件夹回车即在资源管理器打开；剪贴板历史结果条目下自动展示分词胶囊（splitWords），点某词即只粘贴该词；standalone 模式铺满独立窗、失焦自动隐藏、开关无过渡，重开由主进程 SearchFrame 每次显示时发的 show 事件（onSearchShow）显式驱动，不依赖 visibilitychange；与主页合并记录框共用同一全局搜索逻辑 useGlobalSearch）
     ├── components/HomeNoteCard.vue        # 贴到主页的便利贴可拖拽卡片
     ├── components/QuickFolderPanel.vue    # 主页快捷文件夹单面板（可拖拽/缩放，框内列表行展示 + 行拖拽排序 + 行内重命名别名 + 悬浮/聚焦操作 + 失效标记 + 空态引导）
     ├── components/StickyNoteEditorDialog.vue # 便利贴大编辑框（富文本 + 颜色，主页/便利贴页共用）
     ├── components/SnippetEditorDialog.vue # 片段添加/编辑弹窗（剪贴板页/主页共用，内容为富文本）
     ├── components/SnippetPlaceholderDialog.vue # 片段占位符输入弹窗（{{名称}}，填写后替换并粘贴）
     ├── components/ClipboardHistoryEditorDialog.vue # 剪贴板历史编辑弹窗（富文本）
-    ├── composables/useIpcListener.ts  useToast.ts  useTheme.ts  useFeatureSearch.ts  useGlobalSearch.ts（命令面板与主页搜索共用的全局搜索聚合逻辑）  useDrag.ts  useHomeModules.ts  useNotifications.ts  useNotificationPopups.ts  useClipboardText.ts（富文本/纯文本预览工具：stripHtml/itemText）  useSnippetPlaceholder.ts（片段占位符：提取/替换 {{名称}}，单例弹窗状态）
+    ├── composables/useIpcListener.ts  useToast.ts  useTheme.ts  useFeatureSearch.ts  useGlobalSearch.ts（命令面板与主页搜索共用的全局搜索聚合逻辑）  useDrag.ts  useHomeModules.ts  useNotifications.ts  useNotificationPopups.ts  useClipboardText.ts（富文本/纯文本预览工具：stripHtml/itemText）  useSnippetPlaceholder.ts（片段占位符：提取/替换 {{名称}}，单例弹窗状态）  useWordSplit.ts（拆词工具：splitWords 按换行/空白/标点/中英边界切分词组，MAX_WORD_CHIPS 卡片展示上限）
     ├── views/                    # MainPage / Home / ClipboardManager / StickyNotes / Notifications / NotificationPopup（自绘通知浮窗页） / SearchView（全局搜索独立窗页）/ Settings / DownloadManager（多线程下载管理页）
     └── router/  types.d.ts
 scripts/import-legacy-db.mjs      # 旧剪贴板数据一次性导入（已由应用内 legacyImportService 承接）

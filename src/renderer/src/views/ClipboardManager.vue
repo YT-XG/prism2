@@ -18,6 +18,7 @@
           <select
             class="cm-retention-select"
             :value="retention.value"
+            aria-label="保留数量"
             @change="onValueChange"
           >
             <option v-for="n in RETENTION_VALUES" :key="n" :value="n">{{ n }}</option>
@@ -25,6 +26,7 @@
           <select
             class="cm-retention-select"
             :value="retention.unit"
+            aria-label="保留单位"
             @change="onUnitChange"
           >
             <option value="day">日</option>
@@ -125,9 +127,14 @@
                     v-for="(item, index) in section.items"
                     :key="item.id"
                     class="cm-card"
+                    role="button"
+                    :aria-pressed="selectMode && selectedIds.has(item.id)"
+                    tabindex="0"
                     :class="{ 'is-selected': selectMode && selectedIds.has(item.id), 'is-copied': justCopiedId === item.id }"
                     :style="cardDelay(section.startIndex + index)"
                     @click="onCardClick(item)"
+                    @keydown.enter.prevent="onCardClick(item)"
+                    @keydown.space.prevent="onCardClick(item)"
                   >
                     <span v-if="selectMode" class="cm-card__check">
                       <Check v-if="selectedIds.has(item.id)" :size="12" :stroke-width="3" />
@@ -149,6 +156,21 @@
                       v-html="item.content"
                     ></div>
                     <div v-else class="cm-card__content">{{ item.content }}</div>
+                    <div v-if="wordChips(item).length" class="cm-card__chips" @click.stop>
+                      <button
+                        v-for="w in wordChips(item)"
+                        :key="w"
+                        class="chip"
+                        title="粘贴该词组"
+                        aria-label="粘贴该词组"
+                        @click="pasteWord(w, item)"
+                      >
+                        {{ w }}
+                      </button>
+                      <span v-if="splitWords(itemText(item)).length > MAX_WORD_CHIPS" class="chip chip--more">
+                        +{{ splitWords(itemText(item)).length - MAX_WORD_CHIPS }}
+                      </span>
+                    </div>
                     <div class="cm-card__footer">
                       <span v-if="justCopiedId === item.id" class="cm-card__copied">
                         <Check :size="12" :stroke-width="3" /> 已复制
@@ -159,6 +181,7 @@
                           v-if="item.type !== 'image'"
                           class="action-btn"
                           title="收藏"
+                          aria-label="收藏"
                           @click="quickFavorite(item)"
                         >
                           <Star :size="14" :stroke-width="1.6" />
@@ -167,11 +190,12 @@
                           v-if="item.type !== 'image'"
                           class="action-btn"
                           title="编辑"
+                          aria-label="编辑"
                           @click="editHistoryItem(item)"
                         >
                           <Pencil :size="14" :stroke-width="1.6" />
                         </button>
-                        <button class="action-btn action-btn--danger" title="删除" @click="requestDeleteItem(item)">
+                        <button class="action-btn action-btn--danger" title="删除" aria-label="删除" @click="requestDeleteItem(item)">
                           <Trash2 :size="14" :stroke-width="1.6" />
                         </button>
                       </div>
@@ -188,9 +212,13 @@
                   v-for="(item, index) in displayList"
                   :key="item.id"
                   class="cm-card"
+                  role="button"
+                  tabindex="0"
                   :class="[`cm-card--${tint(index)}`, { 'is-copied': justCopiedId === item.id }]"
                   :style="cardDelay(index)"
                   @click="handleFavoriteClick(item as FavoriteItem)"
+                  @keydown.enter.prevent="handleFavoriteClick(item as FavoriteItem)"
+                  @keydown.space.prevent="handleFavoriteClick(item as FavoriteItem)"
                 >
                   <div
                     v-if="(item as FavoriteItem).type === 'richtext'"
@@ -217,10 +245,10 @@
                     </span>
                     <span v-else class="cm-card__time">{{ formatTime(item.created_at) }}</span>
                     <div class="cm-card__actions" @click.stop>
-                      <button class="action-btn" title="编辑" @click="editFavorite(item as FavoriteItem)">
+                      <button class="action-btn" title="编辑" aria-label="编辑" @click="editFavorite(item as FavoriteItem)">
                         <Pencil :size="14" :stroke-width="1.6" />
                       </button>
-                      <button class="action-btn action-btn--danger" title="删除" @click="requestDeleteItem(item)">
+                      <button class="action-btn action-btn--danger" title="删除" aria-label="删除" @click="requestDeleteItem(item)">
                         <Trash2 :size="14" :stroke-width="1.6" />
                       </button>
                     </div>
@@ -300,6 +328,8 @@ import ClipboardHistoryEditorDialog from '@renderer/components/ClipboardHistoryE
 import { subscribeOnUnmounted } from '@renderer/composables/useIpcListener'
 import { useToast } from '@renderer/composables/useToast'
 import { openPlaceholderDialog } from '@renderer/composables/useSnippetPlaceholder'
+import { itemText } from '@renderer/composables/useClipboardText'
+import { splitWords, MAX_WORD_CHIPS } from '@renderer/composables/useWordSplit'
 import type { HistoryItem, FavoriteItem, CategoryItem, ClipboardRetention, FavoritesCursor } from '@preload/ipc'
 
 const toast = useToast()
@@ -585,6 +615,23 @@ async function handleCopy(item: Pick<HistoryItem, 'content' | 'type'> & { id?: n
 /** 卡片阶梯入场的延迟（最多 8 项封顶，避免长列表拖沓） */
 function cardDelay(index: number): Record<string, string> {
   return { '--cm-delay': `${Math.min(index, 8) * 40}ms` }
+}
+
+/** 拆词胶囊：仅当能拆出 ≥2 个词时返回前 MAX_WORD_CHIPS 个，否则空数组（拆不开/图片不显示） */
+function wordChips(item: HistoryItem): string[] {
+  const words = splitWords(itemText(item))
+  return words.length >= 2 ? words.slice(0, MAX_WORD_CHIPS) : []
+}
+
+/** 点击某个拆词胶囊：以纯文本写入该词并模拟粘贴（复用 clickItem 粘贴链路 + 「已复制」反馈） */
+async function pasteWord(word: string, item: HistoryItem): Promise<void> {
+  await copyItem({ content: word, type: 'text' })
+  justCopiedId.value = item.id
+  if (copiedTimer) clearTimeout(copiedTimer)
+  copiedTimer = setTimeout(() => {
+    justCopiedId.value = null
+    copiedTimer = null
+  }, 1200)
 }
 
 async function quickFavorite(item: HistoryItem): Promise<void> {
@@ -1143,6 +1190,49 @@ onBeforeUnmount(() => {
   color: var(--text-muted);
 }
 
+/* 自动拆词胶囊：内容预览下可点击词组，点击即粘贴该词 */
+.cm-card__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin-top: var(--sp-2);
+}
+
+.chip {
+  padding: 2px var(--sp-2);
+  border: none;
+  border-radius: var(--radius-pill);
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-secondary);
+  background: var(--bg-selected-subtle);
+  cursor: pointer;
+  transition: background-color var(--duration-fast) var(--ease-out-soft),
+    color var(--duration-fast) var(--ease-out-soft);
+}
+
+.chip:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+
+.chip:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* 超出上限的折叠示意：纯展示，不可点击 */
+.chip--more {
+  cursor: default;
+  background: transparent;
+  color: var(--text-muted);
+}
+
+.chip--more:hover {
+  background: transparent;
+  color: var(--text-muted);
+}
+
 .cm-card__footer {
   display: flex;
   align-items: center;
@@ -1164,7 +1254,8 @@ onBeforeUnmount(() => {
     transform var(--duration-fast) var(--ease-out-soft);
 }
 
-.cm-card:hover .cm-card__actions {
+.cm-card:hover .cm-card__actions,
+.cm-card:focus-within .cm-card__actions {
   opacity: 1;
   transform: translateX(0);
 }
@@ -1191,6 +1282,7 @@ onBeforeUnmount(() => {
 }
 
 .action-btn {
+  position: relative;
   width: 28px;
   height: 28px;
   display: flex;
@@ -1202,6 +1294,18 @@ onBeforeUnmount(() => {
   color: var(--text-secondary);
   transition: background-color var(--duration-fast) var(--ease-out-soft),
     color var(--duration-fast) var(--ease-out-soft);
+}
+
+/* 透明伪元素扩大热区至 44×44（视觉不变，仅增强可点/可点目标与触控友好） */
+.action-btn::before {
+  content: '';
+  position: absolute;
+  inset: -8px;
+}
+
+.action-btn:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 1px;
 }
 
 .action-btn:hover {
