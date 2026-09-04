@@ -567,7 +567,9 @@ export const SERVICE_CHANNELS = {
     /** 日志文件完整路径 */
     getPath: 'to-service-LogService:getPath',
     /** 用系统默认程序打开日志文件 */
-    openFile: 'to-service-LogService:openFile'
+    openFile: 'to-service-LogService:openFile',
+    /** 用系统默认程序打开日志文件所在目录 */
+    openDirectory: 'to-service-LogService:openDirectory'
   }
 } as const
 
@@ -783,5 +785,7 @@ export interface ElectronAPI {
     getPath: () => Promise<string>
     /** 用系统默认程序打开日志文件 */
     openFile: () => Promise<LogOpenResult>
+    /** 用系统默认程序打开日志文件所在目录 */
+    openDirectory: () => Promise<LogOpenResult>
   }
 }

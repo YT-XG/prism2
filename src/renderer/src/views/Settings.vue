@@ -229,7 +229,10 @@
             <div class="row-name">查看日志</div>
             <div class="row-desc">运行日志文件：{{ logFilePath }}</div>
           </div>
-          <button class="btn" type="button" :disabled="logBusy" @click="openLogFile">打开日志</button>
+          <div class="row-actions">
+            <button class="btn" type="button" :disabled="logBusy" @click="openLogFile">打开日志</button>
+            <button class="btn" type="button" :disabled="logBusy" @click="openLogDirectory">打开所在文件夹</button>
+          </div>
         </div>
       </section>
       </template>
@@ -611,6 +614,22 @@ async function openLogFile(): Promise<void> {
   }
 }
 
+/** 用系统默认程序打开日志文件所在目录 */
+async function openLogDirectory(): Promise<void> {
+  if (logBusy.value) return
+  logBusy.value = true
+  try {
+    const r = await window.electronAPI.log.openDirectory()
+    if (r.ok) {
+      toast.success('已打开日志所在文件夹')
+    } else {
+      toast.error(`打开日志目录失败：${r.error ?? '未知错误'}`)
+    }
+  } finally {
+    logBusy.value = false
+  }
+}
+
 onMounted(async () => {
   settings.value = await window.electronAPI.settings.get()
   settingsLoaded.value = true
@@ -735,6 +754,14 @@ onMounted(async () => {
   font-size: 12px;
   color: var(--text-muted);
   margin-top: 2px;
+}
+
+/* 行内操作按钮组：多个按钮靠右相邻排布，避免被 space-between 拆散 */
+.row-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex-shrink: 0;
 }
 
 .switch {
