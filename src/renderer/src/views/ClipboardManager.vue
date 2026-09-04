@@ -15,25 +15,18 @@
             @update:model-value="onAutoCleanToggle"
           />
           <span class="cm-retention-text">保留最近</span>
-          <select
-            class="cm-retention-select"
-            :value="retention.value"
+          <UiSelect
+            :model-value="retention.value"
+            :options="retentionValueOptions"
             aria-label="保留数量"
-            @change="onValueChange"
-          >
-            <option v-for="n in RETENTION_VALUES" :key="n" :value="n">{{ n }}</option>
-          </select>
-          <select
-            class="cm-retention-select"
-            :value="retention.unit"
+            @update:model-value="onValueChange"
+          />
+          <UiSelect
+            :model-value="retention.unit"
+            :options="retentionUnitOptions"
             aria-label="保留单位"
-            @change="onUnitChange"
-          >
-            <option value="day">日</option>
-            <option value="week">周</option>
-            <option value="month">月</option>
-            <option value="year">年</option>
-          </select>
+            @update:model-value="onUnitChange"
+          />
         </div>
         <div class="cm-tabs">
           <UiPillTab :active="activeTab === 'history'" @click="switchTab('history')">
@@ -323,6 +316,7 @@ import UiButton from '@renderer/components/ui/UiButton.vue'
 import UiEmptyState from '@renderer/components/ui/UiEmptyState.vue'
 import UiDialog from '@renderer/components/ui/UiDialog.vue'
 import UiSwitch from '@renderer/components/ui/UiSwitch.vue'
+import UiSelect from '@renderer/components/ui/UiSelect.vue'
 import SnippetEditorDialog from '@renderer/components/SnippetEditorDialog.vue'
 import ClipboardHistoryEditorDialog from '@renderer/components/ClipboardHistoryEditorDialog.vue'
 import { subscribeOnUnmounted } from '@renderer/composables/useIpcListener'
@@ -349,6 +343,14 @@ const retention = ref<ClipboardRetention>({ autoClean: true, value: 1, unit: 'mo
 const retentionLoaded = ref(false)
 /** 清理数量下拉可选值：1-30 */
 const RETENTION_VALUES = Array.from({ length: 30 }, (_, i) => i + 1)
+/** UiSelect 选项：保留数量 / 保留单位 */
+const retentionValueOptions = RETENTION_VALUES.map((n) => ({ label: String(n), value: n }))
+const retentionUnitOptions = [
+  { label: '日', value: 'day' },
+  { label: '周', value: 'week' },
+  { label: '月', value: 'month' },
+  { label: '年', value: 'year' }
+]
 const showDialog = ref(false)
 const editing = ref<FavoriteItem | null>(null)
 /** 历史记录富文本编辑弹窗：打开状态 + 编辑目标 */
@@ -779,15 +781,15 @@ async function onAutoCleanToggle(value: boolean): Promise<void> {
   await fetchHistory()
 }
 
-async function onValueChange(event: Event): Promise<void> {
-  const value = Number((event.target as HTMLSelectElement).value)
-  retention.value.value = value
-  await window.electronAPI.clipboard.setRetentionState({ value })
+async function onValueChange(value: string | number): Promise<void> {
+  const n = Number(value)
+  retention.value.value = n
+  await window.electronAPI.clipboard.setRetentionState({ value: n })
   await fetchHistory()
 }
 
-async function onUnitChange(event: Event): Promise<void> {
-  const unit = (event.target as HTMLSelectElement).value as ClipboardRetention['unit']
+async function onUnitChange(value: string | number): Promise<void> {
+  const unit = value as ClipboardRetention['unit']
   retention.value.unit = unit
   await window.electronAPI.clipboard.setRetentionState({ unit })
   await fetchHistory()
@@ -899,27 +901,6 @@ onBeforeUnmount(() => {
   font-size: 12px;
   color: var(--text-secondary);
   white-space: nowrap;
-}
-
-.cm-retention-select {
-  height: 30px;
-  padding: 0 var(--sp-2);
-  font-size: 12px;
-  color: var(--text-secondary);
-  background: var(--bg-surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  outline: none;
-  cursor: pointer;
-}
-
-.cm-retention-select:focus {
-  border-color: var(--brand);
-}
-
-.cm-retention-select:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
 }
 
 .cm-tabs {

@@ -1100,14 +1100,16 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: space-between;
   gap: var(--sp-3);
-  padding: var(--sp-4) var(--sp-5) var(--sp-2);
+  padding: var(--sp-5) var(--sp-5) var(--sp-3);
   animation: fade-up var(--duration-enter) var(--ease-out-soft);
 }
 
 .home-title {
   margin: 0;
-  font-size: 20px;
-  font-weight: 600;
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
 }
 
 /* 旧版数据引导导入横幅 */
@@ -1116,8 +1118,8 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: space-between;
   gap: var(--sp-4);
-  margin: 0 var(--sp-5) var(--sp-2);
-  padding: var(--sp-3) var(--sp-4);
+  margin: 0 var(--sp-5) var(--sp-3);
+  padding: var(--sp-4);
   border: 1px solid color-mix(in srgb, var(--brand) 30%, transparent);
   border-radius: var(--radius-md);
   background: color-mix(in srgb, var(--brand) 6%, var(--bg-surface));
@@ -1177,27 +1179,36 @@ onBeforeUnmount(() => {
 .home-stats {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: var(--sp-3);
-  padding: var(--sp-2) var(--sp-5);
+  gap: var(--sp-4);
+  padding: var(--sp-3) var(--sp-5);
   animation: fade-up var(--duration-enter) var(--ease-out-soft) backwards;
   animation-delay: 60ms;
 }
 
 .stat {
-  padding: var(--sp-4);
+  padding: var(--sp-5);
   border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+  transition: transform 160ms var(--ease-out-soft), box-shadow var(--duration-base) var(--ease-out-soft);
+}
+
+.stat:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
 }
 
 .stat__num {
-  font-size: 26px;
-  font-weight: 600;
+  font-size: 28px;
+  font-weight: 700;
   line-height: 1.1;
+  letter-spacing: -0.02em;
 }
 
 .stat__label {
-  margin-top: var(--sp-1);
+  margin-top: var(--sp-2);
   font-size: 12px;
   font-weight: 500;
+  color: var(--text-secondary);
 }
 
 .stat--lavender {
@@ -1215,7 +1226,8 @@ onBeforeUnmount(() => {
 
 /* 快捷入口 */
 .home-entries {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
   gap: var(--sp-3);
   padding: var(--sp-3) var(--sp-5);
   animation: fade-up var(--duration-enter) var(--ease-out-soft) backwards;
@@ -1228,9 +1240,8 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   gap: var(--sp-2);
-  width: 120px;
-  min-height: 76px;
-  padding: var(--sp-3);
+  min-height: 80px;
+  padding: var(--sp-4);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   background: var(--bg-surface);
@@ -1240,9 +1251,14 @@ onBeforeUnmount(() => {
 }
 
 .entry:hover {
-  transform: translateY(-2px);
-  border-color: color-mix(in srgb, var(--brand) 35%, transparent);
+  transform: translateY(-3px);
+  border-color: color-mix(in srgb, var(--brand) 40%, transparent);
   box-shadow: var(--shadow-md);
+}
+
+.entry:active {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
 }
 
 .entry__icon {
@@ -1261,20 +1277,20 @@ onBeforeUnmount(() => {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: var(--sp-2) var(--sp-5) var(--sp-5);
+  padding: var(--sp-3) var(--sp-5) var(--sp-5);
 }
 
 /* 拖放添加提示遮罩：文件夹拖入画布时浮现 */
 .drop-overlay {
   position: sticky;
-  top: var(--sp-2);
+  top: var(--sp-3);
   z-index: 40;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: var(--sp-2);
-  margin: var(--sp-2) var(--sp-3);
-  padding: var(--sp-5);
+  margin: var(--sp-3) var(--sp-4);
+  padding: var(--sp-6);
   border: 2px dashed var(--brand);
   border-radius: var(--radius-md);
   background: color-mix(in srgb, var(--brand) 10%, var(--bg-surface));
@@ -1296,18 +1312,20 @@ onBeforeUnmount(() => {
   box-shadow: var(--shadow-sm);
   overflow: hidden;
   z-index: 10;
+  transition: box-shadow var(--duration-fast) var(--ease-out-soft);
 }
 
 .recent-box.is-dragging {
   box-shadow: var(--shadow-lg);
-  outline: 1px solid var(--brand);
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
 }
 
 .recent-box__head {
   display: flex;
   align-items: center;
   gap: var(--sp-2);
-  padding: var(--sp-2) var(--sp-3);
+  padding: var(--sp-3);
   border-bottom: 1px solid var(--border);
   cursor: grab;
   user-select: none;
@@ -1365,7 +1383,7 @@ onBeforeUnmount(() => {
 }
 
 .recent-box__search {
-  padding: var(--sp-2) var(--sp-3);
+  padding: var(--sp-3);
   border-bottom: 1px solid var(--border);
 }
 
@@ -1389,7 +1407,7 @@ onBeforeUnmount(() => {
 }
 
 .recent-box__col-title {
-  padding: var(--sp-2) var(--sp-3);
+  padding: var(--sp-3);
   font-size: 12px;
   font-weight: 600;
   color: var(--text-secondary);
@@ -1409,7 +1427,7 @@ onBeforeUnmount(() => {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 0 var(--sp-2) var(--sp-2);
+  padding: 0 var(--sp-2) var(--sp-3);
 }
 
 /* 通用行（左右列共用） */
@@ -1427,11 +1445,16 @@ onBeforeUnmount(() => {
   cursor: pointer;
   animation: card-in var(--duration-enter) var(--ease-out-soft) backwards;
   animation-delay: var(--row-delay, 0ms);
-  transition: background-color var(--duration-fast) var(--ease-out-soft);
+  transition: background-color var(--duration-fast) var(--ease-out-soft),
+    transform 80ms var(--ease-out-soft);
 }
 
 .row:hover {
   background: var(--bg-hover);
+}
+
+.row:active {
+  transform: scale(0.98);
 }
 
 .row.is-copied {
@@ -1512,12 +1535,17 @@ onBeforeUnmount(() => {
   background: transparent;
   color: var(--text-secondary);
   transition: background-color var(--duration-fast) var(--ease-out-soft),
-    color var(--duration-fast) var(--ease-out-soft);
+    color var(--duration-fast) var(--ease-out-soft),
+    transform 80ms var(--ease-out-soft);
 }
 
 .row-btn:hover {
   background: var(--bg-selected-subtle);
   color: var(--text-primary);
+}
+
+.row-btn:active {
+  transform: scale(0.95);
 }
 
 .row-btn--danger:hover {
@@ -1530,5 +1558,28 @@ onBeforeUnmount(() => {
   font-size: 14px;
   color: var(--text-secondary);
   line-height: 1.6;
+}
+
+/* 响应式适配 */
+@media (max-width: 600px) {
+  .home-stats {
+    grid-template-columns: 1fr;
+  }
+  
+  .home-entries {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  
+  .recent-box {
+    width: 100% !important;
+    height: auto !important;
+    min-height: 300px;
+  }
+}
+
+@media (min-width: 601px) and (max-width: 900px) {
+  .home-entries {
+    grid-template-columns: repeat(3, 1fr);
+  }
 }
 </style>

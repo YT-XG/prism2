@@ -11,10 +11,14 @@
           <template #leading><Link :size="15" :stroke-width="1.6" /></template>
         </UiInput>
         <div class="new-download__threads">
-          <label class="field-label" for="dl-threads">线程</label>
-          <select id="dl-threads" v-model.number="threads" class="threads-select">
-            <option v-for="t in [1, 2, 4, 8, 16]" :key="t" :value="t">{{ t }}</option>
-          </select>
+          <span class="field-label">线程</span>
+          <UiSelect
+            :model-value="threads"
+            :options="threadOptions"
+            size="md"
+            label="下载线程数"
+            @update:model-value="onThreadsChange"
+          />
         </div>
       </div>
       <div class="new-download__row new-download__row--actions">
@@ -133,6 +137,7 @@ import { computed, onMounted, ref } from 'vue'
 import { Download, FolderOpen, Link, Pause, Play, Trash2, X } from '@lucide/vue'
 import UiButton from '@renderer/components/ui/UiButton.vue'
 import UiInput from '@renderer/components/ui/UiInput.vue'
+import UiSelect from '@renderer/components/ui/UiSelect.vue'
 import UiStatusChip from '@renderer/components/ui/UiStatusChip.vue'
 import UiEmptyState from '@renderer/components/ui/UiEmptyState.vue'
 import { subscribeOnUnmounted } from '@renderer/composables/useIpcListener'
@@ -144,6 +149,8 @@ const toast = useToast()
 const tasks = ref<DownloadTaskSnapshot[]>([])
 const url = ref('')
 const threads = ref(8)
+/** 线程数下拉选项 */
+const threadOptions = [1, 2, 4, 8, 16]
 /** 保存路径 override；空 = 使用默认下载目录 */
 const savePath = ref('')
 /** 默认下载目录（只读展示） */
@@ -198,6 +205,10 @@ function upsertTask(task: DownloadTaskSnapshot): void {
 // ---------------------------------------------------------------------------
 // 动作
 // ---------------------------------------------------------------------------
+
+function onThreadsChange(value: string | number): void {
+  threads.value = Number(value)
+}
 
 async function startDownload(): Promise<void> {
   const link = url.value.trim()
@@ -370,17 +381,6 @@ onMounted(async () => {
   font-size: var(--text-sm);
   color: var(--text-secondary);
   white-space: nowrap;
-}
-
-.threads-select {
-  height: 36px;
-  padding: 0 var(--sp-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--bg-surface);
-  color: var(--text-primary);
-  font-size: 13px;
-  cursor: pointer;
 }
 
 .new-download__row--actions {

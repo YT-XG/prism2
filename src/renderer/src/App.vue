@@ -304,20 +304,21 @@ onBeforeUnmount(() => {
 }
 
 .titlebar {
-  height: 38px;
+  height: 42px;
   flex-shrink: 0;
   display: grid;
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
   padding: 0 var(--sp-3) 0 var(--sp-4);
   background: transparent;
+  border-bottom: 1px solid var(--border);
 }
 
 .titlebar-brand {
   justify-self: start;
   display: flex;
   align-items: center;
-  gap: var(--sp-2);
+  gap: var(--sp-3);
 }
 
 /* 居中工具栏（功能搜索 + 显示），弹层相对其定位 */
@@ -326,7 +327,7 @@ onBeforeUnmount(() => {
   position: relative;
   display: flex;
   align-items: center;
-  gap: var(--sp-2);
+  gap: var(--sp-3);
 }
 
 .tb-tool {
@@ -334,7 +335,7 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  height: 28px;
+  height: 30px;
   padding: 0 var(--sp-3);
   border: none;
   border-radius: var(--radius-sm);
@@ -414,8 +415,8 @@ onBeforeUnmount(() => {
 }
 
 .brand-dot {
-  width: 12px;
-  height: 12px;
+  width: 10px;
+  height: 10px;
   border-radius: var(--radius-pill);
   background: var(--brand);
   animation: pulse-soft 3.2s var(--ease-in-soft) infinite;
@@ -434,12 +435,12 @@ onBeforeUnmount(() => {
   display: inline-flex;
   align-items: center;
   margin-left: var(--sp-2);
-  padding: 1px 8px;
+  padding: 2px 10px;
   border: none;
   border-radius: var(--radius-pill);
   background: var(--warning-soft);
   color: var(--warning);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
   line-height: 18px;
   cursor: pointer;
@@ -475,6 +476,7 @@ onBeforeUnmount(() => {
   font-weight: 600;
   color: var(--text-primary);
   letter-spacing: 0.01em;
+  line-height: 1.2;
 }
 
 .titlebar-version {
@@ -491,8 +493,8 @@ onBeforeUnmount(() => {
 }
 
 .tb-btn {
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -517,5 +519,6 @@ onBeforeUnmount(() => {
 .app-content {
   flex: 1;
   min-height: 0;
+  overflow: hidden;
 }
 </style>
