@@ -3,6 +3,12 @@ appId: com.prism.next
 productName: Prism 2
 directories:
   output: dist
+# 只保留中英语言包，砍掉其余 53 个 Chromium 语言 .pak（约 45MB）
+electronLanguages:
+  - en-US
+  - zh-CN
+# 最高压缩级别减小安装包体积（构建时间略增）
+compression: maximum
 files:
   - out/**
   - resources/**
@@ -12,6 +18,14 @@ files:
   - '!{.eslintignore,.eslintrc.cjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}'
   - '!{.env,.env.*,.npmrc,pnpm-lock.yaml}'
   - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
+  # sql.js 运行时只需 sql-wasm.js + sql-wasm.wasm（locateFile 加载），排除 asm/debug/worker/zip/browser 变体约 22MB
+  - '!node_modules/sql.js/dist/sql-asm*'
+  - '!node_modules/sql.js/dist/worker*'
+  - '!node_modules/sql.js/dist/*-debug*'
+  - '!node_modules/sql.js/dist/sql-wasm-browser*'
+  - '!node_modules/sql.js/dist/sqljs-all.zip'
+  # Chromium 许可证页（约 19.5MB），运行不需要
+  - '!**/LICENSES.chromium.html'
 asarUnpack:
   - resources/**
 publish:
