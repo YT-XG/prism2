@@ -8,6 +8,7 @@
  */
 import { BrowserWindowConstructorOptions, screen } from 'electron'
 import { join } from 'node:path'
+import log from 'electron-log'
 import BaseFrame from './BaseFrame'
 import { WINDOW_CHANNELS } from '@preload/ipc'
 import type { NotificationPopupPosition } from '@preload/ipc'
@@ -62,12 +63,17 @@ export default class NotificationFrame extends BaseFrame {
     const [w, curH] = this.window.getSize()
     const [x, y] = this.window.getPosition()
     if (h === curH) return
-    // 防御：多屏 / 高 DPI 下 getSize / getPosition 可能返回非有限值，setBounds 同样会抛
-    // "conversion failure from ..." 崩溃。
-    if (![w, curH, x, y, h].every(Number.isFinite)) return
+    // 防御：多屏 / 高 DPI / 隐藏态下 getSize / getPosition 可能返回非有限或超 int32 的
+    // 有限值，setBounds 会抛 "conversion failure from ..."。超出常规可视范围一律放弃缩放。
+    const inRange = (n: number): boolean => Number.isFinite(n) && n >= -10_000_000 && n <= 10_000_000
+    if (![w, curH, x, y, h].every(inRange)) return
     // 右下角：向上生长（顶边下移）；顶部居中：向下生长（顶边固定）
     const top = this.position === 'top-center' ? y : y + curH - h
-    this.window.setBounds({ x, y: top, width: w, height: h })
+    try {
+      this.window.setBounds({ x, y: top, width: w, height: h })
+    } catch (err) {
+      log.warn('[NotificationFrame] resizePopup setBounds 异常:', err)
+    }
   }
 
   /** 通知全部消失后隐藏浮窗 */
@@ -80,21 +86,48 @@ export default class NotificationFrame extends BaseFrame {
     if (!this.window || this.window.isDestroyed()) return
     const { workArea } = screen.getPrimaryDisplay()
     const [w, h] = this.window.getSize()
-    let x: number
-    let y: number
-    if (this.position === 'top-center') {
-      x = workArea.x + (workArea.width - w) / 2
-      y = workArea.y + NotificationFrame.MARGIN
-    } else {
-      x = workArea.x + workArea.width - w - NotificationFrame.MARGIN
-      y = workArea.y + workArea.height - h - NotificationFrame.MARGIN
+    // 防御：透明无边框窗口在隐藏态 / 高 DPI / 多屏布局未完成时，getSize() 可能返回 NaN /
+    // 负数 / 超大有限值，使坐标超出 setPosition 的 int32 可转换范围，抛
+    // "conversion failure from ..."。做多重防御：
+    // ① 尺寸可疑（非有限 / 非正 / 超 1e6）时放弃计算，交给系统居中；
+    const usable = (v: number): boolean => Number.isFinite(v) && v > 0 && v <= 1_000_000
+    if (!usable(w) || !usable(h)) {
+      log.warn('[NotificationFrame] #place 窗口尺寸异常，回退系统居中:', { workArea, w, h })
+      this.#safeCenter()
+      return
     }
-    // 防御：高 DPI / 多屏 / 透明无边框窗口布局未完成时，workArea 或 getSize() 可能返回
-    // 非有限值，直接 setPosition 会抛 "conversion failure from ..." 崩溃。
-    if (Number.isFinite(x) && Number.isFinite(y)) {
+    const x = Math.round(
+      this.position === 'top-center'
+        ? workArea.x + (workArea.width - w) / 2
+        : workArea.x + workArea.width - w - NotificationFrame.MARGIN
+    )
+    const y = Math.round(
+      this.position === 'top-center'
+        ? workArea.y + NotificationFrame.MARGIN
+        : workArea.y + workArea.height - h - NotificationFrame.MARGIN
+    )
+    // ② 坐标必须落在 int32 可表示范围（Number.isFinite 拦不住超 int32 的有限值）；
+    const inInt32 = (v: number): boolean => Number.isFinite(v) && v >= -2147483647 && v <= 2147483647
+    if (!inInt32(x) || !inInt32(y)) {
+      log.warn('[NotificationFrame] #place 坐标越界，回退系统居中:', { workArea, w, h, x, y })
+      this.#safeCenter()
+      return
+    }
+    // ③ 仍有意外异常时兜底系统居中，绝不把异常抛回主进程调用链
+    try {
       this.window.setPosition(x, y)
-    } else {
-      this.window.center()
+    } catch (err) {
+      log.warn('[NotificationFrame] #place setPosition 异常，回退系统居中:', err)
+      this.#safeCenter()
+    }
+  }
+
+  /** 系统居中兜底：center() 内部也按窗口尺寸计算坐标，异常时吞掉 */
+  #safeCenter(): void {
+    try {
+      this.window?.center()
+    } catch (err) {
+      log.warn('[NotificationFrame] #safeCenter 系统居中失败:', err)
     }
   }
 
