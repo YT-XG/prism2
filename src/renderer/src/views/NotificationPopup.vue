@@ -43,6 +43,7 @@ init()
 
 <style scoped>
 .notif-popup {
+  position: relative; /* 作为退场卡片的绝对定位包含块，保证脱流卡片宽度不被撑窄 */
   display: flex;
   flex-direction: column;
   align-items: stretch;
@@ -96,35 +97,34 @@ init()
   line-height: 1.6;
 }
 
-/* 入场复用 toast-in，出场淡出 + 轻微下移（右下角：自右滑入，整体右对齐锚定） */
+/* 入场复用 toast-in，出场向下方加速淡出（右下角：自右滑入，整体右对齐锚定）
+   退场同样用 keyframes 动画，避免被 .ui-notif 更高优先级的 transition 覆盖导致瞬间消失。
+   position:absolute 让退场卡片在动画期间脱离文档流，后续卡片随即补位；
+   补位位移由 .ui-notif 的 transform 过渡平滑呈现，避免瞬移。 */
 .popup-enter-active {
   animation: toast-in var(--duration-base) var(--ease-out-soft);
 }
 
 .popup-leave-active {
-  transition: opacity 160ms var(--ease-out-soft), transform 160ms var(--ease-out-soft);
+  position: absolute;
+  left: 0;
+  right: 0;
+  animation: popup-leave var(--duration-fast) var(--ease-in-soft) forwards;
 }
 
-.popup-leave-to {
-  opacity: 0;
-  transform: translateY(8px);
-}
-
-/* 顶部居中（灵动岛式）：自上覆盖滑入，退场向顶部加速收拢缩小（反向坍塌回源头）
-   退场用 ease-in 加速离开、时长取 --duration-fast（快于入场的 --duration-base），
-   保证移除更利落；scale 让卡片看起来坍缩回屏幕顶端，形成空间连续性。 */
+/* 顶部居中（灵动岛式）：自上覆盖滑入，退场向顶部加速收拢缩小（反向坍塌回源头）。
+   退场必须用 keyframes 动画而非 transition —— 卡片根元素 .ui-notif 上有更高优先级的
+   `transition: transform, box-shadow`，会把含 opacity 的退场 transition 覆盖掉，
+   导致 opacity 无过渡项而瞬间消失；animation 不受其影响，与入场路径一致。 */
 .popup-top-enter-active {
   animation: notif-drop-in var(--duration-base) var(--ease-out-soft);
 }
 
 .popup-top-leave-active {
-  transition: opacity var(--duration-fast) var(--ease-in-soft),
-    transform var(--duration-fast) var(--ease-in-soft);
-}
-
-.popup-top-leave-to {
-  opacity: 0;
-  transform: translateY(-12px) scale(0.9);
+  position: absolute;
+  left: 0;
+  right: 0;
+  animation: popup-top-leave var(--duration-fast) var(--ease-in-soft) forwards;
 }
 </style>
 
@@ -138,6 +138,22 @@ init()
   to {
     opacity: 1;
     transform: translateY(0) scale(1);
+  }
+}
+
+/* 顶部居中：退场向顶部加速收拢缩小（反向坍塌回源头） */
+@keyframes popup-top-leave {
+  to {
+    opacity: 0;
+    transform: translateY(-12px) scale(0.9);
+  }
+}
+
+/* 右下角：退场向下加速淡出 */
+@keyframes popup-leave {
+  to {
+    opacity: 0;
+    transform: translateY(8px);
   }
 }
 </style>
