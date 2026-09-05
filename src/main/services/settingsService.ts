@@ -32,7 +32,10 @@ const DEFAULT_SETTINGS: AppSettings = {
   // 通知相关（默认全部开启）
   notificationsEnabled: true,
   notifyClipboard: true,
-  notifyUpdate: true
+  notifyUpdate: true,
+  // 邮箱大师（默认开启新邮件通知，轮询间隔 1 分钟）
+  notifyMail: true,
+  mailPollIntervalMin: 1
 }
 
 class SettingsService {

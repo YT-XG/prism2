@@ -64,6 +64,22 @@
               <span v-if="!collapsed" class="nav-item__label">下载管理</span>
             </Transition>
           </RouterLink>
+          <RouterLink
+            class="nav-item"
+            :title="collapsed ? '邮箱大师' : undefined"
+            to="/mainPage/mail"
+          >
+            <Mail :size="16" :stroke-width="1.6" />
+            <Transition name="nav-fade">
+              <span v-if="!collapsed" class="nav-item__label">邮箱大师</span>
+            </Transition>
+            <span
+              v-if="mailUnread && !collapsed"
+              :key="mailUnread"
+              class="nav-badge num"
+            >{{ mailUnread > 99 ? '99+' : mailUnread }}</span>
+            <span v-else-if="mailUnread && collapsed" class="nav-dot" />
+          </RouterLink>
         </div>
 
         <div class="nav-group">
@@ -119,17 +135,20 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { House, ClipboardList, StickyNote, Bell, Settings2, ChevronsLeft, ChevronsRight, Download } from '@lucide/vue'
+import { House, ClipboardList, StickyNote, Bell, Settings2, ChevronsLeft, ChevronsRight, Download, Mail } from '@lucide/vue'
 import UiDialog from '@renderer/components/ui/UiDialog.vue'
 import UiButton from '@renderer/components/ui/UiButton.vue'
 import { useToast } from '@renderer/composables/useToast'
 import { useNotifications } from '@renderer/composables/useNotifications'
+import { useMail } from '@renderer/composables/useMail'
 import { subscribeOnUnmounted } from '@renderer/composables/useIpcListener'
 import type { LegacyInstallInfo } from '@preload/ipc'
 
 const toast = useToast()
 /** 通知未读数（模块级单例，onNew 订阅实时刷新未读；此处兜底拉取） */
 const { unread, refreshUnread, init } = useNotifications()
+/** 邮箱未读总数（模块级单例，onMailUnreadChanged 订阅实时刷新；此处兜底拉取） */
+const { unread: mailUnread, init: initMail, refreshUnread: refreshMailUnread } = useMail()
 
 /** 侧栏折叠态：预留图标竖栏模式（参考图），后续模块增多后仍保持轻量导航 */
 const collapsed = ref(false)
@@ -179,8 +198,10 @@ async function refreshCount(): Promise<void> {
 onMounted(async () => {
   // 订阅 onNew：实时刷新侧栏未读角标与通知中心列表（瞬时卡片展示在通知浮窗）
   init()
+  initMail()
   await refreshCount()
   await refreshUnread()
+  await refreshMailUnread()
 
   // 检测旧版安装：已检测到且未「不再提醒」且本运行未提示过 → 弹窗
   if (!legacyPrompted) {
@@ -206,6 +227,7 @@ onMounted(async () => {
     window.electronAPI.window.onWindowEvent('reShow', () => {
       void refreshCount()
       void refreshUnread()
+      void refreshMailUnread()
     })
   )
 })

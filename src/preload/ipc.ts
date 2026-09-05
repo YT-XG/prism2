@@ -212,13 +212,17 @@ export interface AppSettings {
   notifyClipboard: boolean
   /** 更新通知（新版本/更新完成/检查失败） */
   notifyUpdate: boolean
+  /** 新邮件通知（邮箱大师收到新邮件时提醒） */
+  notifyMail: boolean
+  /** 邮箱大师轮询同步间隔（分钟，默认 1） */
+  mailPollIntervalMin: number
 }
 
 /** 通知类型：对应语义状态色 token */
 export type NotificationType = 'info' | 'success' | 'warning' | 'error'
 
 /** 通知来源：用于通知中心分组过滤 + 分来源开关 */
-export type NotificationSource = 'clipboard' | 'update'
+export type NotificationSource = 'clipboard' | 'update' | 'mail'
 
 /** 通知记录（持久化到 userData/notifications.db） */
 export interface NotificationItem {
@@ -236,6 +240,138 @@ export interface NotificationItem {
 export interface NotificationNewPayload {
   item: NotificationItem
   unread: number
+}
+
+// ---------------------------------------------------------------------------
+// 邮箱大师（IMAP 多账号收信）
+// ---------------------------------------------------------------------------
+
+/** 邮箱账号（对外，不含密码/授权码） */
+export interface MailAccount {
+  id: number
+  /** 显示名（如「工作邮箱」） */
+  name: string
+  /** 邮箱地址（IMAP 登录名） */
+  email: string
+  /** IMAP 服务器地址 */
+  host: string
+  port: number
+  /** 是否启用 SSL/TLS（secure 连接） */
+  ssl: boolean
+  /** 最近一次成功同步时间（ms）；从未同步为 null */
+  lastSyncAt: number | null
+  createdAt: number
+}
+
+/** 新增/编辑账号入参（新增时不传 id；编辑时传 id，authCode 留空表示不改密码） */
+export interface MailAccountInput {
+  id?: number
+  name: string
+  email: string
+  host: string
+  port: number
+  ssl: boolean
+  /** IMAP 授权码/密码 */
+  authCode: string
+}
+
+/** IMAP 文件夹（邮箱） */
+export interface MailboxInfo {
+  id: number
+  accountId: number
+  /** 显示名（路径末段，如 收件箱） */
+  name: string
+  /** IMAP 全路径（如 INBOX / 收件箱） */
+  path: string
+  delimiter: string
+  /** 已同步的最大 UID */
+  lastUid: number
+  /** 该文件夹未读数 */
+  unread: number
+  /** 该文件夹总邮件数（已同步入库） */
+  total: number
+}
+
+/** 邮件列表摘要 */
+export interface MailMessageSummary {
+  id: number
+  mailboxId: number
+  uid: number
+  subject: string
+  fromName: string
+  fromAddr: string
+  /** 邮件 Date（ms） */
+  date: number
+  /** 入库时间（ms） */
+  receivedAt: number
+  /** true=已读 */
+  seen: boolean
+  hasAttachments: boolean
+}
+
+/** 邮件详情（含正文与附件） */
+export interface MailMessageDetail extends MailMessageSummary {
+  toName: string
+  toAddr: string
+  cc: string
+  textBody: string
+  /** 净化前原始 HTML 正文（渲染端经 dompurify 净化后展示） */
+  htmlBody: string
+  attachments: MailAttachment[]
+}
+
+/** 邮件附件（filePath 仅供主进程内部使用） */
+export interface MailAttachment {
+  id: number
+  messageId: number
+  filename: string
+  mimeType: string
+  size: number
+  filePath: string
+  /** 内嵌图片 content-id（正文引用的 cid），非内嵌为 null */
+  cid: string | null
+}
+
+/** 账号/附件等操作结果 */
+export interface MailOpResult {
+  ok: boolean
+  /** 失败原因（ok=false 时） */
+  error?: string
+}
+
+/** 测试 IMAP 连接结果 */
+export interface MailAuthTestResult {
+  ok: boolean
+  /** 失败原因（ok=false 时） */
+  error?: string
+}
+
+/** 同步结果 */
+export interface MailSyncResult {
+  ok: boolean
+  accountId: number
+  /** 本次同步新收到的邮件数 */
+  newCount: number
+  /** 失败原因（ok=false 时） */
+  error?: string
+}
+
+/** 正在同步中的账号（标题栏「同步中」状态指示用） */
+export interface MailSyncingInfo {
+  accountId: number
+  /** 账号显示名 */
+  name: string
+}
+
+/** 下载附件结果 */
+export interface MailDownloadResult {
+  ok: boolean
+  /** 用户取消（未选择保存位置） */
+  canceled: boolean
+  /** 保存路径（canceled 时为 undefined） */
+  path?: string
+  /** 失败原因（ok=false 时） */
+  error?: string
 }
 
 /** 应用更新状态（mac 走自定义源 + 下载引擎；win 走 NSIS 静默） */
@@ -576,6 +712,32 @@ export const SERVICE_CHANNELS = {
     openFile: 'to-service-LogService:openFile',
     /** 用系统默认程序打开日志文件所在目录 */
     openDirectory: 'to-service-LogService:openDirectory'
+  },
+  mail: {
+    getAccounts: 'to-service-MailService:getAccounts',
+    /** 新增账号：校验 + 测试连接 + 加密授权码入库 + 立即首轮同步 */
+    addAccount: 'to-service-MailService:addAccount',
+    /** 仅测试 IMAP 连接（不保存） */
+    testConnection: 'to-service-MailService:testConnection',
+    updateAccount: 'to-service-MailService:updateAccount',
+    /** 删除账号（级联删除其文件夹/邮件/附件文件） */
+    removeAccount: 'to-service-MailService:removeAccount',
+    getMailboxes: 'to-service-MailService:getMailboxes',
+    /** 邮件列表（date DESC 分页） */
+    getMessages: 'to-service-MailService:getMessages',
+    getMessageDetail: 'to-service-MailService:getMessageDetail',
+    /** 标记已读/未读（DB + IMAP 双向） */
+    markSeen: 'to-service-MailService:markSeen',
+    /** 手动同步（accountId 缺省 = 全部账号） */
+    syncNow: 'to-service-MailService:syncNow',
+    /** 正在同步中的账号列表（标题栏同步状态指示；窗口重显时兜底拉取） */
+    getSyncing: 'to-service-MailService:getSyncing',
+    /** 全部账号未读总数（侧栏角标） */
+    getUnreadTotal: 'to-service-MailService:getUnreadTotal',
+    /** 下载附件（弹保存对话框，复制到用户指定位置） */
+    downloadAttachment: 'to-service-MailService:downloadAttachment',
+    /** 用系统默认程序打开附件 */
+    openAttachment: 'to-service-MailService:openAttachment'
   }
 } as const
 
@@ -588,7 +750,13 @@ export const BROADCAST = {
   clipboardHistoryChanged: 'broadcast:clipboard-history-changed',
   updateStatus: 'broadcast:update-status',
   notificationNew: 'broadcast:notification-new',
-  downloadTaskUpdated: 'broadcast:download-task-updated'
+  downloadTaskUpdated: 'broadcast:download-task-updated',
+  /** 邮箱同步完成/新邮件到达（载荷：MailSyncResult） */
+  mailSync: 'broadcast:mail-sync',
+  /** 邮箱未读总数变化（载荷：number，侧栏/左栏角标刷新） */
+  mailUnreadChanged: 'broadcast:mail-unread-changed',
+  /** 账号同步中状态变化（载荷：MailSyncingInfo[]，标题栏「同步中」指示） */
+  mailSyncingChanged: 'broadcast:mail-syncing-changed'
 } as const
 
 // ---------------------------------------------------------------------------
@@ -798,5 +966,41 @@ export interface ElectronAPI {
     openFile: () => Promise<LogOpenResult>
     /** 用系统默认程序打开日志文件所在目录 */
     openDirectory: () => Promise<LogOpenResult>
+  }
+  mail: {
+    /** 全部账号（不含密码/授权码） */
+    getAccounts: () => Promise<MailAccount[]>
+    /** 新增账号（内部会测试连接并立即首轮同步）；返回新账号 id */
+    addAccount: (input: MailAccountInput) => Promise<{ ok: boolean; id?: number; error?: string }>
+    /** 仅测试 IMAP 连接（不保存） */
+    testConnection: (input: MailAccountInput) => Promise<MailAuthTestResult>
+    /** 编辑账号（authCode 传空串表示不改密码） */
+    updateAccount: (input: MailAccountInput) => Promise<MailOpResult>
+    /** 删除账号（级联清理数据与附件文件） */
+    removeAccount: (accountId: number) => Promise<MailOpResult>
+    /** 指定账号的文件夹列表（含每文件夹未读/总数） */
+    getMailboxes: (accountId: number) => Promise<MailboxInfo[]>
+    /** 指定文件夹邮件列表（date DESC，offset/limit 分页） */
+    getMessages: (mailboxId: number, offset?: number, limit?: number) => Promise<MailMessageSummary[]>
+    /** 邮件详情（正文 + 附件） */
+    getMessageDetail: (messageId: number) => Promise<MailMessageDetail | null>
+    /** 标记已读/未读 */
+    markSeen: (messageId: number, seen: boolean) => Promise<void>
+    /** 手动同步（accountId 缺省 = 全部账号） */
+    syncNow: (accountId?: number) => Promise<MailSyncResult | MailSyncResult[]>
+    /** 正在同步中的账号列表（标题栏同步状态指示；窗口重显时兜底拉取） */
+    getSyncing: () => Promise<MailSyncingInfo[]>
+    /** 全部账号未读总数（侧栏角标） */
+    getUnreadTotal: () => Promise<number>
+    /** 下载附件到用户指定位置 */
+    downloadAttachment: (attachmentId: number) => Promise<MailDownloadResult>
+    /** 用系统默认程序打开附件 */
+    openAttachment: (attachmentId: number) => Promise<MailOpResult>
+    /** 订阅同步完成/新邮件（返回取消函数） */
+    onMailSync: (cb: (result: MailSyncResult) => void) => () => void
+    /** 订阅未读总数变化（返回取消函数） */
+    onMailUnreadChanged: (cb: (total: number) => void) => () => void
+    /** 订阅同步中状态变化（返回取消函数） */
+    onMailSyncingChanged: (cb: (list: MailSyncingInfo[]) => void) => () => void
   }
 }

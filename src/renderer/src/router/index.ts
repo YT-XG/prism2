@@ -8,6 +8,7 @@ import SearchView from '@renderer/views/SearchView.vue'
 import Settings from '@renderer/views/Settings.vue'
 import Notifications from '@renderer/views/Notifications.vue'
 import DownloadManager from '@renderer/views/DownloadManager.vue'
+import Mail from '@renderer/views/Mail.vue'
 
 const router = createRouter({
   history: createWebHashHistory(),
@@ -22,6 +23,7 @@ const router = createRouter({
         { path: 'notes', name: 'notes', component: StickyNotes },
         { path: 'notifications', name: 'notifications', component: Notifications },
         { path: 'downloads', name: 'downloads', component: DownloadManager },
+        { path: 'mail', name: 'mail', component: Mail },
         { path: 'settings', name: 'settings', component: Settings }
       ]
     },

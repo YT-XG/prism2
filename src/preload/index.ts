@@ -24,6 +24,16 @@ import type {
   LegacyImportResult,
   LegacyImportState,
   LogOpenResult,
+  MailAccount,
+  MailAccountInput,
+  MailAuthTestResult,
+  MailboxInfo,
+  MailDownloadResult,
+  MailMessageDetail,
+  MailMessageSummary,
+  MailOpResult,
+  MailSyncResult,
+  MailSyncingInfo,
   MainWindowEvent,
   NotificationItem,
   NotificationNewPayload,
@@ -47,6 +57,7 @@ const L = SERVICE_CHANNELS.legacyImport
 const LC = SERVICE_CHANNELS.legacyCleanup
 const NT = SERVICE_CHANNELS.notification
 const LG = SERVICE_CHANNELS.log
+const M = SERVICE_CHANNELS.mail
 
 /** 供 vm 上下文判定的渲染进程受控 flag（可选） */
 function subscribe(channel: string, cb: (...args: unknown[]) => void): () => void {
@@ -241,6 +252,40 @@ const electronAPI: ElectronAPI = {
     getPath: () => ipcRenderer.invoke(LG.getPath) as Promise<string>,
     openFile: () => ipcRenderer.invoke(LG.openFile) as Promise<LogOpenResult>,
     openDirectory: () => ipcRenderer.invoke(LG.openDirectory) as Promise<LogOpenResult>
+  },
+
+  mail: {
+    getAccounts: () => ipcRenderer.invoke(M.getAccounts) as Promise<MailAccount[]>,
+    addAccount: (input: MailAccountInput) =>
+      ipcRenderer.invoke(M.addAccount, input) as Promise<{ ok: boolean; id?: number; error?: string }>,
+    testConnection: (input: MailAccountInput) =>
+      ipcRenderer.invoke(M.testConnection, input) as Promise<MailAuthTestResult>,
+    updateAccount: (input: MailAccountInput) =>
+      ipcRenderer.invoke(M.updateAccount, input) as Promise<MailOpResult>,
+    removeAccount: (accountId: number) =>
+      ipcRenderer.invoke(M.removeAccount, accountId) as Promise<MailOpResult>,
+    getMailboxes: (accountId: number) =>
+      ipcRenderer.invoke(M.getMailboxes, accountId) as Promise<MailboxInfo[]>,
+    getMessages: (mailboxId: number, offset?: number, limit?: number) =>
+      ipcRenderer.invoke(M.getMessages, mailboxId, offset, limit) as Promise<MailMessageSummary[]>,
+    getMessageDetail: (messageId: number) =>
+      ipcRenderer.invoke(M.getMessageDetail, messageId) as Promise<MailMessageDetail | null>,
+    markSeen: (messageId: number, seen: boolean) =>
+      ipcRenderer.invoke(M.markSeen, messageId, seen) as Promise<void>,
+    syncNow: (accountId?: number) =>
+      ipcRenderer.invoke(M.syncNow, accountId) as Promise<MailSyncResult | MailSyncResult[]>,
+    getSyncing: () => ipcRenderer.invoke(M.getSyncing) as Promise<MailSyncingInfo[]>,
+    getUnreadTotal: () => ipcRenderer.invoke(M.getUnreadTotal) as Promise<number>,
+    downloadAttachment: (attachmentId: number) =>
+      ipcRenderer.invoke(M.downloadAttachment, attachmentId) as Promise<MailDownloadResult>,
+    openAttachment: (attachmentId: number) =>
+      ipcRenderer.invoke(M.openAttachment, attachmentId) as Promise<MailOpResult>,
+    onMailSync: (cb: (result: MailSyncResult) => void) =>
+      subscribe(BROADCAST.mailSync, (result) => cb(result as MailSyncResult)),
+    onMailUnreadChanged: (cb: (total: number) => void) =>
+      subscribe(BROADCAST.mailUnreadChanged, (total) => cb(Number(total))),
+    onMailSyncingChanged: (cb: (list: MailSyncingInfo[]) => void) =>
+      subscribe(BROADCAST.mailSyncingChanged, (list) => cb(list as MailSyncingInfo[]))
   }
 }
 

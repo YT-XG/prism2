@@ -6,7 +6,7 @@
 
 ## 产品
 
-桌面效率工具集（剪贴板管理、翻译、Markdown 预览、多线程下载、局域网互传、全局搜索、JSON 工具、Claude Code 监控通知）。当前进度：**骨架 + 剪贴板 + 主页/便利贴/功能搜索/快捷文件夹 + 通知中心**已落地。
+桌面效率工具集（剪贴板管理、翻译、Markdown 预览、多线程下载、局域网互传、全局搜索、JSON 工具、Claude Code 监控通知、邮箱大师多账号收信）。当前进度：**骨架 + 剪贴板 + 主页/便利贴/功能搜索/快捷文件夹 + 通知中心 + 邮箱大师**已落地。
 
 ## 技术栈（创建时锁定，见 ../docs/prism2/migration-roadmap.md 的版本决策）
 
@@ -41,6 +41,7 @@ src/
 │   │   ├── legacyImportService.ts # 旧版 v1 剪贴板数据一键导入（读 v1 userData/Prism/clipboard.db 合并）
 │   │   ├── legacyCleanupService.ts # 旧版 v1 安装检测/静默卸载/旧数据选择性删除 + 运行期系统残留清理（注册表 + NSIS /S / shell.trashItem）
 │   │   ├── notificationService.ts # 通知中心（持久化通知 + 自绘通知浮窗统一呈现，不依赖系统通知）
+│   │   ├── mailService.ts         # 邮箱大师（多账号 IMAP 收信：授权码 safeStorage 加密入库 + 首次最近 200 封/UID 增量同步（UIDVALIDITY 变化自动重置 + 序号尾部对账兜底）+ 附件落盘 + 轮询（默认 1 分钟，设置可调）+ 新邮件通知 + 同步中状态广播（标题栏黄闪圆点 + 「xx 同步中」胶囊））
 │   │   ├── logService.ts          # 日志服务（定位 electron-log 落盘文件，托盘/设置页「查看日志」打开）
 │   │   └── trayService.ts
 │   └── utils/platform.ts         # broadcast()
@@ -61,8 +62,8 @@ src/
     ├── components/SnippetEditorDialog.vue # 片段添加/编辑弹窗（剪贴板页/主页共用，内容为富文本）
     ├── components/SnippetPlaceholderDialog.vue # 片段占位符输入弹窗（{{名称}}，填写后替换并粘贴）
     ├── components/ClipboardHistoryEditorDialog.vue # 剪贴板历史编辑弹窗（富文本）
-    ├── composables/useIpcListener.ts  useToast.ts  useTheme.ts  useFeatureSearch.ts  useGlobalSearch.ts（命令面板与主页搜索共用的全局搜索聚合逻辑）  useDrag.ts  useHomeModules.ts  useNotifications.ts  useNotificationPopups.ts  useClipboardText.ts（富文本/纯文本预览工具：stripHtml/itemText）  useSnippetPlaceholder.ts（片段占位符：提取/替换 {{名称}}，单例弹窗状态）  useWordSplit.ts（拆词工具：splitWords 按换行/空白/标点/中英边界切分词组，MAX_WORD_CHIPS 卡片展示上限）
-    ├── views/                    # MainPage / Home / ClipboardManager / StickyNotes / Notifications / NotificationPopup（自绘通知浮窗页） / SearchView（全局搜索独立窗页）/ Settings / DownloadManager（多线程下载管理页）
+    ├── composables/useIpcListener.ts  useToast.ts  useTheme.ts  useFeatureSearch.ts  useGlobalSearch.ts（命令面板与主页搜索共用的全局搜索聚合逻辑）  useDrag.ts  useHomeModules.ts  useNotifications.ts  useNotificationPopups.ts  useClipboardText.ts（富文本/纯文本预览工具：stripHtml/itemText）  useSnippetPlaceholder.ts（片段占位符：提取/替换 {{名称}}，单例弹窗状态）  useWordSplit.ts（拆词工具：splitWords 按换行/空白/标点/中英边界切分词组，MAX_WORD_CHIPS 卡片展示上限）  useMail.ts（邮箱大师共享状态：未读角标 + 账号列表 + onMailUnreadChanged/onMailSync 订阅）
+    ├── views/                    # MainPage / Home / ClipboardManager / StickyNotes / Notifications / NotificationPopup（自绘通知浮窗页） / SearchView（全局搜索独立窗页）/ Settings / DownloadManager（多线程下载管理页）/ Mail（邮箱大师：三栏布局 账号+文件夹 | 邮件列表 | 阅读窗，dompurify 净化 + sandbox iframe + CSP 渲染正文）
     └── router/  types.d.ts
 scripts/import-legacy-db.mjs      # 旧剪贴板数据一次性导入（已由应用内 legacyImportService 承接）
 scripts/make-server-manifest.mjs  # 生成自托管服务器版 latest.json（url 指向服务器绝对 https + sha256；见 ../docs/prism2/self-host-update.md）
@@ -108,7 +109,8 @@ scripts/make-server-manifest.mjs  # 生成自托管服务器版 latest.json（ur
 | 功能搜索（命令面板，Ctrl/Cmd+K） | ✅ |
 | 自动更新（Gitee 主源 + GitHub 兜底 latest.json；mac/win 统一检测+下载+sha256 校验；mac 原地替换 / win NSIS 静默；CI 自动生成 latest.json 并推送 Gitee 锚点 + 校验；换服务器只改锚点 redirect/mirrors、不改客户端） | ✅（接入就绪，待建仓库替换占位地址后实际发版） |
 | 下载管理（多线程分片下载引擎 + 任务持久化 + 主页/侧栏入口 + 下载管理页：进度/速度/ETA + 暂停/继续/取消/移除 + 打开文件所在目录） | ✅ |
-| 通知中心（持久化历史 + 未读/已读 + 自绘通知浮窗统一呈现（主窗口隐藏与否都弹，可承载链接/翻译等操作，不依赖系统通知）；剪贴板复制仅浮窗提醒不入中心，其余来源（更新等）落库 + 托盘未读 tooltip） | ✅ |
+| 通知中心（持久化历史 + 未读/已读 + 自绘通知浮窗统一呈现（主窗口隐藏与否都弹，可承载链接/翻译等操作，不依赖系统通知）；剪贴板复制仅浮窗提醒不入中心，其余来源（更新/新邮件等）落库 + 托盘未读 tooltip） | ✅ |
+| 邮箱大师（多账号 IMAP 收信：授权码 safeStorage 加密 + 多文件夹同步（首次最近 200 封/UID 增量）+ 三栏收件界面（账号+文件夹 | 邮件列表 | 阅读窗）+ 附件下载/打开 + 新邮件通知（notifyMail 开关）+ 侧栏未读角标 + 后台轮询（默认 1 分钟可调）+ 正文 dompurify 净化 + sandbox iframe + CSP 安全渲染；不包含发信） | ✅ |
 | 旧版数据引导导入（主页横幅一键合并 v1 剪贴板数据） | ✅ |
 | 旧版本（v1）检测 / 卸载 / 旧数据选择性清理（启动弹窗 + 设置页） | ✅ |
 | 翻译、Markdown 预览、文件互传、弹窗族、OCR | ⬜ 见 ../docs/prism2/migration-roadmap.md |

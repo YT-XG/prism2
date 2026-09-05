@@ -106,6 +106,7 @@ class NotificationService extends SqliteStore {
     if (!s.notificationsEnabled) return
     if (input.source === 'clipboard' && !s.notifyClipboard) return
     if (input.source === 'update' && !s.notifyUpdate) return
+    if (input.source === 'mail' && !s.notifyMail) return
 
     const persist = input.persist !== false
 

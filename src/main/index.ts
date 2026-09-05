@@ -16,6 +16,7 @@ import { downloadService } from './services/downloadService'
 import { legacyImportService } from './services/legacyImportService'
 import { legacyCleanupService } from './services/legacyCleanupService'
 import { notificationService } from './services/notificationService'
+import { mailService } from './services/mailService'
 import { logService } from './services/logService'
 import { registerImageScheme, registerImageProtocolHandler } from './utils/imageProtocol'
 import { isAppQuitting, markQuitting } from './utils/appState'
@@ -69,6 +70,7 @@ app.whenReady().then(async () => {
   downloadService.init()
   legacyImportService.init()
   legacyCleanupService.init()
+  mailService.init()
   logService.init()
 
   // 启动后显示主界面（首次可见）
@@ -98,6 +100,7 @@ app.on('before-quit', () => {
   stickyNotesService.stop()
   quickFoldersService.stop()
   notificationService.stop()
+  mailService.stop()
   settingsService.destroy()
   trayService.destroy()
   globalShortcut.unregisterAll()

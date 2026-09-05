@@ -120,6 +120,40 @@
       </section>
 
       <section class="setting-group">
+        <h3 class="group-title">邮箱大师</h3>
+        <div class="setting-row">
+          <div class="row-info">
+            <div class="row-name">新邮件通知</div>
+            <div class="row-desc">收到新邮件时右下角浮窗提醒（记入通知中心）</div>
+          </div>
+          <button
+            class="switch"
+            :class="{ 'is-on': settings.notifyMail }"
+            type="button"
+            @click="toggle('notifyMail')"
+          >
+            <span class="switch-knob"></span>
+          </button>
+        </div>
+        <div class="setting-row">
+          <div class="row-info">
+            <div class="row-name">同步间隔</div>
+            <div class="row-desc">后台自动检查新邮件的间隔（分钟，1-60）</div>
+          </div>
+          <input
+            class="num-input"
+            type="number"
+            min="1"
+            max="60"
+            step="1"
+            :value="settings.mailPollIntervalMin"
+            aria-label="同步间隔（分钟）"
+            @change="savePollInterval"
+          />
+        </div>
+      </section>
+
+      <section class="setting-group">
         <h3 class="group-title">数据备份</h3>
         <div class="setting-row">
           <div class="row-info">
@@ -334,17 +368,33 @@ const settings = ref<AppSettings>({
   notificationsEnabled: true,
   notifyClipboard: true,
   notifyUpdate: true,
+  notifyMail: true,
+  mailPollIntervalMin: 1,
   // 主题从当前 DOM 即时取（App 已同步），避免进入设置页等待 settings.get() 期间误显示「浅色」被选中
   theme: (document.documentElement.dataset.theme ?? 'light') as AppSettings['theme']
 })
 
-/** 布尔型开关设置键（通用/通知分组内的 switch） */
-type ToggleKey = 'autoStart' | 'notificationsEnabled' | 'notifyClipboard' | 'notifyUpdate'
+/** 布尔型开关设置键（通用/通知/邮箱分组内的 switch） */
+type ToggleKey =
+  | 'autoStart'
+  | 'notificationsEnabled'
+  | 'notifyClipboard'
+  | 'notifyUpdate'
+  | 'notifyMail'
 
 async function toggle(key: ToggleKey): Promise<void> {
   const next = !settings.value[key]
   settings.value[key] = next
   await window.electronAPI.settings.update({ [key]: next })
+}
+
+/** 保存邮箱轮询同步间隔（分钟，1-60；非法输入回退当前值） */
+async function savePollInterval(e: Event): Promise<void> {
+  const raw = Number((e.target as HTMLInputElement).value)
+  const min = Number.isFinite(raw) && raw >= 1 ? Math.min(60, Math.round(raw)) : settings.value.mailPollIntervalMin
+  settings.value.mailPollIntervalMin = min
+  await window.electronAPI.settings.update({ mailPollIntervalMin: min })
+  toast.success(`邮件同步间隔已设为 ${min} 分钟`)
 }
 
 type ThemeValue = 'light' | 'lavender' | 'mint' | 'dark'
@@ -754,6 +804,28 @@ onMounted(async () => {
   font-size: 12px;
   color: var(--text-muted);
   margin-top: 2px;
+}
+
+/* 数字输入（邮箱同步间隔等） */
+.num-input {
+  width: 72px;
+  height: 32px;
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-size: 13px;
+  text-align: center;
+  flex-shrink: 0;
+  transition: border-color var(--duration-fast) var(--ease-out-soft),
+    box-shadow var(--duration-fast) var(--ease-out-soft);
+}
+
+.num-input:focus {
+  outline: none;
+  border-color: var(--brand);
+  box-shadow: var(--ring);
 }
 
 /* 行内操作按钮组：多个按钮靠右相邻排布，避免被 space-between 拆散 */

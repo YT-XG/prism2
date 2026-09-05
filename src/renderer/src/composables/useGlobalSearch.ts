@@ -6,7 +6,7 @@
  */
 import { ref } from 'vue'
 import type { Component } from 'vue'
-import { House, ClipboardList, StickyNote, Settings2 } from '@lucide/vue'
+import { House, ClipboardList, StickyNote, Settings2, Mail } from '@lucide/vue'
 import type { QuickFolder, HistoryItem, FavoriteItem } from '@preload/ipc'
 
 /** 全局功能源：名称/别名命中即跳转对应页面（命令面板 launcher 态亦展示全部） */
@@ -33,6 +33,13 @@ export const GLOBAL_FEATURES: FeatureDef[] = [
     aliases: ['便签', '备忘', 'notes'],
     icon: StickyNote,
     to: '/mainPage/notes'
+  },
+  {
+    id: 'mail',
+    name: '邮箱大师',
+    aliases: ['邮箱', '邮件', '收信', 'mail'],
+    icon: Mail,
+    to: '/mainPage/mail'
   },
   { id: 'settings', name: '设置', aliases: ['选项', 'settings'], icon: Settings2, to: '/mainPage/settings' }
 ]

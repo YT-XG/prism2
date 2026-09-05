@@ -7,9 +7,13 @@
   >
     <header v-if="!isStandalone" class="titlebar drag-region">
       <div class="titlebar-brand">
-        <span class="brand-dot" :class="{ 'has-update': hasUpdate }"></span>
+        <span class="brand-dot" :class="{ 'has-update': hasUpdate, 'has-sync': isMailSyncing }"></span>
         <span class="titlebar-title">
           Prism <span class="titlebar-version">v{{ version }}</span>
+          <!-- 账号同步中：标题栏提示（黄闪圆点 + 胶囊） -->
+          <Transition name="pop">
+            <span v-if="mailSyncingText" class="sync-chip" :title="mailSyncingText">{{ mailSyncingText }}</span>
+          </Transition>
           <!-- 有可用更新：标题栏内提示，点击安装并重启 -->
           <Transition name="pop">
             <button
@@ -98,6 +102,7 @@ import SnippetPlaceholderDialog from '@renderer/components/SnippetPlaceholderDia
 import { subscribeOnUnmounted } from '@renderer/composables/useIpcListener'
 import { useFeatureSearch } from '@renderer/composables/useFeatureSearch'
 import { useHomeModules, type HomeModuleDef } from '@renderer/composables/useHomeModules'
+import { useMail } from '@renderer/composables/useMail'
 import type { UpdateStatusInfo } from '@preload/ipc'
 
 const router = useRouter()
@@ -107,6 +112,21 @@ const version = ref('')
 const isMaximized = ref(false)
 const shellRef = ref<HTMLElement | null>(null)
 const { open: openFeatureSearch } = useFeatureSearch()
+
+// ---------------------------------------------------------------------------
+// 标题栏账号同步提示：邮箱账号同步中时左上角圆点变黄闪烁 + 显示「xx 同步中」胶囊
+// ---------------------------------------------------------------------------
+const { syncing: mailSyncing, init: initMail, refreshSyncing: refreshMailSyncing } = useMail()
+
+/** 是否有账号正在同步（圆点黄闪） */
+const isMailSyncing = computed(() => mailSyncing.value.length > 0)
+
+/** 同步中提示文案（单账号显示名称，多账号显示数量） */
+const mailSyncingText = computed(() => {
+  const list = mailSyncing.value
+  if (!list.length) return ''
+  return list.length === 1 ? `${list[0].name} 同步中` : `${list.length} 个账号同步中`
+})
 
 // ---------------------------------------------------------------------------
 // 标题栏更新提示：有可用更新时左上角圆点变黄闪烁，版本号右侧出现「有新版本」胶囊
@@ -230,7 +250,11 @@ onMounted(() => {
   )
 
   subscribeOnUnmounted(() =>
-    window.electronAPI.window.onWindowEvent('reShow', playEnter)
+    window.electronAPI.window.onWindowEvent('reShow', () => {
+      playEnter()
+      // 隐藏期间同步状态广播被 onlyVisible 跳过，重显时兜底拉取
+      void refreshMailSyncing()
+    })
   )
 
   subscribeOnUnmounted(() =>
@@ -254,6 +278,10 @@ onMounted(() => {
       update.value = info
     })
   )
+
+  // 标题栏账号同步提示：订阅变化 + 初始兜底拉取（应用启动时可能已在同步中）
+  initMail()
+  void refreshMailSyncing()
 
   playEnter()
 })
@@ -422,10 +450,29 @@ onBeforeUnmount(() => {
   animation: pulse-soft 3.2s var(--ease-in-soft) infinite;
 }
 
-/* 有可用更新：圆点变黄并快速闪烁，作为醒目的更新提示 */
-.brand-dot.has-update {
+/* 有可用更新 / 账号同步中：圆点变黄并快速闪烁，作为醒目的状态提示 */
+.brand-dot.has-update,
+.brand-dot.has-sync {
   background: var(--warning);
   animation: flash-warn 1.1s var(--ease-in-soft) infinite;
+}
+
+/* 「账号同步中」提示胶囊：标题栏品牌区版本号右侧 */
+.sync-chip {
+  -webkit-app-region: no-drag;
+  display: inline-flex;
+  align-items: center;
+  margin-left: var(--sp-2);
+  padding: 2px 10px;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: var(--warning-soft);
+  color: var(--warning);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 18px;
+  vertical-align: middle;
+  white-space: nowrap;
 }
 
 /* 「有新版本」提示胶囊：标题栏品牌区版本号右侧，点击安装更新 */
