@@ -110,18 +110,21 @@ init()
   transform: translateY(8px);
 }
 
-/* 顶部居中（灵动岛式）：自上覆盖滑入，出场向上淡出 */
+/* 顶部居中（灵动岛式）：自上覆盖滑入，退场向顶部加速收拢缩小（反向坍塌回源头）
+   退场用 ease-in 加速离开、时长取 --duration-fast（快于入场的 --duration-base），
+   保证移除更利落；scale 让卡片看起来坍缩回屏幕顶端，形成空间连续性。 */
 .popup-top-enter-active {
   animation: notif-drop-in var(--duration-base) var(--ease-out-soft);
 }
 
 .popup-top-leave-active {
-  transition: opacity 160ms var(--ease-out-soft), transform 160ms var(--ease-out-soft);
+  transition: opacity var(--duration-fast) var(--ease-in-soft),
+    transform var(--duration-fast) var(--ease-in-soft);
 }
 
 .popup-top-leave-to {
   opacity: 0;
-  transform: translateY(-8px);
+  transform: translateY(-12px) scale(0.9);
 }
 </style>
 
