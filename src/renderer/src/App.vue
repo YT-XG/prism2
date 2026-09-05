@@ -7,7 +7,7 @@
   >
     <header v-if="!isStandalone" class="titlebar drag-region">
       <div class="titlebar-brand">
-        <span class="brand-dot" :class="{ 'has-update': hasUpdate, 'has-sync': isMailSyncing }"></span>
+        <span class="brand-dot" :class="{ 'has-update': hasUpdate, 'has-sync': isMailSyncing, 'has-error': hasError }"></span>
         <span class="titlebar-title">
           Prism <span class="titlebar-version">v{{ version }}</span>
           <!-- 账号同步中：标题栏提示（黄闪圆点 + 胶囊） -->
@@ -29,6 +29,10 @@
               </span>
               <span v-else>有新版本 v{{ update.version }}</span>
             </button>
+          </Transition>
+          <!-- 应用报错：标题栏提示（红点闪烁 + 版本号后错误提示，持续 1 分钟自动消失） -->
+          <Transition name="pop">
+            <span v-if="hasError" class="error-chip" :title="appErrorText">{{ appErrorText }}</span>
           </Transition>
         </span>
       </div>
@@ -159,6 +163,24 @@ function onUpdateChipClick(): void {
   }
 }
 
+// ---------------------------------------------------------------------------
+// 标题栏应用报错提示：主进程 error 级日志到达时红点闪烁 + 版本号后错误提示，持续 1 分钟自动消失
+// ---------------------------------------------------------------------------
+const appErrorText = ref('')
+let appErrorTimer: number | undefined
+
+/** 是否有待展示的报错（红点闪烁） */
+const hasError = computed(() => appErrorText.value !== '')
+
+/** 收到主进程报错广播：更新文案并重启 1 分钟倒计时（连续报错会顺延） */
+function onAppError(payload: { feature: string }): void {
+  appErrorText.value = payload.feature ? `${payload.feature}功能发生错误` : '软件发生错误'
+  window.clearTimeout(appErrorTimer)
+  appErrorTimer = window.setTimeout(() => {
+    appErrorText.value = ''
+  }, 60_000)
+}
+
 /** 主页显示设置面板：开关 + 模块清单 */
 const showModules = ref(false)
 const centerRef = ref<HTMLElement | null>(null)
@@ -283,12 +305,16 @@ onMounted(() => {
   initMail()
   void refreshMailSyncing()
 
+  // 标题栏应用报错提示：订阅主进程 error 级广播
+  subscribeOnUnmounted(() => window.electronAPI.onAppError(onAppError))
+
   playEnter()
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onGlobalKeydown)
   document.removeEventListener('pointerdown', onDocPointerDown)
+  window.clearTimeout(appErrorTimer)
 })
 </script>
 
@@ -457,6 +483,12 @@ onBeforeUnmount(() => {
   animation: flash-warn 1.1s var(--ease-in-soft) infinite;
 }
 
+/* 应用发生 error 级报错：圆点变红并快速闪烁，醒目提示故障 */
+.brand-dot.has-error {
+  background: var(--danger);
+  animation: flash-warn 0.9s var(--ease-in-soft) infinite;
+}
+
 /* 「账号同步中」提示胶囊：标题栏品牌区版本号右侧 */
 .sync-chip {
   -webkit-app-region: no-drag;
@@ -499,6 +531,24 @@ onBeforeUnmount(() => {
 .update-chip:hover {
   background: var(--warning);
   color: var(--text-on-primary);
+}
+
+/* 「发生错误」警示胶囊：标题栏品牌区版本号右侧，红底表示故障 */
+.error-chip {
+  -webkit-app-region: no-drag;
+  display: inline-flex;
+  align-items: center;
+  margin-left: var(--sp-2);
+  padding: 2px 10px;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 18px;
+  vertical-align: middle;
+  white-space: nowrap;
 }
 
 /* 路由切换过渡：出场淡出上移，入场淡入上移 */

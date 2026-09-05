@@ -42,7 +42,7 @@ src/
 │   │   ├── legacyCleanupService.ts # 旧版 v1 安装检测/静默卸载/旧数据选择性删除 + 运行期系统残留清理（注册表 + NSIS /S / shell.trashItem）
 │   │   ├── notificationService.ts # 通知中心（持久化通知 + 自绘通知浮窗统一呈现，不依赖系统通知）
 │   │   ├── mailService.ts         # 邮箱大师（多账号 IMAP 收信：授权码 safeStorage 加密入库 + 首次最近 200 封/UID 增量同步（UIDVALIDITY 变化自动重置 + 序号尾部对账兜底）+ 附件落盘 + 轮询（默认 1 分钟，设置可调）+ 新邮件通知 + 同步中状态广播（标题栏黄闪圆点 + 「xx 同步中」胶囊））
-│   │   ├── logService.ts          # 日志服务（定位 electron-log 落盘文件，托盘/设置页「查看日志」打开；warn/error 经 hooks 独立落盘 error.log，设置页「查看错误日志」）
+│   │   ├── logService.ts          # 日志服务（定位 electron-log 落盘文件，托盘/设置页「查看日志」打开；warn/error 经 hooks 独立落盘 error.log，设置页「查看错误日志」；error 级再经 notifyAppError 广播，驱动标题栏红点闪烁报错提示）
 │   │   └── trayService.ts
 │   └── utils/platform.ts         # broadcast()
 │   └── utils/windowState.ts      # 主窗口尺寸/最大化状态持久化（userData/window-state.json）

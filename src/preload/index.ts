@@ -7,6 +7,7 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { BROADCAST, SERVICE_CHANNELS, WINDOW_CHANNELS } from './ipc'
 import type {
+  AppErrorPayload,
   AppSettings,
   BackupExportResult,
   BackupImportMode,
@@ -71,6 +72,9 @@ const electronAPI: ElectronAPI = {
 
   /** 拖放文件取真实磁盘路径（webUtils 需在 preload 内调用） */
   getPathForFile: (file) => webUtils.getPathForFile(file),
+
+  /** 订阅应用 error 级报错（主进程 error 日志到达时推送，标题栏红点提示用） */
+  onAppError: (cb) => subscribe(BROADCAST.appError, (p) => cb(p as AppErrorPayload)),
 
   window: {
     minimize: () => ipcRenderer.send(mainPage.toMain.minimize),

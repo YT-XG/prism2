@@ -12,8 +12,9 @@ import { app, ipcMain, shell } from 'electron'
 import { existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import log from 'electron-log'
-import { SERVICE_CHANNELS } from '@preload/ipc'
+import { BROADCAST, SERVICE_CHANNELS } from '@preload/ipc'
 import type { LogOpenResult } from '@preload/ipc'
+import { broadcast } from '../utils/platform'
 
 /** 错误日志实例：仅记录 warn/error，独立落盘 userData/logs/error.log */
 export const errorLog = log.create({ logId: 'error' })
@@ -22,6 +23,37 @@ errorLog.transports.file.level = 'warn'
 errorLog.transports.console.level = false
 // 与 main.log 同目录（app.getPath('logs')），懒求值保证 app ready 后可用
 errorLog.transports.file.resolvePathFn = () => join(app.getPath('logs'), 'error.log')
+
+/** error 日志消息前缀标签 → 标题栏提示用的友好功能名；无映射（class 名为空/未收录）视为无法归类 */
+const ERROR_TAG_FEATURE: Record<string, string> = {
+  MailService: '邮件',
+  ClipboardService: '剪贴板',
+  StickyNotesService: '便利贴',
+  QuickFoldersService: '快捷文件夹',
+  UpdateService: '更新',
+  DownloadService: '下载',
+  NotificationService: '通知',
+  SettingsService: '设置',
+  LogService: '日志',
+  LegacyImportService: '旧版导入',
+  LegacyCleanupService: '旧版卸载',
+  MainPageFrame: '主界面',
+  SearchFrame: '搜索',
+  NotificationPopupFrame: '通知浮窗'
+}
+
+/** 从日志消息推导可归类的功能名；无法识别返回空串 */
+function deriveErrorFeature(data: unknown[]): string {
+  const first = String(data[0] ?? '')
+  const m = first.match(/^\[([^\]]+)\]/)
+  if (!m) return ''
+  return ERROR_TAG_FEATURE[m[1]] ?? ''
+}
+
+/** 主进程发生 error 级报错：广播给所有窗口，驱动标题栏红点闪烁 + 版本号后错误提示 */
+export function notifyAppError(data: unknown[]): void {
+  broadcast(BROADCAST.appError, { feature: deriveErrorFeature(data) })
+}
 
 class LogService {
   /** 日志文件完整路径（electron-log 文件传输目标的落盘位置） */

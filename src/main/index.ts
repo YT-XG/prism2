@@ -17,8 +17,9 @@ import { legacyImportService } from './services/legacyImportService'
 import { legacyCleanupService } from './services/legacyCleanupService'
 import { notificationService } from './services/notificationService'
 import { mailService } from './services/mailService'
-import { errorLog, logService } from './services/logService'
+import { errorLog, logService, notifyAppError } from './services/logService'
 import { registerImageScheme, registerImageProtocolHandler } from './utils/imageProtocol'
+import { registerMailImageScheme, registerMailImageProtocolHandler } from './utils/mailImageProtocol'
 import { isAppQuitting, markQuitting } from './utils/appState'
 
 // ── 全局错误捕获 ──
@@ -37,8 +38,13 @@ log.transports.console.level = 'info'
 // 报错独立文件：main.log 保持全量（info+）；warn/error 级消息同步写入 error.log（errorLog 实例），便于排查问题
 log.hooks.push((message, transport) => {
   if (transport === log.transports.file && (message.level === 'error' || message.level === 'warn')) {
-    if (message.level === 'error') errorLog.error(...message.data)
-    else errorLog.warn(...message.data)
+    if (message.level === 'error') {
+      errorLog.error(...message.data)
+      // error 级报错：广播标题栏红色闪烁提示（仅 error，避免 warn 瞬态重试频繁打扰）
+      notifyAppError(message.data)
+    } else {
+      errorLog.warn(...message.data)
+    }
   }
   return message
 })
@@ -46,6 +52,8 @@ log.info('[App] 启动，系统:', JSON.stringify({ os: `${platform()} ${release
 
 // ── 剪贴板图片自定义协议：须在 app ready 前注册特权 ──
 registerImageScheme()
+// ── 邮件内嵌图片自定义协议：同样须在 ready 前注册特权 ──
+registerMailImageScheme()
 
 // ── 单实例锁 ──
 if (!app.requestSingleInstanceLock()) {
@@ -61,6 +69,8 @@ app.whenReady().then(async () => {
 
   // 注册剪贴板图片自定义协议（渲染端 <img> 直接引用，免 base64 过 IPC）
   registerImageProtocolHandler()
+  // 注册邮件内嵌图片自定义协议（cid → 本地附件，解析正文内嵌图）
+  registerMailImageProtocolHandler()
 
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)

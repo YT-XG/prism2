@@ -375,6 +375,12 @@ export interface MailSyncingInfo {
   name: string
 }
 
+/** 应用错误通知（标题栏红色闪烁提示用）。feature 为空串表示无法归类，渲染端显示「软件发生错误」 */
+export interface AppErrorPayload {
+  /** 已归类的功能名（如「邮件」「剪贴板」）；空串 = 无法识别 */
+  feature: string
+}
+
 /** 下载附件结果 */
 export interface MailDownloadResult {
   ok: boolean
@@ -770,7 +776,9 @@ export const BROADCAST = {
   /** 邮箱未读总数变化（载荷：number，侧栏/左栏角标刷新） */
   mailUnreadChanged: 'broadcast:mail-unread-changed',
   /** 账号同步中状态变化（载荷：MailSyncingInfo[]，标题栏「同步中」指示） */
-  mailSyncingChanged: 'broadcast:mail-syncing-changed'
+  mailSyncingChanged: 'broadcast:mail-syncing-changed',
+  /** 应用发生 error 级报错（载荷：AppErrorPayload，标题栏左侧红点闪烁 + 版本号后错误提示） */
+  appError: 'broadcast:app-error'
 } as const
 
 // ---------------------------------------------------------------------------
@@ -791,6 +799,8 @@ export interface ElectronAPI {
   platform: string
   /** 拖放/文件场景取真实路径（renderer 内 webUtils，需 preload 暴露） */
   getPathForFile: (file: File) => string
+  /** 订阅应用 error 级报错（返回取消函数）。主进程 error 日志到达时推送，标题栏红点提示用 */
+  onAppError: (cb: (payload: AppErrorPayload) => void) => () => void
   window: {
     minimize: () => void
     hideAfterAnimation: () => void

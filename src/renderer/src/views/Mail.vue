@@ -412,16 +412,37 @@ async function toggleSeen(): Promise<void> {
   if (selectedAccountId.value != null) await refreshMailboxes(selectedAccountId.value)
 }
 
+/** 把正文里的内嵌图片 `src="cid:xxx"` 改写为自定义协议 URL（指向本地邮件图片） */
+function rewriteInlineImages(html: string): string {
+  const list = detail.value?.attachments ?? []
+  const cidMap = new Map<string, string>()
+  const norm = (c: string): string => c.replace(/^<|>$/g, '').trim()
+  for (const a of list) {
+    if (!a.cid) continue
+    cidMap.set(
+      norm(a.cid),
+      `prism-mail-attachment://${a.messageId}/${encodeURIComponent(a.filename)}`
+    )
+  }
+  if (!cidMap.size) return html
+  return html.replace(/src=["']cid:([^"']+)["']/gi, (m, cidValue: string) => {
+    const url = cidMap.get(norm(cidValue))
+    return url ? `src="${url}"` : m
+  })
+}
+
 /** 正文安全渲染：dompurify 净化 + sandbox iframe + CSP 禁外部资源 */
 const readerDoc = computed(() => {
   const html = detail.value?.htmlBody ?? ''
   if (!html) return ''
-  const clean = DOMPurify.sanitize(html, {
+  const clean = DOMPurify.sanitize(rewriteInlineImages(html), {
     FORBID_TAGS: ['style', 'form', 'input', 'button', 'textarea', 'select', 'iframe', 'object', 'embed', 'link', 'meta', 'base'],
-    FORBID_ATTR: ['style', 'formaction', 'action', 'onerror', 'onload', 'onclick', 'onmouseover']
+    FORBID_ATTR: ['style', 'formaction', 'action', 'onerror', 'onload', 'onclick', 'onmouseover'],
+    // 放行自定义的邮件内嵌图片协议（默认会拦截非标准 scheme）
+    ALLOWED_URI_REGEXP: /^(?:(?:(?:f|ht)tps?|mailto|tel|callto|sms|cid|xmpp|prism-mail-attachment):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i
   })
   return `<!DOCTYPE html><html><head><meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data: prism-mail-attachment:; style-src 'unsafe-inline'">
 <style>body{font-family:system-ui,sans-serif;margin:0;padding:0;word-break:break-word;color:#1f1f1f;font-size:14px;line-height:1.7}img{max-width:100%;height:auto}</style>
 </head><body>${clean}</body></html>`
 })
