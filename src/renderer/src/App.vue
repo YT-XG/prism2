@@ -179,6 +179,19 @@ watch(
   { immediate: true }
 )
 
+watch(
+  () => update.value.progress,
+  () => {
+    if (update.value.status === 'downloading') {
+      setStatus('update', {
+        tone: 'warning',
+        icon: ArrowUp,
+        text: `正在下载 v${update.value.version} ${Math.round(update.value.progress ?? 0)}%`
+      })
+    }
+  }
+)
+
 /** 右上角更新按钮的 title 文案 */
 const updateButtonTitle = computed(() => {
   switch (update.value.status) {
