@@ -31,6 +31,8 @@ function init(): void {
       push(payload.item)
     })
   )
+  // 订阅完成后上报主进程：浮窗渲染端已就绪，主进程可补发就绪前暂存的通知（防首条复制通知丢失）
+  window.electronAPI.window.notificationPopupReady()
 }
 
 /** 入卡片栈；邮件通知长时悬停（不排自动消失），其余按 POPUP_DURATION 自动消失 */

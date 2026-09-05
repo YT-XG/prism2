@@ -41,8 +41,8 @@ src/
 │   │   ├── legacyImportService.ts # 旧版 v1 剪贴板数据一键导入（读 v1 userData/Prism/clipboard.db 合并）
 │   │   ├── legacyCleanupService.ts # 旧版 v1 安装检测/静默卸载/旧数据选择性删除 + 运行期系统残留清理（注册表 + NSIS /S / shell.trashItem）
 │   │   ├── notificationService.ts # 通知中心（持久化通知 + 自绘通知浮窗统一呈现，不依赖系统通知）
-│   │   ├── mailService.ts         # 邮箱大师（多账号 IMAP 收信：授权码 safeStorage 加密入库 + 首次最近 200 封/UID 增量同步（UIDVALIDITY 变化自动重置 + 序号尾部对账兜底）+ 附件落盘 + 轮询（默认 1 分钟，设置可调）+ 新邮件通知 + 同步中状态广播（标题栏黄闪圆点 + 「xx 同步中」胶囊））
-│   │   ├── logService.ts          # 日志服务（定位 electron-log 落盘文件，托盘/设置页「查看日志」打开；warn/error 经 hooks 独立落盘 error.log，设置页「查看错误日志」；error 级再经 notifyAppError 广播，驱动标题栏红点闪烁报错提示）
+│   │   ├── mailService.ts         # 邮箱大师（多账号 IMAP 收信：授权码 safeStorage 加密入库 + 首次最近 200 封/UID 增量同步（UIDVALIDITY 变化自动重置 + 序号尾部对账兜底）+ 附件落盘 + 轮询（默认 1 分钟，设置可调）+ 新邮件通知（仅收件箱）+ 同步中状态广播（标题栏状态中心「xx 同步中」条目））
+│   │   ├── logService.ts          # 日志服务（定位 electron-log 落盘文件，托盘/设置页「查看日志」打开；warn/error 经 hooks 独立落盘 error.log，设置页「查看错误日志」；error 级再经 notifyAppError 广播，驱动标题栏状态区报错提示）
 │   │   └── trayService.ts
 │   └── utils/platform.ts         # broadcast()
 │   └── utils/windowState.ts      # 主窗口尺寸/最大化状态持久化（userData/window-state.json）
@@ -54,7 +54,7 @@ src/
 │   ├── index.d.ts
 └── renderer/src/
     ├── assets/styles/            # tokens.css / animations.css / main.css
-    ├── components/ui/            # 设计系统组件层（含 RichTextEditor.vue 富文本编辑器、UiShortcutRecorder.vue 快捷键录制组件（点击录制组合键，Esc 取消 / Backspace 清除，录制期间经 settings.suspendShortcuts 暂停全局快捷键））
+    ├── components/ui/            # 设计系统组件层（含 RichTextEditor.vue 富文本编辑器、StatusCenter.vue 全局状态中心（标题栏品牌区后统一呈现邮箱同步/应用报错/软件更新/toast 状态条目，独立搜索窗退化为右上角浮动、通知浮窗不显示）、UiShortcutRecorder.vue 快捷键录制组件（点击录制组合键，Esc 取消 / Backspace 清除，录制期间经 settings.suspendShortcuts 暂停全局快捷键））
     ├── components/FeatureSearchPanel.vue  # 功能搜索命令面板（Ctrl/Cmd+K 独立搜索窗 SearchFrame 与主页内嵌共用；功能跳转 + 剪贴板/片段/快捷文件夹数据搜索，文件夹回车即在资源管理器打开；剪贴板历史结果条目下自动展示分词胶囊（splitWords），点某词即只粘贴该词；standalone 模式铺满独立窗、失焦自动隐藏、开关无过渡，重开由主进程 SearchFrame 每次显示时发的 show 事件（onSearchShow）显式驱动，不依赖 visibilitychange；与主页合并记录框共用同一全局搜索逻辑 useGlobalSearch）
     ├── components/HomeNoteCard.vue        # 贴到主页的便利贴可拖拽卡片
     ├── components/QuickFolderPanel.vue    # 主页快捷文件夹单面板（可拖拽/缩放，框内列表行展示 + 行拖拽排序 + 行内重命名别名 + 悬浮/聚焦操作 + 失效标记 + 空态引导）
@@ -62,7 +62,7 @@ src/
     ├── components/SnippetEditorDialog.vue # 片段添加/编辑弹窗（剪贴板页/主页共用，内容为富文本）
     ├── components/SnippetPlaceholderDialog.vue # 片段占位符输入弹窗（{{名称}}，填写后替换并粘贴）
     ├── components/ClipboardHistoryEditorDialog.vue # 剪贴板历史编辑弹窗（富文本）
-    ├── composables/useIpcListener.ts  useToast.ts  useTheme.ts  useFeatureSearch.ts  useGlobalSearch.ts（命令面板与主页搜索共用的全局搜索聚合逻辑）  useDrag.ts  useHomeModules.ts  useNotifications.ts  useNotificationPopups.ts  useClipboardText.ts（富文本/纯文本预览工具：stripHtml/itemText）  useSnippetPlaceholder.ts（片段占位符：提取/替换 {{名称}}，单例弹窗状态）  useWordSplit.ts（拆词工具：splitWords 按换行/空白/标点/中英边界切分词组，MAX_WORD_CHIPS 卡片展示上限）  useMail.ts（邮箱大师共享状态：未读角标 + 账号列表 + onMailUnreadChanged/onMailSync 订阅）
+    ├── composables/useIpcListener.ts  useToast.ts  useStatusCenter.ts（全局状态中心：同步/报错/更新/toast 统一条目，StatusCenter.vue 渲染）  useTheme.ts  useFeatureSearch.ts  useGlobalSearch.ts（命令面板与主页搜索共用的全局搜索聚合逻辑）  useDrag.ts  useHomeModules.ts  useNotifications.ts  useNotificationPopups.ts  useClipboardText.ts（富文本/纯文本预览工具：stripHtml/itemText）  useSnippetPlaceholder.ts（片段占位符：提取/替换 {{名称}}，单例弹窗状态）  useWordSplit.ts（拆词工具：splitWords 按换行/空白/标点/中英边界切分词组，MAX_WORD_CHIPS 卡片展示上限）  useMail.ts（邮箱大师共享状态：未读角标 + 账号列表 + onMailUnreadChanged/onMailSync 订阅）
     ├── views/                    # MainPage / Home / ClipboardManager / StickyNotes / Notifications / NotificationPopup（自绘通知浮窗页） / SearchView（全局搜索独立窗页）/ Settings / DownloadManager（多线程下载管理页）/ Mail（邮箱大师：三栏布局 账号+文件夹 | 邮件列表 | 阅读窗，dompurify 净化 + sandbox iframe + CSP 渲染正文）
     └── router/  types.d.ts
 scripts/import-legacy-db.mjs      # 旧剪贴板数据一次性导入（已由应用内 legacyImportService 承接）
@@ -93,7 +93,7 @@ scripts/make-server-manifest.mjs  # 生成自托管服务器版 latest.json（ur
   - **主源**：`https://gitee.com/{GITEE_ANCHOR_REPO}/raw/{GITEE_ANCHOR_BRANCH}/latest.json`（Gitee raw，国内访问好；CI 每次发版 `git push -f gitee master` 覆盖该文件，等效「始终最新」）。**兜底**：`https://github.com/{UPDATE_ANCHOR_REPO}/releases/latest/download/latest.json`（GitHub「latest」别名，永远指向最新 release；**旧客户端 v2.0.4–v2.0.8 仍唯一指向这里，必须一直可达且自包含**）。**换服务器不改客户端**——在该锚点的 `latest.json` 加 `redirect`（指向新清单）+ `mirrors[]`（二进制备用源，字段已声明、下载引擎暂未消费），客户端自动跟随。`UPDATE_ANCHOR_REPO`/`GITEE_ANCHOR_REPO`（`src/main/services/updateService.ts` 常量）是唯一源（构建期常量，**不读持久化设置**，避免 settings.json 残留旧值污染更新源）。
   - **检测 + 下载（mac/win 统一）**：`updateService` 读锚点 manifest（`redirect` 跟随 + `binaries` 按平台取安装包）→ `semver` 比较 → 多线程下载引擎下载到 `userData/update-staging/<version>/` → SHA-256 校验。
   - **安装（仅此层平台分支）**：mac 无签名**原地替换 `.app`**（`Contents` 原子替换 + 失败回滚 + relaunch，无 Gatekeeper 复弹）；win 下载 NSIS `*-setup.exe`，`/S /D=<安装目录>` 静默覆盖安装（需 Windows 真机实测）。
-- UI：设置页「检查更新」+ 启动（打包后）延迟 3s 静默检查；发现新版本自动下载，标题栏「有新版本」胶囊（下载完成点击安装并重启）+ 左上角品牌圆点变黄闪烁，设置页展示进度与「安装并重启」；更新下载复用 `downloadEngine`（独立实例，不混入用户下载列表）。
+- UI：设置页「检查更新」+ 启动（打包后）延迟 3s 静默检查；发现新版本自动下载，标题栏右上角（最小化左侧）上箭头更新按钮（可手动检查；下载中变黄显示进度角标，就绪变品牌色点击安装并重启）+ 品牌区后状态中心显示更新条目（检查中 / 下载中进度 / 发现新版本与就绪可点击操作），设置页展示进度与「安装并重启」；更新下载复用 `downloadEngine`（独立实例，不混入用户下载列表）。
 - **旧版升级到 v2**：v1 的 `githubRepo` 默认指向本仓库，v1 用户检查更新会看到 v2 并下载安装；两者并存，v2 内一键导入 v1 数据。
 - ⚠️ 仓库地址占位：`electron-builder.yml`、`.github/workflows/release.yml`、`dev-app-update.yml` 与 v1 `settingsService.ts` 的 githubRepo 均为 `YT-XG/prism2` 占位；`updateService.ts` 的 `GITEE_ANCHOR_REPO` 为 `yt-xg/prism2`（须与 CI 的 `GITEE_ANCHOR_REPO` secret 一致），建好正式仓库后需统一替换。
 
@@ -110,7 +110,7 @@ scripts/make-server-manifest.mjs  # 生成自托管服务器版 latest.json（ur
 | 自动更新（Gitee 主源 + GitHub 兜底 latest.json；mac/win 统一检测+下载+sha256 校验；mac 原地替换 / win NSIS 静默；CI 自动生成 latest.json 并推送 Gitee 锚点 + 校验；换服务器只改锚点 redirect/mirrors、不改客户端） | ✅（接入就绪，待建仓库替换占位地址后实际发版） |
 | 下载管理（多线程分片下载引擎 + 任务持久化 + 主页/侧栏入口 + 下载管理页：进度/速度/ETA + 暂停/继续/取消/移除 + 打开文件所在目录） | ✅ |
 | 通知中心（持久化历史 + 未读/已读 + 自绘通知浮窗统一呈现（主窗口隐藏与否都弹，可承载链接/翻译等操作，不依赖系统通知）；剪贴板复制仅浮窗提醒不入中心，其余来源（更新/新邮件等）落库 + 托盘未读 tooltip） | ✅ |
-| 邮箱大师（多账号 IMAP 收信：授权码 safeStorage 加密 + 多文件夹同步（首次最近 200 封/UID 增量）+ 三栏收件界面（账号+文件夹 | 邮件列表 | 阅读窗）+ 附件下载/打开 + 新邮件通知（notifyMail 开关）+ 侧栏未读角标 + 后台轮询（默认 1 分钟可调）+ 正文 dompurify 净化 + sandbox iframe + CSP 安全渲染；不包含发信） | ✅ |
+| 邮箱大师（多账号 IMAP 收信：授权码 safeStorage 加密 + 多文件夹同步（首次最近 200 封/UID 增量）+ 三栏收件界面（账号+文件夹 | 邮件列表 | 阅读窗）+ 附件下载/打开 + 新邮件通知（仅收件箱，notifyMail 开关）+ 侧栏未读角标 + 后台轮询（默认 1 分钟可调）+ 正文 dompurify 净化 + sandbox iframe + CSP 安全渲染；不包含发信） | ✅ |
 | 旧版数据引导导入（主页横幅一键合并 v1 剪贴板数据） | ✅ |
 | 旧版本（v1）检测 / 卸载 / 旧数据选择性清理（启动弹窗 + 设置页） | ✅ |
 | 翻译、Markdown 预览、文件互传、弹窗族、OCR | ⬜ 见 ../docs/prism2/migration-roadmap.md |

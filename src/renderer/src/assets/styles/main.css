@@ -22,7 +22,6 @@ body {
   color: var(--text-primary);
   background: transparent;
   -webkit-font-smoothing: antialiased;
-  user-select: none;
 }
 
 #app {

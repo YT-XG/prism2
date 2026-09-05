@@ -14,8 +14,7 @@ import { SqliteStore } from './db/sqliteDatabase'
 import { settingsService } from './settingsService'
 import { trayService } from './trayService'
 import { windowFactory } from '../frame/WindowFactory'
-import { broadcast } from '../utils/platform'
-import { BROADCAST, SERVICE_CHANNELS } from '@preload/ipc'
+import { SERVICE_CHANNELS } from '@preload/ipc'
 import type { NotificationItem, NotificationNewPayload, NotificationPopupPosition, NotificationSource, NotificationType } from '@preload/ipc'
 
 /** 去重窗口：同来源+标题+内容在窗口期内重复仅刷新时间（ms） */
@@ -153,12 +152,12 @@ class NotificationService extends SqliteStore {
       unread = this.getUnread()
     }
 
-    // 投递：统一唤起自绘通知浮窗（主窗口隐藏与否都弹），浮窗渲染端订阅 onNew 展示
+    // 投递：统一唤起自绘通知浮窗（主窗口隐藏与否都弹），浮窗渲染端订阅 onNew 展示。
+    // 经 NotificationFrame.deliver 投递：渲染端未就绪时暂存，就绪后补发（防首条通知丢失）。
     const position: NotificationPopupPosition = s.notificationPosition
-    windowFactory.getNotificationFrame().showPopups(position)
-    broadcast(BROADCAST.notificationNew, { item, unread, position } satisfies NotificationNewPayload, {
-      onlyVisible: true
-    })
+    const frame = windowFactory.getNotificationFrame()
+    frame.showPopups(position)
+    frame.deliver({ item, unread, position } satisfies NotificationNewPayload)
   }
 
   /** 全部通知记录（按时间倒序，至多 200 条，避免列表与 DOM 无界增长） */

@@ -28,6 +28,7 @@ import type {
   MailAttachment,
   MailAuthTestResult,
   MailboxInfo,
+  MailMarkAllReadResult,
   MailMessageDetail,
   MailMessageSummary,
   MailOpResult,
@@ -99,14 +100,18 @@ const SPECIAL_USE_NAME_MAP: Record<string, string> = {
 }
 
 /** 已读状态回写 IMAP 所需的最小连接信息 */
-interface SeenStoreInfo {
-  uid: number
+interface SeenConnInfo {
   path: string
   email: string
   host: string
   port: number
   ssl: boolean
   passwordEnc: string
+}
+
+/** 单个邮件已读状态回写所需信息 */
+interface SeenStoreInfo extends SeenConnInfo {
+  uid: number
 }
 
 /** 单个文件夹同步结果 */
@@ -527,6 +532,36 @@ class MailService extends SqliteStore {
     )
   }
 
+  /** 当前文件夹全部标为已读：先改 DB，再异步批量回写 IMAP（best-effort） */
+  markAllRead(mailboxId: number): MailMarkAllReadResult {
+    const id = Number(mailboxId)
+    const r = this.one<Record<string, unknown>>(
+      `SELECT mb.path, a.email, a.host, a.port, a.ssl, a.password_enc
+       FROM mailboxes mb
+       JOIN accounts a ON mb.account_id = a.id
+       WHERE mb.id = ?`,
+      [id]
+    )
+    if (!r) return { ok: false, count: 0 }
+    const unread = this.all<{ uid: number }>('SELECT uid FROM messages WHERE mailbox_id = ? AND seen = 0', [id])
+    if (!unread.length) return { ok: true, count: 0 }
+    this.run('UPDATE messages SET seen = 1 WHERE mailbox_id = ? AND seen = 0', [id])
+    this.save()
+    this.#emitUnread()
+    void this.#storeSeenFlags(
+      {
+        path: String(r.path),
+        email: String(r.email),
+        host: String(r.host),
+        port: Number(r.port),
+        ssl: Boolean(r.ssl),
+        passwordEnc: String(r.password_enc)
+      },
+      unread.map((u) => Number(u.uid))
+    )
+    return { ok: true, count: unread.length }
+  }
+
   /** 全部账号未读总数（侧栏角标） */
   getUnreadTotal(): number {
     return this.one<{ n: number }>('SELECT COUNT(*) AS n FROM messages WHERE seen = 0')?.n ?? 0
@@ -619,23 +654,30 @@ class MailService extends SqliteStore {
         )
         let newCount = 0
         let firstSubject = ''
+        let inboxNewCount = 0
+        let inboxFirstSubject = ''
         for (const mb of mailboxes) {
           const outcome = await this.#syncMailbox(client, mb)
           newCount += outcome.newCount
           if (!firstSubject) firstSubject = outcome.firstSubject
+          // 仅收件箱计入通知：发件/其他文件夹同步到的新邮件不弹通知
+          if (this.#isInboxMailbox(mb)) {
+            inboxNewCount += outcome.newCount
+            if (!inboxFirstSubject) inboxFirstSubject = outcome.firstSubject
+          }
         }
         this.run('UPDATE accounts SET last_sync_at = ? WHERE id = ?', [Date.now(), accountId])
         this.save()
 
-        if (newCount > 0) {
+        if (inboxNewCount > 0) {
           notificationService.notify({
             type: 'info',
             source: 'mail',
             title: String(acc.name) || String(acc.email),
             message:
-              newCount === 1
-                ? `新邮件：${firstSubject || '(无主题)'}`
-                : `收到 ${newCount} 封新邮件${firstSubject ? `（如：${firstSubject.slice(0, SUBJECT_PREVIEW_LEN)}）` : ''}`
+              inboxNewCount === 1
+                ? `新邮件：${inboxFirstSubject || '(无主题)'}`
+                : `收到 ${inboxNewCount} 封新邮件${inboxFirstSubject ? `（如：${inboxFirstSubject.slice(0, SUBJECT_PREVIEW_LEN)}）` : ''}`
           })
         }
         const result: MailSyncResult = { ok: true, accountId, newCount }
@@ -941,6 +983,13 @@ class MailService extends SqliteStore {
     return MAILBOX_NAME_MAP[raw.toLowerCase()] ?? raw
   }
 
+  /** 判断文件夹是否为收件箱：RFC 3501 保留名 INBOX（大小写不敏感）；个别服务器以本地化路径/名称呈现 */
+  #isInboxMailbox(mb: Record<string, unknown>): boolean {
+    const path = String(mb.path ?? '').toLowerCase()
+    const name = String(mb.name ?? '')
+    return path === 'inbox' || path === '收件箱' || name === '收件箱'
+  }
+
   /** 输入归一化 + 校验（新增/测试连接用）；非法返回 Error */
   #validateInput(input: MailAccountInput): MailAccountInput | Error {
     const name = String(input?.name ?? '').trim()
@@ -1059,6 +1108,27 @@ class MailService extends SqliteStore {
     }
   }
 
+  /** 批量已读回写 IMAP（best-effort，失败仅记日志；uid 集一次 STORE） */
+  async #storeSeenFlags(info: SeenConnInfo, uids: number[]): Promise<void> {
+    if (!uids.length) return
+    const client = this.#newClient(info.email, info.host, info.port, info.ssl, this.#decrypt(info.passwordEnc))
+    try {
+      await client.connect()
+      try {
+        await client.mailboxOpen(info.path)
+        await client.messageFlagsAdd(uids, ['\\Seen'], { uid: true })
+      } finally {
+        try {
+          await client.logout()
+        } catch {
+          /* 忽略 */
+        }
+      }
+    } catch (err) {
+      log.warn('[MailService] 批量回写 IMAP 已读状态失败:', err)
+    }
+  }
+
   /** 广播未读总数变化 */
   #emitUnread(): void {
     broadcast(BROADCAST.mailUnreadChanged, this.getUnreadTotal(), { onlyVisible: true })
@@ -1085,6 +1155,7 @@ class MailService extends SqliteStore {
     ipcMain.handle(M.markSeen, (_e, messageId: number, seen: boolean) =>
       this.markSeen(Number(messageId), Boolean(seen))
     )
+    ipcMain.handle(M.markAllRead, (_e, mailboxId: number) => this.markAllRead(Number(mailboxId)))
     ipcMain.handle(M.syncNow, (_e, accountId?: number) =>
       this.syncNow(accountId == null ? undefined : Number(accountId))
     )

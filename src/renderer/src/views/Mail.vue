@@ -81,6 +81,19 @@
       <!-- 中栏：邮件列表 -->
       <section class="pane pane--list" aria-label="邮件列表">
         <template v-if="selectedMailboxId">
+          <div class="list-head">
+            <span class="list-head__name" :title="currentMailbox?.path">{{ currentMailbox?.name }}</span>
+            <span v-if="currentMailbox?.unread" class="num list-head__unread">{{ currentMailbox.unread }} 封未读</span>
+            <UiButton
+              variant="ghost"
+              class="list-head__read-all"
+              :disabled="markingAllRead || !currentMailbox?.unread"
+              @click="markAllRead"
+            >
+              <CheckCheck :size="14" :stroke-width="1.6" />
+              {{ markingAllRead ? '处理中…' : '全部已读' }}
+            </UiButton>
+          </div>
           <div
             class="msg-list"
             @scroll="onListScroll"
@@ -255,7 +268,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { Mail, Paperclip, Pencil, Plus, RefreshCw, Trash2 } from '@lucide/vue'
+import { Mail, Paperclip, Pencil, Plus, RefreshCw, Trash2, CheckCheck } from '@lucide/vue'
 import DOMPurify from 'dompurify'
 import UiButton from '@renderer/components/ui/UiButton.vue'
 import UiInput from '@renderer/components/ui/UiInput.vue'
@@ -295,6 +308,11 @@ const syncingAll = ref(false)
 
 const mailboxes = computed<MailboxInfo[]>(() =>
   selectedAccountId.value ? (mailboxMap.value.get(selectedAccountId.value) ?? []) : []
+)
+
+/** 当前选中的文件夹（中栏头部展示与全部已读用） */
+const currentMailbox = computed<MailboxInfo | undefined>(() =>
+  mailboxes.value.find((mb) => mb.id === selectedMailboxId.value)
 )
 
 /** 每账号未读总数（左栏角标） */
@@ -410,6 +428,28 @@ async function toggleSeen(): Promise<void> {
   const m = messages.value.find((x) => x.id === detail.value!.id)
   if (m) m.seen = next
   if (selectedAccountId.value != null) await refreshMailboxes(selectedAccountId.value)
+}
+
+/** 当前文件夹全部标为已读 */
+const markingAllRead = ref(false)
+async function markAllRead(): Promise<void> {
+  const mailboxId = selectedMailboxId.value
+  if (mailboxId == null || markingAllRead.value) return
+  markingAllRead.value = true
+  try {
+    const r = await window.electronAPI.mail.markAllRead(mailboxId)
+    if (!r.ok) {
+      toast.error('操作失败，请重试')
+      return
+    }
+    if (!r.count) return
+    for (const m of messages.value) m.seen = true
+    if (selectedAccountId.value != null) await refreshMailboxes(selectedAccountId.value)
+    await refreshUnread()
+    toast.success(`已将 ${r.count} 封未读邮件标为已读`)
+  } finally {
+    markingAllRead.value = false
+  }
 }
 
 /** 把正文里的内嵌图片 `src="cid:xxx"` 改写为自定义协议 URL（指向本地邮件图片） */
@@ -897,6 +937,39 @@ onMounted(async () => {
 }
 
 /* ── 中栏：邮件列表 ── */
+.list-head {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border-bottom: 1px solid var(--border);
+}
+
+.list-head__name {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.list-head__unread {
+  color: var(--brand);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.list-head__read-all {
+  height: 28px;
+  padding: 0 var(--sp-3);
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
 .msg-list {
   flex: 1;
   min-height: 0;

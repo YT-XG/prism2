@@ -30,6 +30,7 @@ import type {
   MailAuthTestResult,
   MailboxInfo,
   MailDownloadResult,
+  MailMarkAllReadResult,
   MailMessageDetail,
   MailMessageSummary,
   MailOpResult,
@@ -106,6 +107,8 @@ const electronAPI: ElectronAPI = {
       ipcRenderer.send(notificationPopup.toMain.resize, height),
 
     notificationPopupHide: () => ipcRenderer.send(notificationPopup.toMain.hide),
+
+    notificationPopupReady: () => ipcRenderer.send(notificationPopup.toMain.ready),
 
     searchClose: () => ipcRenderer.send(searchFrame.toMain.close),
 
@@ -277,6 +280,8 @@ const electronAPI: ElectronAPI = {
       ipcRenderer.invoke(M.getMessageDetail, messageId) as Promise<MailMessageDetail | null>,
     markSeen: (messageId: number, seen: boolean) =>
       ipcRenderer.invoke(M.markSeen, messageId, seen) as Promise<void>,
+    markAllRead: (mailboxId: number) =>
+      ipcRenderer.invoke(M.markAllRead, mailboxId) as Promise<MailMarkAllReadResult>,
     syncNow: (accountId?: number) =>
       ipcRenderer.invoke(M.syncNow, accountId) as Promise<MailSyncResult | MailSyncResult[]>,
     getSyncing: () => ipcRenderer.invoke(M.getSyncing) as Promise<MailSyncingInfo[]>,

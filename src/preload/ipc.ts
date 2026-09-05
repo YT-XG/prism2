@@ -351,6 +351,13 @@ export interface MailOpResult {
   error?: string
 }
 
+/** 当前文件夹全部标为已读结果 */
+export interface MailMarkAllReadResult {
+  ok: boolean
+  /** 实际标为已读的邮件数（0 = 本就没有未读） */
+  count: number
+}
+
 /** 测试 IMAP 连接结果 */
 export interface MailAuthTestResult {
   ok: boolean
@@ -610,7 +617,9 @@ export const WINDOW_CHANNELS = {
       /** 渲染端上报内容高度，主进程据此缩放浮窗（保持右下角锚定） */
       resize: 'to-main-NotificationPopup:resize',
       /** 通知全部消失后请求隐藏浮窗 */
-      hide: 'to-main-NotificationPopup:hide'
+      hide: 'to-main-NotificationPopup:hide',
+      /** 渲染端订阅 onNew 完成后上报就绪：主进程据此补发就绪前暂存的通知（防首条通知丢失） */
+      ready: 'to-main-NotificationPopup:ready'
     }
   },
   /** 全局搜索独立窗口（Ctrl+K 呼出；无边框、置顶、聚焦输入） */
@@ -748,6 +757,8 @@ export const SERVICE_CHANNELS = {
     getMessageDetail: 'to-service-MailService:getMessageDetail',
     /** 标记已读/未读（DB + IMAP 双向） */
     markSeen: 'to-service-MailService:markSeen',
+    /** 当前文件夹全部标为已读（DB + IMAP 批量回写） */
+    markAllRead: 'to-service-MailService:markAllRead',
     /** 手动同步（accountId 缺省 = 全部账号） */
     syncNow: 'to-service-MailService:syncNow',
     /** 正在同步中的账号列表（标题栏同步状态指示；窗口重显时兜底拉取） */
@@ -818,6 +829,8 @@ export interface ElectronAPI {
     notificationPopupResize: (height: number) => void
     /** 通知浮窗：通知全部消失后请求隐藏 */
     notificationPopupHide: () => void
+    /** 通知浮窗：渲染端订阅 onNew 完成后上报就绪（主进程据此补发就绪前暂存的通知） */
+    notificationPopupReady: () => void
     /** 全局搜索独立窗口：请求隐藏（Esc / 选中 / 失焦） */
     searchClose: () => void
     /** 全局搜索独立窗口：选中功能项，让主窗口跳转对应页面（页面不带前导斜杠，如 'home'） */
@@ -1012,6 +1025,8 @@ export interface ElectronAPI {
     getMessageDetail: (messageId: number) => Promise<MailMessageDetail | null>
     /** 标记已读/未读 */
     markSeen: (messageId: number, seen: boolean) => Promise<void>
+    /** 当前文件夹全部标为已读（DB + IMAP 批量回写） */
+    markAllRead: (mailboxId: number) => Promise<MailMarkAllReadResult>
     /** 手动同步（accountId 缺省 = 全部账号） */
     syncNow: (accountId?: number) => Promise<MailSyncResult | MailSyncResult[]>
     /** 正在同步中的账号列表（标题栏同步状态指示；窗口重显时兜底拉取） */

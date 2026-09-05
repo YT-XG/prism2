@@ -5,16 +5,24 @@
  * 位置由设置决定：默认贴主屏右下角，可选顶部居中（灵动岛式）。
  * 内容由渲染端 NotificationPopup 绘制，卡片完全可定制（未来可加链接/翻译等按钮）。
  * 高度由渲染端上报后动态缩放（沿显示方向反向延伸保持锚定），全部通知消失后自动隐藏。
+ *
+ * 首条通知防丢：窗口在启动时预创建，但渲染端 Vue 应用异步加载；若首条通知早于
+ * 渲染端订阅 onNew 到达，广播会被丢弃。渲染端订阅完成后经 `ready` IPC 上报就绪，
+ * 就绪前到达的通知由 deliver() 暂存，就绪后按到达顺序补发。
  */
-import { BrowserWindowConstructorOptions, screen } from 'electron'
+import { BrowserWindow, BrowserWindowConstructorOptions, screen } from 'electron'
 import { join } from 'node:path'
 import log from 'electron-log'
 import BaseFrame from './BaseFrame'
-import { WINDOW_CHANNELS } from '@preload/ipc'
-import type { NotificationPopupPosition } from '@preload/ipc'
+import { BROADCAST, WINDOW_CHANNELS } from '@preload/ipc'
+import type { NotificationNewPayload, NotificationPopupPosition } from '@preload/ipc'
+import { broadcast } from '../utils/platform'
 import appIcon from '../../../resources/icon.png?asset'
 
-const { resize, hide } = WINDOW_CHANNELS.notificationPopup.toMain
+const { resize, hide, ready } = WINDOW_CHANNELS.notificationPopup.toMain
+
+/** 渲染端就绪前暂存通知上限：超出丢弃最旧（渲染端加载异常时防止无限积压） */
+const MAX_PENDING = 8
 
 export default class NotificationFrame extends BaseFrame {
   static readonly WIDTH = 360
@@ -44,6 +52,30 @@ export default class NotificationFrame extends BaseFrame {
 
   /** 当前浮窗显示位置（影响放置与缩放锚定方向） */
   private position: NotificationPopupPosition = 'bottom-right'
+
+  /** 渲染端是否已订阅 onNew（ready IPC 上报；就绪前到达的通知先暂存） */
+  private rendererReady = false
+
+  /** 渲染端就绪前到达的通知（就绪后按到达顺序补发） */
+  private pending: NotificationNewPayload[] = []
+
+  override create(): BrowserWindow {
+    this.rendererReady = false
+    this.pending = []
+    return super.create()
+  }
+
+  /**
+   * 投递通知广播（统一入口）：渲染端就绪则立即广播到可见窗口，
+   * 否则暂存，待渲染端 `ready` 上报后按到达顺序补发（防首条通知丢失）。
+   */
+  deliver(payload: NotificationNewPayload): void {
+    if (this.rendererReady) {
+      broadcast(BROADCAST.notificationNew, payload, { onlyVisible: true })
+    } else {
+      this.pending = [...this.pending, payload].slice(-MAX_PENDING)
+    }
+  }
 
   /** 呼出浮窗：懒创建 → 按指定位置放置 → 不抢焦点地显示 */
   showPopups(position: NotificationPopupPosition = 'bottom-right'): void {
@@ -137,5 +169,12 @@ export default class NotificationFrame extends BaseFrame {
       if (typeof height === 'number' && Number.isFinite(height)) this.resizePopup(height)
     })
     this.recvOne(hide, () => this.hidePopup())
+    this.recvOne(ready, () => {
+      // 渲染端订阅完成：补发就绪前暂存的通知（按到达顺序；浮窗已在 showPopups 中显示）
+      this.rendererReady = true
+      const pending = this.pending
+      this.pending = []
+      for (const p of pending) broadcast(BROADCAST.notificationNew, p, { onlyVisible: true })
+    })
   }
 }

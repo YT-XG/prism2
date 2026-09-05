@@ -7,34 +7,12 @@
   >
     <header v-if="!isStandalone" class="titlebar drag-region">
       <div class="titlebar-brand">
-        <span class="brand-dot" :class="{ 'has-update': hasUpdate, 'has-sync': isMailSyncing, 'has-error': hasError }"></span>
+        <span class="brand-dot"></span>
         <span class="titlebar-title">
           Prism <span class="titlebar-version">v{{ version }}</span>
-          <!-- 账号同步中：标题栏提示（黄闪圆点 + 胶囊） -->
-          <Transition name="pop">
-            <span v-if="mailSyncingText" class="sync-chip" :title="mailSyncingText">{{ mailSyncingText }}</span>
-          </Transition>
-          <!-- 有可用更新：标题栏内提示，点击安装并重启 -->
-          <Transition name="pop">
-            <button
-              v-if="hasUpdate"
-              class="update-chip"
-              type="button"
-              :title="updateChipTitle"
-              @click="onUpdateChipClick"
-            >
-              <span v-if="update.status === 'downloaded'">有新版本 {{ update.version }}，点击安装</span>
-              <span v-else-if="update.status === 'downloading'">
-                新版本 {{ update.version }} · {{ update.progress ?? 0 }}%
-              </span>
-              <span v-else>有新版本 v{{ update.version }}</span>
-            </button>
-          </Transition>
-          <!-- 应用报错：标题栏提示（红点闪烁 + 版本号后错误提示，持续 1 分钟自动消失） -->
-          <Transition name="pop">
-            <span v-if="hasError" class="error-chip" :title="appErrorText">{{ appErrorText }}</span>
-          </Transition>
         </span>
+        <!-- 全局状态中心：同步中 / 应用报错 / 软件更新 / toast 统一显示在品牌区后 -->
+        <StatusCenter />
       </div>
 
       <!-- 居中工具栏：功能搜索 + 主页显示设置 -->
@@ -66,6 +44,20 @@
       </div>
 
       <div class="titlebar-actions no-drag">
+        <button
+          class="tb-btn tb-update"
+          :class="{
+            'is-downloading': update.status === 'downloading',
+            'is-downloaded': update.status === 'downloaded'
+          }"
+          :title="updateButtonTitle"
+          @click="onUpdateButtonClick"
+        >
+          <ArrowUp :size="15" :stroke-width="1.75" />
+          <span v-if="update.status === 'downloading'" class="tb-update__badge">
+            {{ update.progress ?? 0 }}
+          </span>
+        </button>
         <button class="tb-btn" title="最小化" @click="minimize">
           <Minus :size="15" :stroke-width="1.75" />
         </button>
@@ -91,26 +83,30 @@
     <!-- 片段占位符输入弹窗：主界面与独立搜索窗均可用（搜索可命中片段） -->
     <SnippetPlaceholderDialog v-if="!isPopup" />
 
-    <UiToast />
+    <!-- 独立搜索窗：右上角浮动状态胶囊；通知浮窗不显示（浮窗只呈现通知卡片，避免胶囊遮挡） -->
+    <StatusCenter v-if="isSearch" floating />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { Minus, X, Square, Minimize2, Command, LayoutGrid } from '@lucide/vue'
-import UiToast from '@renderer/components/ui/UiToast.vue'
+import { Minus, X, Square, Minimize2, Command, LayoutGrid, ArrowUp, RefreshCw, AlertCircle } from '@lucide/vue'
+import StatusCenter from '@renderer/components/ui/StatusCenter.vue'
 import UiSwitch from '@renderer/components/ui/UiSwitch.vue'
 import FeatureSearchPanel from '@renderer/components/FeatureSearchPanel.vue'
 import SnippetPlaceholderDialog from '@renderer/components/SnippetPlaceholderDialog.vue'
 import { subscribeOnUnmounted } from '@renderer/composables/useIpcListener'
 import { useFeatureSearch } from '@renderer/composables/useFeatureSearch'
+import { useToast } from '@renderer/composables/useToast'
+import { useStatusCenter } from '@renderer/composables/useStatusCenter'
 import { useHomeModules, type HomeModuleDef } from '@renderer/composables/useHomeModules'
 import { useMail } from '@renderer/composables/useMail'
 import type { UpdateStatusInfo } from '@preload/ipc'
 
 const router = useRouter()
 const route = useRoute()
+const { success, error, info } = useToast()
 const exiting = ref(false)
 const version = ref('')
 const isMaximized = ref(false)
@@ -118,67 +114,111 @@ const shellRef = ref<HTMLElement | null>(null)
 const { open: openFeatureSearch } = useFeatureSearch()
 
 // ---------------------------------------------------------------------------
-// 标题栏账号同步提示：邮箱账号同步中时左上角圆点变黄闪烁 + 显示「xx 同步中」胶囊
+// 全局状态中心：同步中 / 应用报错 / 软件更新 统一为状态条目，渲染在标题栏品牌区后
+// ---------------------------------------------------------------------------
+const { set: setStatus, removeKey: removeStatusKey } = useStatusCenter()
+
+// ---------------------------------------------------------------------------
+// 邮箱账号同步状态：同步中显示「xx 同步中」警示条目（旋转图标），同步完自动移除
 // ---------------------------------------------------------------------------
 const { syncing: mailSyncing, init: initMail, refreshSyncing: refreshMailSyncing } = useMail()
 
-/** 是否有账号正在同步（圆点黄闪） */
-const isMailSyncing = computed(() => mailSyncing.value.length > 0)
-
-/** 同步中提示文案（单账号显示名称，多账号显示数量） */
-const mailSyncingText = computed(() => {
-  const list = mailSyncing.value
-  if (!list.length) return ''
-  return list.length === 1 ? `${list[0].name} 同步中` : `${list.length} 个账号同步中`
-})
+watch(
+  mailSyncing,
+  (list) => {
+    if (!list.length) {
+      removeStatusKey('sync')
+      return
+    }
+    const text = list.length === 1 ? `${list[0].name} 同步中` : `${list.length} 个账号同步中`
+    setStatus('sync', { tone: 'warning', icon: RefreshCw, spin: true, text, title: '邮箱正在同步' })
+  },
+  { immediate: true }
+)
 
 // ---------------------------------------------------------------------------
-// 标题栏更新提示：有可用更新时左上角圆点变黄闪烁，版本号右侧出现「有新版本」胶囊
+// 软件更新状态：检查中/下载中/就绪 显示为状态条目，就绪条目可点击安装
 // ---------------------------------------------------------------------------
 const update = ref<UpdateStatusInfo>({ status: 'idle', currentVersion: '' })
 
-const hasUpdate = computed(
-  () =>
-    update.value.status === 'available' ||
-    update.value.status === 'downloading' ||
-    update.value.status === 'downloaded'
+watch(
+  () => update.value.status,
+  () => {
+    const s = update.value
+    switch (s.status) {
+      case 'checking':
+        setStatus('update', { tone: 'info', icon: ArrowUp, text: '正在检查更新…' })
+        break
+      case 'available':
+        setStatus('update', {
+          tone: 'brand',
+          icon: ArrowUp,
+          text: `发现新版本 v${s.version}`,
+          action: onUpdateButtonClick
+        })
+        break
+      case 'downloading':
+        setStatus('update', {
+          tone: 'warning',
+          icon: ArrowUp,
+          text: `正在下载 v${s.version} ${Math.round(s.progress ?? 0)}%`
+        })
+        break
+      case 'downloaded':
+        setStatus('update', {
+          tone: 'brand',
+          icon: ArrowUp,
+          text: `新版本 v${s.version} 已就绪`,
+          action: () => void window.electronAPI.update.quitAndInstall()
+        })
+        break
+      default:
+        removeStatusKey('update')
+    }
+  },
+  { immediate: true }
 )
 
-/** 提示胶囊的 title 文案 */
-const updateChipTitle = computed(() => {
+/** 右上角更新按钮的 title 文案 */
+const updateButtonTitle = computed(() => {
   switch (update.value.status) {
     case 'downloaded':
-      return '更新已就绪，点击安装并重启'
+      return `新版本 v${update.value.version} 已就绪，点击安装并重启`
     case 'downloading':
-      return `正在下载新版本… ${update.value.progress ?? 0}%`
+      return `正在下载新版本 v${update.value.version}… ${update.value.progress ?? 0}%`
+    case 'checking':
+      return '正在检查更新…'
     default:
-      return '发现新版本，正在下载…'
+      return '检查版本更新'
   }
 })
 
-/** 点击提示：已下载则安装并重启；available/downloading 由 autoDownload 自动下载，无需操作 */
-function onUpdateChipClick(): void {
-  if (update.value.status === 'downloaded') {
+/** 点击更新按钮：已下载则安装并重启；否则手动检查更新，并据结果给出可见反馈 */
+function onUpdateButtonClick(): void {
+  const s = update.value.status
+  if (s === 'downloaded') {
     void window.electronAPI.update.quitAndInstall()
+    return
   }
+  if (s === 'downloading' || s === 'checking') return
+
+  void window.electronAPI.update.check().then((info_) => {
+    if (info_?.message) {
+      info(info_.message)
+    } else if (info_?.status === 'up-to-date') {
+      success('已是最新版本')
+    } else if (info_?.status === 'error') {
+      error(info_.error ?? '检查更新失败')
+    }
+  })
 }
 
 // ---------------------------------------------------------------------------
-// 标题栏应用报错提示：主进程 error 级日志到达时红点闪烁 + 版本号后错误提示，持续 1 分钟自动消失
+// 应用报错状态：主进程 error 级日志到达时显示红色报错条目，1 分钟自动消失（连续报错会顺延）
 // ---------------------------------------------------------------------------
-const appErrorText = ref('')
-let appErrorTimer: number | undefined
-
-/** 是否有待展示的报错（红点闪烁） */
-const hasError = computed(() => appErrorText.value !== '')
-
-/** 收到主进程报错广播：更新文案并重启 1 分钟倒计时（连续报错会顺延） */
 function onAppError(payload: { feature: string }): void {
-  appErrorText.value = payload.feature ? `${payload.feature}功能发生错误` : '软件发生错误'
-  window.clearTimeout(appErrorTimer)
-  appErrorTimer = window.setTimeout(() => {
-    appErrorText.value = ''
-  }, 60_000)
+  const text = payload.feature ? `${payload.feature}功能发生错误` : '软件发生错误'
+  setStatus('appError', { tone: 'error', icon: AlertCircle, text, dismissMs: 60_000, title: text })
 }
 
 /** 主页显示设置面板：开关 + 模块清单 */
@@ -314,7 +354,6 @@ onMounted(() => {
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onGlobalKeydown)
   document.removeEventListener('pointerdown', onDocPointerDown)
-  window.clearTimeout(appErrorTimer)
 })
 </script>
 
@@ -476,79 +515,37 @@ onBeforeUnmount(() => {
   animation: pulse-soft 3.2s var(--ease-in-soft) infinite;
 }
 
-/* 有可用更新 / 账号同步中：圆点变黄并快速闪烁，作为醒目的状态提示 */
-.brand-dot.has-update,
-.brand-dot.has-sync {
-  background: var(--warning);
-  animation: flash-warn 1.1s var(--ease-in-soft) infinite;
+/* 右上角「检查更新」箭头按钮：下载中变黄并显示进度角标，已就绪变品牌色示意可安装 */
+/* 标题栏整体是拖动区（drag-region），按钮所在 .titlebar-actions 已标 no-drag 才能收到点击 */
+.tb-update {
+  position: relative;
 }
 
-/* 应用发生 error 级报错：圆点变红并快速闪烁，醒目提示故障 */
-.brand-dot.has-error {
-  background: var(--danger);
-  animation: flash-warn 0.9s var(--ease-in-soft) infinite;
-}
-
-/* 「账号同步中」提示胶囊：标题栏品牌区版本号右侧 */
-.sync-chip {
-  -webkit-app-region: no-drag;
-  display: inline-flex;
-  align-items: center;
-  margin-left: var(--sp-2);
-  padding: 2px 10px;
-  border: none;
-  border-radius: var(--radius-pill);
-  background: var(--warning-soft);
+.tb-update.is-downloading {
   color: var(--warning);
-  font-size: 11px;
-  font-weight: 600;
-  line-height: 18px;
-  vertical-align: middle;
-  white-space: nowrap;
 }
 
-/* 「有新版本」提示胶囊：标题栏品牌区版本号右侧，点击安装更新 */
-/* 标题栏整体是拖动区（drag-region），必须显式 no-drag 才能收到点击事件 */
-.update-chip {
-  -webkit-app-region: no-drag;
-  display: inline-flex;
+.tb-update.is-downloaded {
+  color: var(--brand);
+}
+
+.tb-update__badge {
+  position: absolute;
+  top: 1px;
+  right: -2px;
+  min-width: 14px;
+  height: 12px;
+  padding: 0 2px;
+  display: flex;
   align-items: center;
-  margin-left: var(--sp-2);
-  padding: 2px 10px;
-  border: none;
+  justify-content: center;
   border-radius: var(--radius-pill);
-  background: var(--warning-soft);
-  color: var(--warning);
-  font-size: 11px;
-  font-weight: 600;
-  line-height: 18px;
-  cursor: pointer;
-  vertical-align: middle;
-  transition: background-color var(--duration-fast) var(--ease-out-soft),
-    color var(--duration-fast) var(--ease-out-soft);
-}
-
-.update-chip:hover {
   background: var(--warning);
   color: var(--text-on-primary);
-}
-
-/* 「发生错误」警示胶囊：标题栏品牌区版本号右侧，红底表示故障 */
-.error-chip {
-  -webkit-app-region: no-drag;
-  display: inline-flex;
-  align-items: center;
-  margin-left: var(--sp-2);
-  padding: 2px 10px;
-  border: none;
-  border-radius: var(--radius-pill);
-  background: var(--danger-soft);
-  color: var(--danger);
-  font-size: 11px;
+  font-size: 8px;
   font-weight: 600;
-  line-height: 18px;
-  vertical-align: middle;
-  white-space: nowrap;
+  line-height: 1;
+  letter-spacing: -0.4px;
 }
 
 /* 路由切换过渡：出场淡出上移，入场淡入上移 */
