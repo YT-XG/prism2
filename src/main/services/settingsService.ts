@@ -31,7 +31,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   theme: 'light',
   // 通知相关（默认全部开启）
   notificationsEnabled: true,
-  notificationPosition: 'bottom-right',
+  // 通知浮窗默认顶部居中（灵动岛式）
+  notificationPosition: 'top-center',
   notifyClipboard: true,
   notifyUpdate: true,
   // 邮箱大师（默认开启新邮件通知，轮询间隔 1 分钟）

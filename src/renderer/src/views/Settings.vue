@@ -391,7 +391,7 @@ const settings = ref<AppSettings>({
   clipboardAutoClean: true,
   clipboardRetentionUnit: 'month',
   notificationsEnabled: true,
-  notificationPosition: 'bottom-right',
+  notificationPosition: 'top-center',
   notifyClipboard: true,
   notifyUpdate: true,
   notifyMail: true,
