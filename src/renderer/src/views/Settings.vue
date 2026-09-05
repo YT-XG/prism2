@@ -77,6 +77,22 @@
         <h3 class="group-title">通知</h3>
         <div class="setting-row">
           <div class="row-info">
+            <div class="row-name">浮窗位置</div>
+            <div class="row-desc">通知浮窗的屏幕弹出位置：右下角或顶部居中（灵动岛式）</div>
+          </div>
+          <div class="cm-pills">
+            <UiPillTab
+              v-for="p in NOTIFY_POSITIONS"
+              :key="p.value"
+              :active="settings.notificationPosition === p.value"
+              @click="setNotificationPosition(p.value)"
+            >
+              {{ p.label }}
+            </UiPillTab>
+          </div>
+        </div>
+        <div class="setting-row">
+          <div class="row-info">
             <div class="row-name">通知中心</div>
             <div class="row-desc">总开关：关闭后不再记录与提醒任何通知</div>
           </div>
@@ -92,7 +108,7 @@
         <div class="setting-row">
           <div class="row-info">
             <div class="row-name">剪贴板新内容</div>
-            <div class="row-desc">复制新内容时右下角浮窗提醒（不入通知中心，剪贴板历史已有记录）</div>
+            <div class="row-desc">复制新内容时浮窗提醒（不入通知中心，剪贴板历史已有记录）</div>
           </div>
           <button
             class="switch"
@@ -124,7 +140,7 @@
         <div class="setting-row">
           <div class="row-info">
             <div class="row-name">新邮件通知</div>
-            <div class="row-desc">收到新邮件时右下角浮窗提醒（记入通知中心）</div>
+            <div class="row-desc">收到新邮件时浮窗提醒（记入通知中心）</div>
           </div>
           <button
             class="switch"
@@ -268,6 +284,15 @@
             <button class="btn" type="button" :disabled="logBusy" @click="openLogDirectory">打开所在文件夹</button>
           </div>
         </div>
+        <div class="setting-row">
+          <div class="row-info">
+            <div class="row-name">查看错误日志</div>
+            <div class="row-desc">仅含警告与报错的独立文件：{{ errorLogFilePath }}</div>
+          </div>
+          <div class="row-actions">
+            <button class="btn" type="button" :disabled="logBusy" @click="openErrorLogFile">打开错误日志</button>
+          </div>
+        </div>
       </section>
       </template>
 
@@ -366,6 +391,7 @@ const settings = ref<AppSettings>({
   clipboardAutoClean: true,
   clipboardRetentionUnit: 'month',
   notificationsEnabled: true,
+  notificationPosition: 'bottom-right',
   notifyClipboard: true,
   notifyUpdate: true,
   notifyMail: true,
@@ -412,6 +438,19 @@ function setTheme(theme: ThemeValue): void {
   void window.electronAPI.settings.update({ theme })
 }
 
+type NotifyPosition = AppSettings['notificationPosition']
+
+const NOTIFY_POSITIONS: { value: NotifyPosition; label: string }[] = [
+  { value: 'bottom-right', label: '右下角' },
+  { value: 'top-center', label: '顶部居中' }
+]
+
+/** 设置通知浮窗显示位置 */
+function setNotificationPosition(value: NotifyPosition): void {
+  settings.value.notificationPosition = value
+  void window.electronAPI.settings.update({ notificationPosition: value })
+}
+
 function shortcutLabel(acc: string): string {
   return acc.replace(/CommandOrControl/g, 'Ctrl/Cmd').replace(/\+/g, ' ')
 }
@@ -436,7 +475,12 @@ const importMode = ref<BackupImportMode>('merge')
 const BACKUP_OPTIONS: { section: BackupSection; label: string; desc: string }[] = [
   { section: 'clipboard', label: '剪贴板数据', desc: '历史记录、片段收藏与图片' },
   { section: 'stickyNotes', label: '便利贴', desc: '全部便利贴（含贴主页的便签）' },
-  { section: 'quickFolders', label: '快捷文件夹', desc: '主页快捷打开的文件夹列表' }
+  { section: 'quickFolders', label: '快捷文件夹', desc: '主页快捷打开的文件夹列表' },
+  {
+    section: 'mail',
+    label: '邮箱账号',
+    desc: '邮箱大师的账号连接配置（不含邮件数据；授权码加密保存，跨机导入后需重新填写）'
+  }
 ]
 
 /** 当前备份勾选弹窗：export=导出 / import=导入 / null=关闭 */
@@ -495,6 +539,7 @@ async function confirmBackup(): Promise<void> {
       }
       if (sections.includes('stickyNotes')) parts.push(`便利贴 ${r.stickyNoteCount ?? 0}`)
       if (sections.includes('quickFolders')) parts.push(`快捷文件夹 ${r.quickFolderCount ?? 0}`)
+      if (sections.includes('mail')) parts.push(`邮箱账号 ${r.mailAccountCount ?? 0}`)
       toast.success(`已导出：${r.path}（${parts.join('、')}）`)
     } else {
       toast.error(`导出失败：${r.error ?? '未知错误'}`)
@@ -516,6 +561,7 @@ async function confirmBackup(): Promise<void> {
       }
       if (sections.includes('stickyNotes')) parts.push(`便利贴 ${r.importedStickyNotes ?? 0}`)
       if (sections.includes('quickFolders')) parts.push(`快捷文件夹 ${r.importedQuickFolders ?? 0}`)
+      if (sections.includes('mail')) parts.push(`邮箱账号 ${r.importedMailAccounts ?? 0}`)
       toast.success(`已替换导入：${parts.join('、')}`)
     } else {
       if (sections.includes('clipboard')) {
@@ -529,7 +575,14 @@ async function confirmBackup(): Promise<void> {
       if (sections.includes('quickFolders')) {
         parts.push(`快捷文件夹 +${r.importedQuickFolders ?? 0}（跳过 ${r.skippedQuickFolders ?? 0}）`)
       }
+      if (sections.includes('mail')) {
+        parts.push(`邮箱账号 +${r.importedMailAccounts ?? 0}（跳过 ${r.skippedMailAccounts ?? 0}）`)
+      }
       toast.success(`已合并导入：${parts.join('、')}`)
+    }
+    // 跨机导入等场景：部分邮箱账号授权码无法解密，需重新填写
+    if (sections.includes('mail') && (r.mailAuthMissing ?? 0) > 0) {
+      toast.info(`${r.mailAuthMissing} 个邮箱账号需在邮箱大师中重新填写授权码`)
     }
   } else {
     toast.error(`导入失败：${r.error ?? '未知错误'}`)
@@ -646,6 +699,8 @@ async function confirmDeleteData(): Promise<void> {
 // ---------------------------------------------------------------------------
 /** 日志文件完整路径（展示用） */
 const logFilePath = ref('')
+/** 错误日志文件完整路径（展示用） */
+const errorLogFilePath = ref('')
 const logBusy = ref(false)
 
 /** 用系统默认程序打开日志文件 */
@@ -658,6 +713,22 @@ async function openLogFile(): Promise<void> {
       toast.success('已打开日志文件')
     } else {
       toast.error(`打开日志失败：${r.error ?? '未知错误'}`)
+    }
+  } finally {
+    logBusy.value = false
+  }
+}
+
+/** 用系统默认程序打开错误日志文件（仅 warn/error） */
+async function openErrorLogFile(): Promise<void> {
+  if (logBusy.value) return
+  logBusy.value = true
+  try {
+    const r = await window.electronAPI.log.openErrorFile()
+    if (r.ok) {
+      toast.success('已打开错误日志文件')
+    } else {
+      toast.error(`打开错误日志失败：${r.error ?? '未知错误'}`)
     }
   } finally {
     logBusy.value = false
@@ -685,6 +756,7 @@ onMounted(async () => {
   settingsLoaded.value = true
 
   logFilePath.value = await window.electronAPI.log.getPath()
+  errorLogFilePath.value = await window.electronAPI.log.getPath().then((p) => p.replace(/main\.log$/, 'error.log'))
 
   // 同步当前更新状态并订阅后续变化
   updateStatus.value = await window.electronAPI.update.getStatus()

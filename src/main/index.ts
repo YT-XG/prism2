@@ -17,7 +17,7 @@ import { legacyImportService } from './services/legacyImportService'
 import { legacyCleanupService } from './services/legacyCleanupService'
 import { notificationService } from './services/notificationService'
 import { mailService } from './services/mailService'
-import { logService } from './services/logService'
+import { errorLog, logService } from './services/logService'
 import { registerImageScheme, registerImageProtocolHandler } from './utils/imageProtocol'
 import { isAppQuitting, markQuitting } from './utils/appState'
 
@@ -34,6 +34,14 @@ process.on('unhandledRejection', (reason) => {
 // ── 日志与系统信息 ──
 log.transports.file.level = 'info'
 log.transports.console.level = 'info'
+// 报错独立文件：main.log 保持全量（info+）；warn/error 级消息同步写入 error.log（errorLog 实例），便于排查问题
+log.hooks.push((message, transport) => {
+  if (transport === log.transports.file && (message.level === 'error' || message.level === 'warn')) {
+    if (message.level === 'error') errorLog.error(...message.data)
+    else errorLog.warn(...message.data)
+  }
+  return message
+})
 log.info('[App] 启动，系统:', JSON.stringify({ os: `${platform()} ${release()}`, arch, electron: process.versions.electron, node: process.versions.node }))
 
 // ── 剪贴板图片自定义协议：须在 app ready 前注册特权 ──

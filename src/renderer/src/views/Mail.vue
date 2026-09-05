@@ -102,7 +102,7 @@
               >
                 <div class="msg__row">
                   <span class="msg__from">{{ msg.fromName || msg.fromAddr || '(未知发件人)' }}</span>
-                  <span class="num msg__time">{{ formatTime(msg.date) }}</span>
+                  <span class="num msg__time">{{ formatMailTime(msg.date) }}</span>
                 </div>
                 <div class="msg__subject" :title="msg.subject">{{ msg.subject || '(无主题)' }}</div>
                 <div v-if="msg.hasAttachments" class="msg__att">
@@ -264,7 +264,6 @@ import UiDialog from '@renderer/components/ui/UiDialog.vue'
 import UiEmptyState from '@renderer/components/ui/UiEmptyState.vue'
 import { useToast } from '@renderer/composables/useToast'
 import { useMail } from '@renderer/composables/useMail'
-import { formatTime } from '@renderer/composables/useNotifications'
 import { subscribeOnUnmounted } from '@renderer/composables/useIpcListener'
 import type {
   MailAccount,
@@ -442,6 +441,18 @@ function formatFullTime(ts: number): string {
   const d = new Date(ts)
   const pad = (n: number): string => (n < 10 ? `0${n}` : String(n))
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+/** 列表时间：今天仅显示时分；非今天（含昨天）带年份 YYYY-MM-DD HH:mm */
+function formatMailTime(ts: number): string {
+  const d = new Date(ts)
+  const pad = (n: number): string => (n < 10 ? `0${n}` : String(n))
+  const now = new Date()
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+  const startOfDay = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
+  const hm = `${pad(d.getHours())}:${pad(d.getMinutes())}`
+  if (startOfDay === startOfToday) return hm
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${hm}`
 }
 
 async function downloadAttachment(att: MailAttachment): Promise<void> {

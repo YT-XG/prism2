@@ -33,6 +33,7 @@ import { settingsService } from './settingsService'
 import { notificationService } from './notificationService'
 import { stickyNotesService } from './stickyNotesService'
 import { quickFoldersService } from './quickFoldersService'
+import { mailService } from './mailService'
 import { windowFactory } from '../frame/WindowFactory'
 import { broadcast, minimizeWindowForPaste } from '../utils/platform'
 import { BACKUP_EXTENSION, BACKUP_SECTIONS, BROADCAST, SERVICE_CHANNELS } from '@preload/ipc'
@@ -74,6 +75,7 @@ interface BackupManifest {
   imageCount: number
   stickyNoteCount: number
   quickFolderCount: number
+  mailAccountCount: number
 }
 
 class ClipboardService extends SqliteStore {
@@ -746,6 +748,7 @@ class ClipboardService extends SqliteStore {
       const imageFiles = this.#listImageFiles()
       const stickyNoteCount = stickyNotesService.getAll().length
       const quickFolderCount = quickFoldersService.getAll().length
+      const mailExport = selected.includes('mail') ? mailService.exportAccountsJson() : { json: '', count: 0 }
       const manifest: BackupManifest = {
         app: 'prism2',
         formatVersion: 1,
@@ -755,7 +758,8 @@ class ClipboardService extends SqliteStore {
         favoriteCount,
         imageCount: imageFiles.length,
         stickyNoteCount,
-        quickFolderCount
+        quickFolderCount,
+        mailAccountCount: mailExport.count
       }
 
       const zip = new AdmZip()
@@ -775,10 +779,13 @@ class ClipboardService extends SqliteStore {
         const db = quickFoldersService.exportDb()
         if (db) zip.addFile('quick-folders.db', db)
       }
+      if (selected.includes('mail') && mailExport.json) {
+        zip.addFile('mail-accounts.json', Buffer.from(mailExport.json, 'utf-8'))
+      }
       zip.writeZip(filePath)
 
       log.info(
-        `[clipboard] backup exported: ${filePath} sections=${selected.join(',')} (history=${historyCount}, favorites=${favoriteCount}, images=${imageFiles.length}, notes=${stickyNoteCount}, folders=${quickFolderCount})`
+        `[clipboard] backup exported: ${filePath} sections=${selected.join(',')} (history=${historyCount}, favorites=${favoriteCount}, images=${imageFiles.length}, notes=${stickyNoteCount}, folders=${quickFolderCount}, mailAccounts=${mailExport.count})`
       )
       return {
         ok: true,
@@ -789,7 +796,8 @@ class ClipboardService extends SqliteStore {
         favoriteCount,
         imageCount: imageFiles.length,
         stickyNoteCount,
-        quickFolderCount
+        quickFolderCount,
+        mailAccountCount: mailExport.count
       }
     } catch (err) {
       log.error('[clipboard] backup export failed:', err)
@@ -820,6 +828,7 @@ class ClipboardService extends SqliteStore {
       if (zip.getEntry('clipboard.db')) sections.push('clipboard')
       if (zip.getEntry('sticky-notes.db')) sections.push('stickyNotes')
       if (zip.getEntry('quick-folders.db')) sections.push('quickFolders')
+      if (zip.getEntry('mail-accounts.json')) sections.push('mail')
       if (sections.length === 0) {
         return { ok: false, canceled: false, error: '备份文件内没有可导入的数据' }
       }
@@ -860,15 +869,19 @@ class ClipboardService extends SqliteStore {
       let importedImages = 0
       let importedStickyNotes = 0
       let importedQuickFolders = 0
+      let importedMailAccounts = 0
+      let mailAuthMissing = 0
       let skippedHistory = 0
       let skippedFavorites = 0
       let skippedImages = 0
       let skippedStickyNotes = 0
       let skippedQuickFolders = 0
+      let skippedMailAccounts = 0
 
       const wantClipboard = selected.includes('clipboard')
       const wantNotes = selected.includes('stickyNotes')
       const wantFolders = selected.includes('quickFolders')
+      const wantMail = selected.includes('mail')
 
       if (wantClipboard) {
         const dbEntry = zip.getEntry('clipboard.db')
@@ -959,11 +972,22 @@ class ClipboardService extends SqliteStore {
         }
       }
 
+      if (wantMail) {
+        const entry = zip.getEntry('mail-accounts.json')
+        if (!entry) {
+          return { ok: false, canceled: false, error: '备份文件缺少 mail-accounts.json' }
+        }
+        const r = await mailService.importAccountsFromJson(entry.getData().toString('utf-8'), importMode)
+        importedMailAccounts = r.imported
+        skippedMailAccounts = r.skipped
+        mailAuthMissing = r.authMissing
+      }
+
       this.saveNow()
       if (wantClipboard) this.#notifyHistoryChanged()
 
       log.info(
-        `[clipboard] backup imported: ${srcPath} mode=${importMode} sections=${selected.join(',')} (history+${importedHistory}/skip${skippedHistory}, favorites+${importedFavorites}/skip${skippedFavorites}, images+${importedImages}/skip${skippedImages}, notes+${importedStickyNotes}/skip${skippedStickyNotes}, folders+${importedQuickFolders}/skip${skippedQuickFolders})`
+        `[clipboard] backup imported: ${srcPath} mode=${importMode} sections=${selected.join(',')} (history+${importedHistory}/skip${skippedHistory}, favorites+${importedFavorites}/skip${skippedFavorites}, images+${importedImages}/skip${skippedImages}, notes+${importedStickyNotes}/skip${skippedStickyNotes}, folders+${importedQuickFolders}/skip${skippedQuickFolders}, mail+${importedMailAccounts}/skip${skippedMailAccounts}/authMissing${mailAuthMissing})`
       )
       return {
         ok: true,
@@ -973,11 +997,14 @@ class ClipboardService extends SqliteStore {
         importedImages,
         importedStickyNotes,
         importedQuickFolders,
+        importedMailAccounts,
+        mailAuthMissing,
         skippedHistory,
         skippedFavorites,
         skippedImages,
         skippedStickyNotes,
-        skippedQuickFolders
+        skippedQuickFolders,
+        skippedMailAccounts
       }
     } catch (err) {
       log.error('[clipboard] backup import failed:', err)

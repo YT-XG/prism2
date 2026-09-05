@@ -32,7 +32,7 @@ src/
 │   ├── services/                 # services/ 复数；模块级单例 + 构造器注册 IPC
 │   │   ├── db/sqliteDatabase.ts  # SQLite 公共基类（init/run/all/one + save()防抖/saveNow()/flushSave() 落盘）
 │   │   ├── settingsService.ts
-│   │   ├── clipboardService.ts   # 剪贴板（历史/收藏/检索/保留期/导入/图片自定义协议；片段游标分页 getFavorites(limit,before,category)；图片廉价签名去重；服务级落盘防抖 SAVE_DEBOUNCE_MS=2000）
+│   │   ├── clipboardService.ts   # 剪贴板（历史/收藏/检索/保留期/导入/图片自定义协议；片段游标分页 getFavorites(limit,before,category)；图片廉价签名去重；服务级落盘防抖 SAVE_DEBOUNCE_MS=2000；.prismbackup 备份导出/导入：clipboard/stickyNotes/quickFolders/mail 四分区，zip 打包）
 │   │   ├── stickyNotesService.ts # 便利贴（sql.js 持久化，无广播）
 │   │   ├── quickFoldersService.ts # 快捷文件夹（主页快捷打开，sql.js 持久化 + 系统文件夹多选/拖放路径批量添加 + 行拖拽排序持久化 + 自定义别名 + 失效路径实时标记 + shell.openPath）
 │   │   ├── inputService.ts       # 模拟粘贴（平台分支）
@@ -42,7 +42,7 @@ src/
 │   │   ├── legacyCleanupService.ts # 旧版 v1 安装检测/静默卸载/旧数据选择性删除 + 运行期系统残留清理（注册表 + NSIS /S / shell.trashItem）
 │   │   ├── notificationService.ts # 通知中心（持久化通知 + 自绘通知浮窗统一呈现，不依赖系统通知）
 │   │   ├── mailService.ts         # 邮箱大师（多账号 IMAP 收信：授权码 safeStorage 加密入库 + 首次最近 200 封/UID 增量同步（UIDVALIDITY 变化自动重置 + 序号尾部对账兜底）+ 附件落盘 + 轮询（默认 1 分钟，设置可调）+ 新邮件通知 + 同步中状态广播（标题栏黄闪圆点 + 「xx 同步中」胶囊））
-│   │   ├── logService.ts          # 日志服务（定位 electron-log 落盘文件，托盘/设置页「查看日志」打开）
+│   │   ├── logService.ts          # 日志服务（定位 electron-log 落盘文件，托盘/设置页「查看日志」打开；warn/error 经 hooks 独立落盘 error.log，设置页「查看错误日志」）
 │   │   └── trayService.ts
 │   └── utils/platform.ts         # broadcast()
 │   └── utils/windowState.ts      # 主窗口尺寸/最大化状态持久化（userData/window-state.json）

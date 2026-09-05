@@ -1,5 +1,12 @@
 <template>
-  <div class="ui-notif" :class="[`ui-notif--${type}`, { 'is-unread': unread }]" role="status">
+  <div
+    class="ui-notif"
+    :class="[
+      `ui-notif--${type}`,
+      { 'is-unread': unread, 'has-action': !!actionText }
+    ]"
+    role="status"
+  >
     <span v-if="unread" class="ui-notif__dot" aria-hidden="true" />
     <component :is="iconFor(type)" :size="18" :stroke-width="1.75" class="ui-notif__icon" />
     <div class="ui-notif__body">
@@ -7,8 +14,16 @@
       <div v-if="message" class="ui-notif__msg">{{ message }}</div>
     </div>
     <span v-if="time" class="ui-notif__time">{{ time }}</span>
-    <button v-if="closable" class="ui-notif__close" type="button" title="关闭" @click="$emit('close')">
+    <button v-if="closable" class="ui-notif__close" type="button" title="关闭" @click.stop="$emit('close')">
       <X :size="13" :stroke-width="2" />
+    </button>
+    <button
+      v-if="actionText"
+      class="ui-notif__action"
+      type="button"
+      @click.stop="$emit('action')"
+    >
+      {{ actionText }}
     </button>
   </div>
 </template>
@@ -31,11 +46,13 @@ withDefaults(
     time?: string
     closable?: boolean
     unread?: boolean
+    /** 右下角操作按钮文案（如邮件通知的「已读」）；设置后点击触发 action，不触发卡片整体点击 */
+    actionText?: string
   }>(),
   { type: 'info', closable: true, unread: false }
 )
 
-defineEmits<{ (e: 'close'): void }>()
+defineEmits<{ (e: 'close'): void; (e: 'action'): void }>()
 
 function iconFor(type: ToastType): Component {
   if (type === 'success') return CheckCircle2
@@ -47,6 +64,7 @@ function iconFor(type: ToastType): Component {
 
 <style scoped>
 .ui-notif {
+  position: relative;
   display: flex;
   align-items: flex-start;
   gap: var(--sp-2);
@@ -55,6 +73,11 @@ function iconFor(type: ToastType): Component {
   border-radius: var(--radius-md);
   background: var(--bg-surface);
   box-shadow: var(--shadow-md);
+}
+
+/* 有右下角操作按钮时，底部留出按钮位置 */
+.ui-notif.has-action {
+  padding-bottom: 40px;
 }
 
 /* 未读：浅品牌底色 + 左侧品牌色圆点（通知中心列表用） */
@@ -121,6 +144,31 @@ function iconFor(type: ToastType): Component {
 .ui-notif__close:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
+}
+
+/* 右下角操作按钮（如邮件通知「已读」）：绝对定位底右，命中区域 ≥ 视觉 */
+.ui-notif__action {
+  position: absolute;
+  right: var(--sp-2);
+  bottom: var(--sp-2);
+  min-width: 64px;
+  padding: var(--sp-1) var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--bg-surface);
+  color: var(--brand);
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  cursor: pointer;
+  transition: background-color var(--duration-fast) var(--ease-out-soft),
+    color var(--duration-fast) var(--ease-out-soft),
+    border-color var(--duration-fast) var(--ease-out-soft);
+}
+
+.ui-notif__action:hover {
+  background: var(--brand-subtle);
+  border-color: var(--brand);
+  color: var(--brand);
 }
 
 .ui-notif--success .ui-notif__icon {

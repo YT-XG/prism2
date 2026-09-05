@@ -16,7 +16,7 @@ import { trayService } from './trayService'
 import { windowFactory } from '../frame/WindowFactory'
 import { broadcast } from '../utils/platform'
 import { BROADCAST, SERVICE_CHANNELS } from '@preload/ipc'
-import type { NotificationItem, NotificationNewPayload, NotificationSource, NotificationType } from '@preload/ipc'
+import type { NotificationItem, NotificationNewPayload, NotificationPopupPosition, NotificationSource, NotificationType } from '@preload/ipc'
 
 /** 去重窗口：同来源+标题+内容在窗口期内重复仅刷新时间（ms） */
 const DEDUP_WINDOW_MS = 30_000
@@ -154,8 +154,9 @@ class NotificationService extends SqliteStore {
     }
 
     // 投递：统一唤起自绘通知浮窗（主窗口隐藏与否都弹），浮窗渲染端订阅 onNew 展示
-    windowFactory.getNotificationFrame().showPopups()
-    broadcast(BROADCAST.notificationNew, { item, unread } satisfies NotificationNewPayload, {
+    const position: NotificationPopupPosition = s.notificationPosition
+    windowFactory.getNotificationFrame().showPopups(position)
+    broadcast(BROADCAST.notificationNew, { item, unread, position } satisfies NotificationNewPayload, {
       onlyVisible: true
     })
   }

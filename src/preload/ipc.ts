@@ -119,13 +119,14 @@ export interface ClipboardRetention {
 export type BackupImportMode = 'merge' | 'replace'
 
 /** 备份可选数据分区（导出/导入时用户勾选的数据类别） */
-export type BackupSection = 'clipboard' | 'stickyNotes' | 'quickFolders'
+export type BackupSection = 'clipboard' | 'stickyNotes' | 'quickFolders' | 'mail'
 
 /** 全部备份分区（导出勾选默认值；导入按备份内实际包含的分区子集） */
 export const BACKUP_SECTIONS: readonly BackupSection[] = [
   'clipboard',
   'stickyNotes',
-  'quickFolders'
+  'quickFolders',
+  'mail'
 ]
 
 /** 导出备份结果 */
@@ -144,6 +145,7 @@ export interface BackupExportResult {
   imageCount?: number
   stickyNoteCount?: number
   quickFolderCount?: number
+  mailAccountCount?: number
 }
 
 /** 导入前检查备份文件的结果（弹打开对话框后返回可用分区与文件路径） */
@@ -171,11 +173,15 @@ export interface BackupImportResult {
   importedImages?: number
   importedStickyNotes?: number
   importedQuickFolders?: number
+  importedMailAccounts?: number
+  /** 导入的邮箱账号中因授权码无法解密（跨机导入）而需重新填写的数量 */
+  mailAuthMissing?: number
   skippedHistory?: number
   skippedFavorites?: number
   skippedImages?: number
   skippedStickyNotes?: number
   skippedQuickFolders?: number
+  skippedMailAccounts?: number
 }
 
 /** 应用设置 */
@@ -208,6 +214,8 @@ export interface AppSettings {
   legacyUninstallPromptDone?: boolean
   /** 通知中心总开关（false = 不记录、不提醒任何通知） */
   notificationsEnabled: boolean
+  /** 通知浮窗显示位置：右下角 / 顶部居中（灵动岛式） */
+  notificationPosition: NotificationPopupPosition
   /** 剪贴板新内容通知 */
   notifyClipboard: boolean
   /** 更新通知（新版本/更新完成/检查失败） */
@@ -224,6 +232,9 @@ export type NotificationType = 'info' | 'success' | 'warning' | 'error'
 /** 通知来源：用于通知中心分组过滤 + 分来源开关 */
 export type NotificationSource = 'clipboard' | 'update' | 'mail'
 
+/** 通知浮窗显示位置 */
+export type NotificationPopupPosition = 'bottom-right' | 'top-center'
+
 /** 通知记录（持久化到 userData/notifications.db） */
 export interface NotificationItem {
   id: number
@@ -236,10 +247,11 @@ export interface NotificationItem {
   read: 0 | 1
 }
 
-/** onNew 广播载荷：新通知 + 最新未读数（渲染端据此刷新角标/列表） */
+/** onNew 广播载荷：新通知 + 最新未读数 + 浮窗显示位置（渲染端据此切换布局与动画） */
 export interface NotificationNewPayload {
   item: NotificationItem
   unread: number
+  position: NotificationPopupPosition
 }
 
 // ---------------------------------------------------------------------------
@@ -710,6 +722,8 @@ export const SERVICE_CHANNELS = {
     getPath: 'to-service-LogService:getPath',
     /** 用系统默认程序打开日志文件 */
     openFile: 'to-service-LogService:openFile',
+    /** 用系统默认程序打开错误日志文件（error.log，仅 warn/error） */
+    openErrorFile: 'to-service-LogService:openErrorFile',
     /** 用系统默认程序打开日志文件所在目录 */
     openDirectory: 'to-service-LogService:openDirectory'
   },
@@ -964,6 +978,8 @@ export interface ElectronAPI {
     getPath: () => Promise<string>
     /** 用系统默认程序打开日志文件 */
     openFile: () => Promise<LogOpenResult>
+    /** 用系统默认程序打开错误日志文件（error.log，仅 warn/error） */
+    openErrorFile: () => Promise<LogOpenResult>
     /** 用系统默认程序打开日志文件所在目录 */
     openDirectory: () => Promise<LogOpenResult>
   }

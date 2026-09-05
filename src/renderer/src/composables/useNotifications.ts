@@ -64,7 +64,7 @@ function pad(n: number): string {
   return n < 10 ? `0${n}` : String(n)
 }
 
-/** 时间格式化：今天 HH:mm / 昨天 HH:mm / MM-DD HH:mm（不引第三方库） */
+/** 时间格式化：今天 HH:mm / 其他带年份 YYYY-MM-DD HH:mm（不引第三方库） */
 export function formatTime(ts: number): string {
   const d = new Date(ts)
   const now = new Date()
@@ -72,8 +72,7 @@ export function formatTime(ts: number): string {
   const startOfDay = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
   const hm = `${pad(d.getHours())}:${pad(d.getMinutes())}`
   if (startOfDay === startOfToday) return hm
-  if (startOfDay === startOfToday - 86_400_000) return `昨天 ${hm}`
-  return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${hm}`
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${hm}`
 }
 
 export function useNotifications() {

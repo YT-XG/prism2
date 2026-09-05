@@ -251,6 +251,7 @@ const electronAPI: ElectronAPI = {
   log: {
     getPath: () => ipcRenderer.invoke(LG.getPath) as Promise<string>,
     openFile: () => ipcRenderer.invoke(LG.openFile) as Promise<LogOpenResult>,
+    openErrorFile: () => ipcRenderer.invoke(LG.openErrorFile) as Promise<LogOpenResult>,
     openDirectory: () => ipcRenderer.invoke(LG.openDirectory) as Promise<LogOpenResult>
   },
 

@@ -341,6 +341,111 @@ class MailService extends SqliteStore {
   // 文件夹与邮件
   // ---------------------------------------------------------------------------
 
+  /**
+   * 导出全部邮箱账号连接配置（供备份 zip 打包）。
+   * 仅含 accounts 表（不含邮件/附件数据）；password_enc 为 safeStorage 加密后的授权码，
+   * 同机导入可解密恢复，跨机导入将自动置空需重新填写。
+   */
+  exportAccountsJson(): { json: string; count: number } {
+    const rows = this.all<Record<string, unknown>>('SELECT * FROM accounts ORDER BY id ASC')
+    const list = rows.map((r) => ({
+      id: Number(r.id),
+      name: String(r.name),
+      email: String(r.email),
+      host: String(r.host),
+      port: Number(r.port),
+      ssl: Boolean(r.ssl),
+      password_enc: String(r.password_enc),
+      last_sync_at: r.last_sync_at == null ? null : Number(r.last_sync_at),
+      created_at: Number(r.created_at)
+    }))
+    return { json: JSON.stringify(list), count: list.length }
+  }
+
+  /** 从备份导入邮箱账号配置（merge=按 id 保留双方；replace=清空后完全替换）。返回导入/跳过/待重填授权码计数 */
+  async importAccountsFromJson(
+    json: string,
+    mode: 'merge' | 'replace'
+  ): Promise<{ imported: number; skipped: number; authMissing: number }> {
+    let list: Record<string, unknown>[]
+    try {
+      list = JSON.parse(json) as Record<string, unknown>[]
+      if (!Array.isArray(list)) throw new Error('格式错误')
+    } catch (err) {
+      log.warn('[MailService] 导入邮箱账号失败：解析备份数据出错:', err)
+      return { imported: 0, skipped: 0, authMissing: 0 }
+    }
+
+    let imported = 0
+    let skipped = 0
+    let authMissing = 0
+    const newIds: number[] = []
+
+    if (mode === 'replace') {
+      // 清空旧账号（级联删邮件/附件）
+      const atts = this.all<{ file_path: string }>(
+        `SELECT a.file_path FROM attachments a
+         JOIN messages m ON a.message_id = m.id`
+      )
+      for (const a of atts) this.#removeFile(a.file_path)
+      this.run('DELETE FROM attachments')
+      this.run('DELETE FROM messages')
+      this.run('DELETE FROM mailboxes')
+      this.run('DELETE FROM accounts')
+    }
+
+    for (const raw of list) {
+      const id = Number(raw.id)
+      const name = String(raw.name ?? '')
+      const email = String(raw.email ?? '').toLowerCase()
+      const host = String(raw.host ?? '')
+      const port = Number(raw.port)
+      const ssl = Boolean(raw.ssl)
+      const enc = String(raw.password_enc ?? '')
+      const createdAt = Number(raw.created_at) || Date.now()
+      const lastSync = raw.last_sync_at == null ? null : Number(raw.last_sync_at)
+      if (!id || !email || !host) {
+        skipped++
+        continue
+      }
+
+      // 尝试解密授权码：同机导入可解；跨机/密钥不可用时置空，账号保留但需重新填写授权码
+      let passwordEnc = enc
+      if (enc && safeStorage.isEncryptionAvailable()) {
+        try {
+          safeStorage.decryptString(Buffer.from(enc, 'base64'))
+        } catch {
+          passwordEnc = ''
+          authMissing++
+        }
+      } else if (enc) {
+        passwordEnc = ''
+        authMissing++
+      }
+
+      const existed = this.one<{ id: number }>('SELECT id FROM accounts WHERE id = ?', [id])
+      if (mode === 'merge' && existed) {
+        skipped++
+        continue
+      }
+      this.run(
+        `INSERT INTO accounts (id, name, email, host, port, ssl, password_enc, last_sync_at, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [id, name, email, host, port, ssl ? 1 : 0, passwordEnc, lastSync, createdAt]
+      )
+      imported++
+      newIds.push(id)
+    }
+    this.save()
+
+    // 导入后为新增账号触发同步（fire-and-forget，失败不影响导入）
+    for (const id of newIds) {
+      void this.#syncAccount(id)
+    }
+    log.info(`[MailService] 从备份导入账号：+${imported}/跳过${skipped}/待重填授权码${authMissing}`)
+    return { imported, skipped, authMissing }
+  }
+
   /** 指定账号的文件夹列表（含每文件夹未读/总数） */
   getMailboxes(accountId: number): MailboxInfo[] {
     const rows = this.all<Record<string, unknown>>(
