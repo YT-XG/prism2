@@ -48,6 +48,7 @@
           class="tb-btn tb-update"
           :class="{
             'is-downloading': update.status === 'downloading',
+            'is-paused': update.status === 'paused',
             'is-downloaded': update.status === 'downloaded'
           }"
           :title="updateButtonTitle"
@@ -164,6 +165,15 @@ watch(
           text: `正在下载 v${s.version} ${Math.round(s.progress ?? 0)}%`
         })
         break
+      case 'paused':
+        setStatus('update', {
+          tone: 'warning',
+          icon: ArrowUp,
+          text: `下载已暂停 v${s.version} ${Math.round(s.progress ?? 0)}%`,
+          title: '点击继续下载',
+          action: () => void window.electronAPI.update.resume()
+        })
+        break
       case 'downloaded':
         setStatus('update', {
           tone: 'brand',
@@ -198,7 +208,9 @@ const updateButtonTitle = computed(() => {
     case 'downloaded':
       return `新版本 v${update.value.version} 已就绪，点击安装并重启`
     case 'downloading':
-      return `正在下载新版本 v${update.value.version}… ${update.value.progress ?? 0}%`
+      return `正在下载新版本 v${update.value.version}… ${update.value.progress ?? 0}%（点击暂停）`
+    case 'paused':
+      return `更新下载已暂停 v${update.value.version} ${update.value.progress ?? 0}%，点击继续`
     case 'checking':
       return '正在检查更新…'
     default:
@@ -206,14 +218,22 @@ const updateButtonTitle = computed(() => {
   }
 })
 
-/** 点击更新按钮：已下载则安装并重启；否则手动检查更新，并据结果给出可见反馈 */
+/** 点击更新按钮：已下载则安装并重启；下载中暂停；暂停中继续；其余状态手动检查更新，并据结果给出可见反馈 */
 function onUpdateButtonClick(): void {
   const s = update.value.status
   if (s === 'downloaded') {
     void window.electronAPI.update.quitAndInstall()
     return
   }
-  if (s === 'downloading' || s === 'checking') return
+  if (s === 'downloading') {
+    void window.electronAPI.update.pause()
+    return
+  }
+  if (s === 'paused') {
+    void window.electronAPI.update.resume()
+    return
+  }
+  if (s === 'checking') return
 
   void window.electronAPI.update.check().then((info_) => {
     if (info_?.message) {
@@ -536,6 +556,11 @@ onBeforeUnmount(() => {
 
 .tb-update.is-downloading {
   color: var(--warning);
+}
+
+.tb-update.is-paused {
+  color: var(--warning);
+  opacity: 0.75;
 }
 
 .tb-update.is-downloaded {

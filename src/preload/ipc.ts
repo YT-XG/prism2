@@ -406,6 +406,7 @@ export type UpdateStatus =
   | 'up-to-date' // 已是最新
   | 'available' // 发现新版本（自动开始下载）
   | 'downloading' // 正在下载
+  | 'paused' // 下载已暂停（可恢复）
   | 'downloaded' // 已下载，可安装
   | 'error' // 检查/下载出错
 
@@ -420,7 +421,7 @@ export interface UpdateStatusInfo {
   releaseNotes?: string
   /** 发布日期 */
   releaseDate?: string
-  /** 下载进度 0-100（downloading 时有值） */
+  /** 下载进度 0-100（downloading/paused 时有值） */
   progress?: number
   /** 错误信息（error 时有值） */
   error?: string
@@ -702,6 +703,9 @@ export const SERVICE_CHANNELS = {
   update: {
     getStatus: 'to-service-UpdateService:getStatus',
     check: 'to-service-UpdateService:check',
+    pause: 'to-service-UpdateService:pause',
+    resume: 'to-service-UpdateService:resume',
+    cancel: 'to-service-UpdateService:cancel',
     quitAndInstall: 'to-service-UpdateService:quitAndInstall'
   },
   download: {
@@ -939,6 +943,12 @@ export interface ElectronAPI {
     getStatus: () => Promise<UpdateStatusInfo>
     /** 检查更新（发现新版本后自动开始下载） */
     check: () => Promise<UpdateStatusInfo>
+    /** 暂停更新下载（保留已下载进度，可恢复） */
+    pause: () => Promise<UpdateStatusInfo>
+    /** 恢复已暂停的更新下载（断点续传） */
+    resume: () => Promise<UpdateStatusInfo>
+    /** 取消正在进行的更新检查或下载 */
+    cancel: () => Promise<UpdateStatusInfo>
     /** 安装已下载的更新并重启 */
     quitAndInstall: () => Promise<void>
     /** 订阅更新状态变化（返回取消函数） */

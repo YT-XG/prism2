@@ -69,10 +69,29 @@ function push(entry: Omit<StatusEntry, 'id'>): number {
   return id
 }
 
-/** 常驻条目：按 key 覆盖（先移除旧条目再追加） */
+/**
+ * 常驻条目：按 key 覆盖。
+ * 已存在时就地赋值（保持 id 不变），避免 StatusCenter 的 TransitionGroup 按 key 重建 DOM，
+ * 否则每次 set 都会重新播放进场动画（如下载进度每动一次胶囊闪一下）。
+ */
 function set(key: string, entry: Omit<StatusEntry, 'id'>): void {
   const existing = byKey.get(key)
-  if (existing !== undefined) remove(existing)
+  if (existing !== undefined) {
+    const cur = entries.value.find((e) => e.id === existing)
+    if (cur) {
+      Object.assign(cur, entry)
+      // 同步自动消失计时器：有 dismissMs 则重置顺延，无则清除
+      const t = timers.get(existing)
+      if (t !== undefined) {
+        window.clearTimeout(t)
+        timers.delete(existing)
+      }
+      if (entry.dismissMs) {
+        timers.set(existing, window.setTimeout(() => remove(existing), entry.dismissMs))
+      }
+      return
+    }
+  }
   byKey.set(key, push(entry))
 }
 

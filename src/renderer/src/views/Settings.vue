@@ -210,11 +210,18 @@
           </button>
         </div>
         <div v-if="updateMessage" class="update-status">{{ updateMessage }}</div>
-        <div v-if="updateStatus.status === 'downloading'" class="update-progress">
+        <div
+          v-if="updateStatus.status === 'downloading' || updateStatus.status === 'paused'"
+          class="update-progress"
+        >
           <div class="update-progress__track">
             <div class="update-progress__bar" :style="{ width: `${updateStatus.progress ?? 0}%` }"></div>
           </div>
           <span class="update-progress__text">{{ updateStatus.progress ?? 0 }}%</span>
+          <button class="btn" type="button" @click="toggleUpdatePause">
+            {{ updateStatus.status === 'downloading' ? '暂停' : '继续' }}
+          </button>
+          <button class="btn" type="button" @click="cancelUpdate">取消</button>
         </div>
         <div v-if="updateStatus.status === 'downloaded'" class="setting-row">
           <div class="row-info">
@@ -609,8 +616,11 @@ const updateMessage = computed(() => {
       return s.message ?? ''
     case 'up-to-date':
       return '已是最新版本'
+    // available 也可能来自「取消下载后待重下」的状态
     case 'available':
-      return `发现新版本 v${s.version}，正在下载…`
+      return `发现新版本 v${s.version}，点击「检查更新」重新开始下载`
+    case 'paused':
+      return `下载已暂停 v${s.version} ${s.progress ?? 0}%，可继续或取消`
     case 'error':
       return `更新失败：${s.error ?? '未知错误'}`
     default:
@@ -620,6 +630,20 @@ const updateMessage = computed(() => {
 
 async function checkUpdate(): Promise<void> {
   updateStatus.value = await window.electronAPI.update.check()
+}
+
+/** 暂停/继续切换（下载中 → 暂停；暂停中 → 继续） */
+function toggleUpdatePause(): void {
+  if (updateStatus.value.status === 'downloading') {
+    void window.electronAPI.update.pause()
+  } else if (updateStatus.value.status === 'paused') {
+    void window.electronAPI.update.resume()
+  }
+}
+
+/** 取消正在进行的更新检查/下载 */
+function cancelUpdate(): void {
+  void window.electronAPI.update.cancel()
 }
 
 function installUpdate(): void {
@@ -1155,9 +1179,15 @@ onMounted(async () => {
 .update-progress {
   display: flex;
   align-items: center;
-  gap: var(--sp-3);
-  height: 18px;
+  flex-wrap: wrap;
+  gap: var(--sp-2) var(--sp-3);
   padding: 0 0 var(--sp-3);
+}
+
+/* 进度行内的紧凑按钮 */
+.update-progress .btn {
+  padding: 3px 12px;
+  font-size: 11px;
 }
 
 .update-progress__track {

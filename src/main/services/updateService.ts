@@ -71,6 +71,9 @@ class UpdateService {
   /** 安装进行中标记（防止重复触发） */
   private installing = false
 
+  /** 检查序号：cancel() 或新检查会自增，使在途检查/下载结果失效（取消检查的幂等防护） */
+  private checkSeq = 0
+
   /** 初始化：创建更新引擎 + 注册 IPC */
   init(): void {
     if (this.wired) return
@@ -126,12 +129,49 @@ class UpdateService {
     }
   }
 
+  /** 暂停更新下载（保留已下载进度，可恢复） */
+  pause(): UpdateStatusInfo {
+    if (this.status.status === 'downloading' && this.updateTaskId) {
+      this.engine?.pauseDownload(this.updateTaskId)
+    }
+    return this.getStatus()
+  }
+
+  /** 恢复已暂停的更新下载（断点续传） */
+  async resume(): Promise<UpdateStatusInfo> {
+    if (this.status.status !== 'paused' || !this.updateTaskId) return this.getStatus()
+    try {
+      await this.engine?.resumeDownload(this.updateTaskId)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      log.error('[UpdateService] 恢复下载失败:', message)
+      this.#setStatus({ status: 'error', error: message })
+    }
+    return this.getStatus()
+  }
+
+  /**
+   * 取消正在进行的更新检查或下载。
+   * - 检查阶段：自增 checkSeq 使在途检查结果失效，回到 idle；
+   * - 下载/暂停阶段：取消引擎任务，引擎 emit canceled → 状态回到「发现新版本」可重新下载。
+   */
+  cancel(): UpdateStatusInfo {
+    this.checkSeq++
+    if (this.updateTaskId) {
+      this.engine?.cancelDownload(this.updateTaskId)
+    } else if (this.status.status === 'checking' || this.status.status === 'available') {
+      this.#setStatus({ status: 'idle' })
+    }
+    return this.getStatus()
+  }
+
   // ---------------------------------------------------------------------------
   // mac 自定义更新
   // ---------------------------------------------------------------------------
 
   /** mac 自定义检查：拉取 manifest → 版本比较 → 自动下载 */
   async #checkCustom(): Promise<UpdateStatusInfo> {
+    const seq = ++this.checkSeq
     this.#setStatus({ status: 'checking' })
 
     let manifest: UpdateManifest
@@ -144,6 +184,9 @@ class UpdateService {
       this.#notifyError('更新检查失败', message)
       return this.getStatus()
     }
+
+    // 检查期间被取消（或被新的检查取代）：忽略本次结果
+    if (seq !== this.checkSeq) return this.getStatus()
 
     const version = String(manifest.version || '').trim()
     if (!version) {
@@ -264,6 +307,8 @@ class UpdateService {
   async #startDownload(manifest: UpdateManifest, binary: UpdateManifestBinary): Promise<void> {
     if (!this.engine) throw new Error('更新引擎未初始化')
 
+    const seq = this.checkSeq
+
     const stagingDir = join(app.getPath('userData'), 'update-staging', manifest.version)
     await mkdir(stagingDir, { recursive: true })
 
@@ -280,6 +325,11 @@ class UpdateService {
       threads: 8,
       defaultDir: stagingDir
     })
+    // 任务建立期间被用户取消：取消刚创建的任务（此时 updateTaskId 未赋值，canceled 事件会被过滤）
+    if (seq !== this.checkSeq) {
+      this.engine.cancelDownload(task.id)
+      return
+    }
     this.updateTaskId = task.id
     log.info(`[UpdateService] 更新下载已开始: ${task.id} -> ${zipPath}`)
   }
@@ -299,11 +349,27 @@ class UpdateService {
         version: this.status.version,
         progress: Math.round(task.progress * 100)
       })
+    } else if (task.status === 'paused') {
+      this.#setStatus({
+        status: 'paused',
+        version: this.status.version,
+        progress: Math.round(task.progress * 100)
+      })
     } else if (task.status === 'completed') {
       void this.#onUpdateDownloaded()
-    } else if (task.status === 'failed' || task.status === 'canceled') {
+    } else if (task.status === 'canceled') {
+      // 用户主动取消下载：回到「发现新版本」，可点击重新下载
+      this.updateTaskId = null
+      this.#setStatus({
+        status: 'available',
+        version: this.status.version,
+        releaseDate: undefined,
+        releaseNotes: this.status.releaseNotes
+      })
+    } else if (task.status === 'failed') {
       const message = task.errorMessage || '更新下载失败'
       log.error('[UpdateService] 更新下载失败:', message)
+      this.updateTaskId = null
       this.#setStatus({ status: 'error', error: message })
       this.#notifyError('更新下载失败', message)
     }
@@ -510,6 +576,9 @@ class UpdateService {
     const U = SERVICE_CHANNELS.update
     ipcMain.handle(U.getStatus, () => this.getStatus())
     ipcMain.handle(U.check, () => this.check())
+    ipcMain.handle(U.pause, () => this.pause())
+    ipcMain.handle(U.resume, () => this.resume())
+    ipcMain.handle(U.cancel, () => this.cancel())
     ipcMain.handle(U.quitAndInstall, () => this.quitAndInstall())
   }
 }
