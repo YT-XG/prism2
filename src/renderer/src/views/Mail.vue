@@ -166,7 +166,7 @@
               v-if="readerDoc"
               class="reader__iframe"
               :srcdoc="readerDoc"
-              sandbox=""
+              sandbox="allow-popups allow-popups-to-escape-sandbox"
               referrerpolicy="no-referrer"
               title="邮件正文"
             />
@@ -471,7 +471,7 @@ function rewriteInlineImages(html: string): string {
   })
 }
 
-/** 正文安全渲染：dompurify 净化 + sandbox iframe + CSP 禁外部资源 */
+/** 正文安全渲染：dompurify 净化 + sandbox iframe + CSP（图片放行远程 https/http，链接经 base 以新窗口打开系统浏览器） */
 const readerDoc = computed(() => {
   const html = detail.value?.htmlBody ?? ''
   if (!html) return ''
@@ -482,7 +482,8 @@ const readerDoc = computed(() => {
     ALLOWED_URI_REGEXP: /^(?:(?:(?:f|ht)tps?|mailto|tel|callto|sms|cid|xmpp|prism-mail-attachment):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i
   })
   return `<!DOCTYPE html><html><head><meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data: prism-mail-attachment:; style-src 'unsafe-inline'">
+<base target="_blank">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data: https: http: prism-mail-attachment:; style-src 'unsafe-inline'">
 <style>body{font-family:system-ui,sans-serif;margin:0;padding:0;word-break:break-word;color:#1f1f1f;font-size:14px;line-height:1.7}img{max-width:100%;height:auto}</style>
 </head><body>${clean}</body></html>`
 })

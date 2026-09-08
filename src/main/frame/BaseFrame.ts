@@ -4,7 +4,7 @@
  * 提供四种 IPC 通信（recvOne/recvTwo/sendOne/sendTwo）与销毁时自动清理，
  * v2 保持下：窗口类一律经本类通信，禁止在 Frame 里直接调用 ipcMain.on/handle。
  */
-import { BrowserWindow, BrowserWindowConstructorOptions, ipcMain } from 'electron'
+import { BrowserWindow, BrowserWindowConstructorOptions, ipcMain, shell } from 'electron'
 import { join } from 'node:path'
 import { is } from '@electron-toolkit/utils'
 import { WINDOW_CHANNELS } from '@preload/ipc'
@@ -54,9 +54,11 @@ export default abstract class BaseFrame {
       this.window.on('ready-to-show', () => this.window?.show())
     }
 
-    this.window.webContents.setWindowOpenHandler((_details) => {
-      // 外部链接交给系统默认浏览器
-      // 不做内联 openExternal 防止渲染端注入，此处简化处理
+    this.window.webContents.setWindowOpenHandler((details) => {
+      // 外部链接交给系统默认浏览器（仅放行 http/https/mailto，防止任意协议注入）
+      if (/^(?:https?|mailto):/i.test(details.url)) {
+        void shell.openExternal(details.url)
+      }
       return { action: 'deny' }
     })
 
