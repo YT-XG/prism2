@@ -143,16 +143,28 @@ jobs:
           PY
           gh release upload --repo "${GITHUB_REPOSITORY}" "$GITHUB_REF_NAME" latest.json --clobber
 
-      - name: Push latest.json to Gitee anchor
+      - name: Push latest.json to Gitee anchor (redirect pointer)
         env:
           GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
           GITEE_USER: ${{ secrets.GITEE_USER }}
           GITEE_ANCHOR_REPO: ${{ secrets.GITEE_ANCHOR_REPO }}
+          PRISM2_UPDATE_BASE: ${{ vars.PRISM2_UPDATE_BASE || 'https://filedev.wxgx.com/prism2' }}
         run: |
           if [ -z "$GITEE_TOKEN" ] || [ -z "$GITEE_USER" ] || [ -z "$GITEE_ANCHOR_REPO" ]; then
             echo "Gitee anchor secrets 未配置，跳过 Gitee 推送。"
             exit 0
           fi
+          # Gitee 锚点改为「重定向指针」：客户端读 Gitee 主源 -> 跟随 redirect 到自托管服务器下载。
+          # GitHub Release 里的 latest.json 保持自包含(binaries->GitHub)作兜底，不变。
+          VERSION="${GITHUB_REF_NAME#v}"
+          python3 - "$VERSION" "$PRISM2_UPDATE_BASE" <<'PY'
+          import json, sys
+          version, base = sys.argv[1], sys.argv[2]
+          manifest = {"version": version, "redirect": f"{base}/latest.json", "binaries": []}
+          with open('latest.json', 'w', encoding='utf-8') as f:
+              json.dump(manifest, f, ensure_ascii=False, indent=2)
+          print(json.dumps(manifest, ensure_ascii=False, indent=2))
+          PY
           git init
           git config user.email "action@users.noreply.github.com"
           git config user.name "GitHub Actions"
@@ -174,3 +186,18 @@ jobs:
           echo "Gitee 锚点 version=${remote}，期望=${VERSION}"
           [ "$remote" = "$VERSION" ] || { echo "Gitee 锚点版本不匹配（可能命中旧版/未成功推送），请检查 GITEE_TOKEN/GITEE_ANCHOR_REPO"; exit 1; }
           echo "Gitee 锚点校验通过。"
+
+      - name: Notify self-hosted update server
+        continue-on-error: true
+        env:
+          PRISM2_WEBHOOK_TOKEN: ${{ secrets.PRISM2_WEBHOOK_TOKEN }}
+          PRISM2_WEBHOOK_URL: ${{ vars.PRISM2_WEBHOOK_URL || 'https://filedev.wxgx.com/prism2-webhook/' }}
+        run: |
+          if [ -z "$PRISM2_WEBHOOK_TOKEN" ]; then
+            echo "PRISM2_WEBHOOK_TOKEN 未配置，跳过服务器通知（cron 会兜底）。"
+            exit 0
+          fi
+          # 触发服务器立即同步镜像；失败不阻塞发版（cron 兜底）
+          curl -fSs -o /dev/null -w 'webhook -> HTTP %{http_code}\n' \
+            -X POST "${PRISM2_WEBHOOK_URL}?tok=${PRISM2_WEBHOOK_TOKEN}" \
+            || echo "webhook 通知失败（cron 会兜底）"

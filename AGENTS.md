@@ -88,11 +88,12 @@ scripts/make-server-manifest.mjs  # 生成自托管服务器版 latest.json（ur
 
 ## 更新与发版
 
-- **自动打包**：`.github/workflows/release.yml` 在打 `v*` tag 时于 **win + mac** 构建并 `electron-builder --publish always` 发布到 GitHub Release（`linux` 已从 CI 去掉）；`package-manifest` job 汇总产物生成自定义 `latest.json` 上传到该 release，并推送一份到 Gitee 锚点仓库（需配置 `GITEE_TOKEN/GITEE_USER/GITEE_ANCHOR_REPO` secret），随后校验 Gitee 锚点 raw 的 `version` 与本次 tag 一致（防止跳点停留旧版）。
+- **自动打包**：`.github/workflows/release.yml` 在打 `v*` tag 时于 **win + mac** 构建并 `electron-builder --publish always` 发布到 GitHub Release（`linux` 已从 CI 去掉）；`package-manifest` job 汇总产物生成自定义 `latest.json` **上传到 GitHub Release（保持自包含，指向 GitHub）**，再推一份到 Gitee 锚点仓库（需配置 `GITEE_TOKEN/GITEE_USER/GITEE_ANCHOR_REPO` secret，该份现在是 `{version, redirect, binaries:[]}` **跳板指针**，`redirect` 指向自托管服务器清单），随后校验 Gitee 锚点 raw 的 `version` 与本次 tag 一致（防止跳点停留旧版）。
 - **自动更新（Gitee 主源 + GitHub 兜底 + 平台分支安装）**：
   - **主源**：`https://gitee.com/{GITEE_ANCHOR_REPO}/raw/{GITEE_ANCHOR_BRANCH}/latest.json`（Gitee raw，国内访问好；CI 每次发版 `git push -f gitee master` 覆盖该文件，等效「始终最新」）。**兜底**：`https://github.com/{UPDATE_ANCHOR_REPO}/releases/latest/download/latest.json`（GitHub「latest」别名，永远指向最新 release；**旧客户端 v2.0.4–v2.0.8 仍唯一指向这里，必须一直可达且自包含**）。**换服务器不改客户端**——在该锚点的 `latest.json` 加 `redirect`（指向新清单）+ `mirrors[]`（二进制备用源，字段已声明、下载引擎暂未消费），客户端自动跟随。`UPDATE_ANCHOR_REPO`/`GITEE_ANCHOR_REPO`（`src/main/services/updateService.ts` 常量）是唯一源（构建期常量，**不读持久化设置**，避免 settings.json 残留旧值污染更新源）。
   - **检测 + 下载（mac/win 统一）**：`updateService` 读锚点 manifest（`redirect` 跟随 + `binaries` 按平台取安装包）→ `semver` 比较 → 多线程下载引擎下载到 `userData/update-staging/<version>/` → SHA-256 校验。
   - **安装（仅此层平台分支）**：mac 无签名**原地替换 `.app`**（`Contents` 原子替换 + 失败回滚 + relaunch，无 Gatekeeper 复弹）；win 下载 NSIS `*-setup.exe`，`/S /D=<安装目录>` 静默覆盖安装（需 Windows 真机实测）。
+- **自托管更新服务器镜像**（`filedev.wxgx.com/prism2`，2026-09 落地）：GitHub Actions 发版后经 webhook（`PRISM2_WEBHOOK_TOKEN`）通知服务器，服务器 `/usr/local/bin/prism2-sync.sh` 从 GitHub 拉取（走 ghfast.top/ghproxy.net 代理，因中国大陆直连 GitHub 约 87% 被阻断）安装包并改写为服务器地址，客户端经 Gitee `redirect` 跳转到服务器下载，GitHub 保持自包含兜底。详见 `../docs/prism2/self-host-update.md`。
 - UI：设置页「检查更新」+ 启动（打包后）延迟 3s 静默检查；发现新版本自动下载，标题栏右上角（最小化左侧）上箭头更新按钮（可手动检查；下载中变黄显示进度角标，就绪变品牌色点击安装并重启）+ 品牌区后状态中心显示更新条目（检查中 / 下载中进度 / 发现新版本与就绪可点击操作），设置页展示进度与「安装并重启」；更新下载复用 `downloadEngine`（独立实例，不混入用户下载列表）。
 - **旧版升级到 v2**：v1 的 `githubRepo` 默认指向本仓库，v1 用户检查更新会看到 v2 并下载安装；两者并存，v2 内一键导入 v1 数据。
 - ⚠️ 仓库地址占位：`electron-builder.yml`、`.github/workflows/release.yml`、`dev-app-update.yml` 与 v1 `settingsService.ts` 的 githubRepo 均为 `YT-XG/prism2` 占位；`updateService.ts` 的 `GITEE_ANCHOR_REPO` 为 `yt-xg/prism2`（须与 CI 的 `GITEE_ANCHOR_REPO` secret 一致），建好正式仓库后需统一替换。
