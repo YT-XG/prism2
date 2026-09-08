@@ -145,16 +145,16 @@ jobs:
           PY
           gh release upload --repo "${GITHUB_REPOSITORY}" "$GITHUB_REF_NAME" latest.json --clobber
 
-      - name: Generate self-hosted manifest (server base)
+      - name: Generate OSS manifest (oss base)
         env:
-          PRISM2_UPDATE_BASE: ${{ vars.PRISM2_UPDATE_BASE || 'https://filedev.wxgx.com/prism2' }}
-          PRISM2_WEBHOOK_TOKEN: ${{ secrets.PRISM2_WEBHOOK_TOKEN }}
+          PRISM2_UPDATE_BASE: ${{ vars.PRISM2_UPDATE_BASE || 'https://prism2.oss-cn-hangzhou.aliyuncs.com/prism2' }}
+          OSS_ACCESS_KEY_ID: ${{ secrets.OSS_ACCESS_KEY_ID }}
         run: |
-          if [ -z "$PRISM2_WEBHOOK_TOKEN" ]; then
-            echo "PRISM2_WEBHOOK_TOKEN 未配置，跳过服务器推送（webhook/cron 兜底）。"
+          if [ -z "$OSS_ACCESS_KEY_ID" ]; then
+            echo "OSS AccessKey 未配置，跳过 OSS 清单生成（客户端走 Gitee→GitHub 兜底）。"
             exit 0
           fi
-          # 从 GitHub 自包含清单生成「服务器版」：仅把 binaries[].url 前缀改写为服务器下载基址，sha 不变。
+          # 从 GitHub 自包含清单生成「OSS 版」：仅把 binaries[].url 前缀改写为 OSS 下载基址，sha 不变。
           # 必须在本 job 把 latest.json 覆盖为 Gitee 跳板指针(binaries:[])之前生成。
           python3 - "$PRISM2_UPDATE_BASE" <<'PY'
           import json, os, sys
@@ -165,7 +165,7 @@ jobs:
           for b in m.get('binaries', []):
               name = unquote(os.path.basename(urlparse(b['url']).path))
               b['url'] = f"{base}/{name}"
-          with open('server-latest.json', 'w', encoding='utf-8') as f:
+          with open('oss-latest.json', 'w', encoding='utf-8') as f:
               json.dump(m, f, ensure_ascii=False, indent=2)
           print(json.dumps(m, ensure_ascii=False, indent=2))
           PY
@@ -175,13 +175,13 @@ jobs:
           GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
           GITEE_USER: ${{ secrets.GITEE_USER }}
           GITEE_ANCHOR_REPO: ${{ secrets.GITEE_ANCHOR_REPO }}
-          PRISM2_UPDATE_BASE: ${{ vars.PRISM2_UPDATE_BASE || 'https://filedev.wxgx.com/prism2' }}
+          PRISM2_UPDATE_BASE: ${{ vars.PRISM2_UPDATE_BASE || 'https://prism2.oss-cn-hangzhou.aliyuncs.com/prism2' }}
         run: |
           if [ -z "$GITEE_TOKEN" ] || [ -z "$GITEE_USER" ] || [ -z "$GITEE_ANCHOR_REPO" ]; then
             echo "Gitee anchor secrets 未配置，跳过 Gitee 推送。"
             exit 0
           fi
-          # Gitee 锚点改为「重定向指针」：客户端读 Gitee 主源 -> 跟随 redirect 到自托管服务器下载。
+          # Gitee 锚点改为「重定向指针」：客户端读 Gitee 主源 -> 跟随 redirect 到 OSS 下载。
           # GitHub Release 里的 latest.json 保持自包含(binaries->GitHub)作兜底，不变。
           VERSION="${GITHUB_REF_NAME#v}"
           python3 - "$VERSION" "$PRISM2_UPDATE_BASE" <<'PY'
@@ -214,53 +214,41 @@ jobs:
           [ "$remote" = "$VERSION" ] || { echo "Gitee 锚点版本不匹配（可能命中旧版/未成功推送），请检查 GITEE_TOKEN/GITEE_ANCHOR_REPO"; exit 1; }
           echo "Gitee 锚点校验通过。"
 
-      # ===== CI 直推自托管服务器（仅 443）=====
-      # 主通道：把 win/mac 安装包 + 服务器版最新清单经 HTTPS 上传到服务器 /prism2-upload/。
-      # 服务器 /usr/local/bin/prism2-sync.sh 的「本地新鲜短路」在 webhook 触发后秒级 finalize（marker+清理），不再依赖 GitHub 代理下载。
-      - name: Push installers + manifest to self-hosted server (443)
+      # ===== CI 上传到阿里云 OSS（主通道，客户端经 Gitee→OSS 下载）=====
+      - name: Upload installers + manifest to Aliyun OSS
         continue-on-error: true
         env:
-          PRISM2_WEBHOOK_TOKEN: ${{ secrets.PRISM2_WEBHOOK_TOKEN }}
-          PRISM2_PUSH_URL: ${{ vars.PRISM2_PUSH_URL || 'https://filedev.wxgx.com/prism2-upload/' }}
+          OSS_ACCESS_KEY_ID: ${{ secrets.OSS_ACCESS_KEY_ID }}
+          OSS_ACCESS_KEY_SECRET: ${{ secrets.OSS_ACCESS_KEY_SECRET }}
+          OSS_BUCKET: ${{ vars.OSS_BUCKET || 'prism2' }}
+          OSS_REGION: ${{ vars.OSS_REGION || 'oss-cn-hangzhou' }}
+          OSS_KEY_PREFIX: ${{ vars.OSS_KEY_PREFIX || 'prism2' }}
         run: |
-          if [ -z "$PRISM2_WEBHOOK_TOKEN" ]; then
-            echo "PRISM2_WEBHOOK_TOKEN 未配置，跳过服务器推送（cron 兜底）。"
+          if [ -z "$OSS_ACCESS_KEY_ID" ] || [ -z "$OSS_ACCESS_KEY_SECRET" ]; then
+            echo "OSS AccessKey 未配置，跳过 OSS 上传（客户端走 Gitee→GitHub 兜底）。"
             exit 0
           fi
-          set -euo pipefail
-          push_file() {
-            local f="$1"
-            local target="${2:-}"
-            local name
-            name="${target:-$(basename "$f")}"
-            local sha
-            sha="$(sha256sum "$f" | awk '{print $1}')"
-            echo "上传 ${name} ($(stat -c%s "$f") bytes, sha=${sha:0:12}...)"
-            curl -fS --retry 3 --retry-all-errors --retry-delay 3 \
-              -X PUT --upload-file "$f" \
-              -H "X-Prism2-Token: ${PRISM2_WEBHOOK_TOKEN}" \
-              -H "X-Prism2-Sha256: $sha" \
-              "${PRISM2_PUSH_URL}${name}" \
-              -w "  -> HTTP %{http_code}\n" -o /dev/null || echo "  上传失败: ${name}"
-          }
-          # 先上传二进制，最后上传服务器清单（latest.json，保证只在该版本二进制齐全后出现）
-          for f in dist-all/prism2-*-setup.exe dist-all/prism2-*-universal-mac.zip; do
-            if [ -f "$f" ]; then push_file "$f"; else echo "  (缺: $f)"; fi
-          done
-          if [ -f server-latest.json ]; then push_file server-latest.json latest.json; else echo "  缺 server-latest.json，跳过清单推送"; fi
-          echo "推送完成(best-effort)"
-
-      - name: Notify self-hosted update server
-        continue-on-error: true
-        env:
-          PRISM2_WEBHOOK_TOKEN: ${{ secrets.PRISM2_WEBHOOK_TOKEN }}
-          PRISM2_WEBHOOK_URL: ${{ vars.PRISM2_WEBHOOK_URL || 'https://filedev.wxgx.com/prism2-webhook/' }}
-        run: |
-          if [ -z "$PRISM2_WEBHOOK_TOKEN" ]; then
-            echo "PRISM2_WEBHOOK_TOKEN 未配置，跳过服务器通知（cron 会兜底）。"
-            exit 0
-          fi
-          # 触发服务器 finalize：CI 推送后由 sync.sh 的「本地新鲜短路」校验并补齐 marker/清理旧版本；失败不阻塞发版（cron 兜底）
-          curl -fSs -o /dev/null -w 'webhook -> HTTP %{http_code}\n' \
-            -X POST "${PRISM2_WEBHOOK_URL}?tok=${PRISM2_WEBHOOK_TOKEN}" \
-            || echo "webhook 通知失败（cron 会兜底）"
+          (python3 -m pip install --quiet --break-system-packages oss2 2>/dev/null || python3 -m pip install --quiet oss2)
+          python3 - <<'PY'
+          import os, glob
+          import oss2
+          ak_id = os.environ["OSS_ACCESS_KEY_ID"]
+          ak_secret = os.environ["OSS_ACCESS_KEY_SECRET"]
+          bucket_name = os.environ["OSS_BUCKET"]
+          region = os.environ["OSS_REGION"]
+          prefix = os.environ.get("OSS_KEY_PREFIX", "prism2").strip("/")
+          auth = oss2.Auth(ak_id, ak_secret)
+          bucket = oss2.Bucket(auth, f"https://{region}.aliyuncs.com", bucket_name)
+          def up(path, key):
+              bucket.put_object_from_file(key, path)
+              print(f"  uploaded {key}")
+          # 先上传二进制，最后上传 OSS 版清单（latest.json，保证只在该版本二进制齐全后出现）
+          for pat in ("dist-all/prism2-*-setup.exe", "dist-all/prism2-*-universal-mac.zip"):
+              for f in glob.glob(pat):
+                  if os.path.isfile(f):
+                      up(f, f"{prefix}/{os.path.basename(f)}")
+          if os.path.isfile("oss-latest.json"):
+              up("oss-latest.json", f"{prefix}/latest.json")
+          else:
+              print("  (缺 oss-latest.json，跳过 OSS 清单)")
+          PY
