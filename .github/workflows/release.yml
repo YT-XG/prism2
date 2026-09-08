@@ -251,4 +251,20 @@ jobs:
               up("oss-latest.json", f"{prefix}/latest.json")
           else:
               print("  (缺 oss-latest.json，跳过 OSS 清单)")
+          # 只保留当前版本：删除 OSS 上所有其它版本号(prism2-<ver>-*)的对象；latest.json 不属于版本文件，保留
+          import re
+          current = os.environ.get("GITHUB_REF_NAME", "").lstrip("v")
+          ver_re = re.compile(r"^prism2-(\d+\.\d+\.\d+).*?\.(exe|zip|blockmap|dmg)$")
+          if re.match(r"^\d+\.\d+\.\d+$", current):
+              deleted = 0
+              for obj in oss2.ObjectIterator(bucket, prefix=f"{prefix}/"):
+                  name = obj.key.rsplit("/", 1)[-1]
+                  m = ver_re.match(name)
+                  if m and m.group(1) != current:
+                      bucket.delete_object(obj.key)
+                      deleted += 1
+                      print(f"  deleted old {obj.key}")
+              print(f"OSS cleanup: keep v{current}, deleted {deleted} old version object(s)")
+          else:
+              print("  (非 tag 触发，跳过 OSS 旧版本清理)")
           PY
