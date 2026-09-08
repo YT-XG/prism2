@@ -209,6 +209,20 @@
             {{ updateStatus.status === 'checking' ? '检查中…' : '检查更新' }}
           </button>
         </div>
+        <div class="setting-row">
+          <div class="row-info">
+            <div class="row-name">重新安装最新版本</div>
+            <div class="row-desc">不比较版本，直接下载最新安装包并安装（验证安装流程）</div>
+          </div>
+          <button
+            class="btn"
+            type="button"
+            :disabled="updateBusy || updateStatus.status === 'paused' || updateStatus.status === 'downloaded'"
+            @click="openReinstallConfirm"
+          >
+            重新安装
+          </button>
+        </div>
         <div v-if="updateMessage" class="update-status">{{ updateMessage }}</div>
         <div
           v-if="updateStatus.status === 'downloading' || updateStatus.status === 'paused'"
@@ -229,6 +243,41 @@
             <div class="row-desc">v{{ updateStatus.version }} 已下载，重启后生效</div>
           </div>
           <button class="btn btn--primary" type="button" @click="installUpdate">安装并重启</button>
+        </div>
+        <div v-if="updateStatus.status === 'error'" class="setting-row">
+          <div class="row-info">
+            <div class="row-name">更新失败</div>
+            <div class="row-desc">
+              <template v-if="updateStatus.installerPath || updateStatus.downloadUrl">
+                自动安装未成功，可手动安装：<br />
+                <span class="update-error-path">{{
+                  updateStatus.installerPath
+                    ? `安装包已下载：${updateStatus.installerPath}`
+                    : '从下方下载链接获取安装包'
+                }}</span>
+              </template>
+              <template v-else>{{ updateStatus.error ?? '未知错误' }}</template>
+            </div>
+          </div>
+          <div class="import-actions">
+            <button
+              v-if="updateStatus.installerPath"
+              class="btn btn--primary"
+              type="button"
+              @click="openInstallerFolder"
+            >
+              打开安装包
+            </button>
+            <button
+              v-if="updateStatus.downloadUrl"
+              class="btn"
+              type="button"
+              @click="openDownloadUrl"
+            >
+              下载安装包
+            </button>
+            <button class="btn" type="button" @click="checkUpdate">重新检查</button>
+          </div>
         </div>
       </section>
 
@@ -314,6 +363,20 @@
         <template #footer>
           <UiButton variant="ghost" @click="deleteConfirm = false">取消</UiButton>
           <UiButton variant="danger" @click="confirmDeleteData">移入回收站</UiButton>
+        </template>
+      </UiDialog>
+
+      <UiDialog
+        :model-value="reinstallConfirm"
+        title="重新安装最新版本"
+        @update:model-value="reinstallConfirm = false"
+      >
+        <p class="confirm-text">
+          将重新下载最新版本安装包并覆盖安装当前应用（与自动更新同一流程，用于验证安装功能）。确定继续吗？
+        </p>
+        <template #footer>
+          <UiButton variant="ghost" @click="reinstallConfirm = false">取消</UiButton>
+          <UiButton variant="primary" @click="confirmReinstall">下载并安装</UiButton>
         </template>
       </UiDialog>
 
@@ -632,6 +695,19 @@ async function checkUpdate(): Promise<void> {
   updateStatus.value = await window.electronAPI.update.check()
 }
 
+/** 重新安装最新版本：确认弹窗 */
+const reinstallConfirm = ref(false)
+
+function openReinstallConfirm(): void {
+  reinstallConfirm.value = true
+}
+
+/** 确认后：强制下载最新安装包（跳过版本比较），完成后走普通更新「安装并重启」流程 */
+async function confirmReinstall(): Promise<void> {
+  reinstallConfirm.value = false
+  updateStatus.value = await window.electronAPI.update.reinstall()
+}
+
 /** 暂停/继续切换（下载中 → 暂停；暂停中 → 继续） */
 function toggleUpdatePause(): void {
   if (updateStatus.value.status === 'downloading') {
@@ -648,6 +724,16 @@ function cancelUpdate(): void {
 
 function installUpdate(): void {
   void window.electronAPI.update.quitAndInstall()
+}
+
+/** 打开已下载安装包所在目录（更新安装失败后的手动安装入口） */
+function openInstallerFolder(): void {
+  void window.electronAPI.update.openInstallerFolder()
+}
+
+/** 在系统浏览器打开安装包下载链接（更新安装失败后的手动安装入口） */
+function openDownloadUrl(): void {
+  void window.electronAPI.update.openDownloadUrl()
 }
 
 // ---------------------------------------------------------------------------
@@ -966,6 +1052,19 @@ onMounted(async () => {
 .cm-pills {
   display: flex;
   gap: var(--sp-2);
+}
+
+/* 更新失败时展示的安装包本地路径：等宽小字、可选中复制、超出省略换行 */
+.update-error-path {
+  display: inline-block;
+  max-width: 100%;
+  margin-top: 2px;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Consolas, monospace);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  word-break: break-all;
+  user-select: text;
 }
 
 .keycaps {

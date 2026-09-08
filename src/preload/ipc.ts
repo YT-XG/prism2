@@ -427,6 +427,10 @@ export interface UpdateStatusInfo {
   error?: string
   /** 补充说明（如开发模式提示） */
   message?: string
+  /** 已下载安装包的本地路径（安装失败后仍存在，可手动安装） */
+  installerPath?: string
+  /** 安装包下载链接（安装失败后可在浏览器自行下载安装） */
+  downloadUrl?: string
 }
 
 /** 自定义更新清单（latest.json）的一个平台二进制项 */
@@ -703,10 +707,13 @@ export const SERVICE_CHANNELS = {
   update: {
     getStatus: 'to-service-UpdateService:getStatus',
     check: 'to-service-UpdateService:check',
+    reinstall: 'to-service-UpdateService:reinstall',
     pause: 'to-service-UpdateService:pause',
     resume: 'to-service-UpdateService:resume',
     cancel: 'to-service-UpdateService:cancel',
-    quitAndInstall: 'to-service-UpdateService:quitAndInstall'
+    quitAndInstall: 'to-service-UpdateService:quitAndInstall',
+    openInstallerFolder: 'to-service-UpdateService:openInstallerFolder',
+    openDownloadUrl: 'to-service-UpdateService:openDownloadUrl'
   },
   download: {
     start: 'to-service-DownloadService:start',
@@ -943,6 +950,8 @@ export interface ElectronAPI {
     getStatus: () => Promise<UpdateStatusInfo>
     /** 检查更新（发现新版本后自动开始下载） */
     check: () => Promise<UpdateStatusInfo>
+    /** 重新安装最新版本（跳过版本比较，强制下载最新包并进入可安装状态） */
+    reinstall: () => Promise<UpdateStatusInfo>
     /** 暂停更新下载（保留已下载进度，可恢复） */
     pause: () => Promise<UpdateStatusInfo>
     /** 恢复已暂停的更新下载（断点续传） */
@@ -951,6 +960,10 @@ export interface ElectronAPI {
     cancel: () => Promise<UpdateStatusInfo>
     /** 安装已下载的更新并重启 */
     quitAndInstall: () => Promise<void>
+    /** 打开已下载安装包所在目录（安装失败后的手动安装入口） */
+    openInstallerFolder: () => Promise<void>
+    /** 在系统浏览器打开安装包下载链接（安装失败后的手动安装入口） */
+    openDownloadUrl: () => Promise<void>
     /** 订阅更新状态变化（返回取消函数） */
     onStatus: (cb: (info: UpdateStatusInfo) => void) => () => void
   }

@@ -210,10 +210,13 @@ const electronAPI: ElectronAPI = {
   update: {
     getStatus: () => ipcRenderer.invoke(U.getStatus) as Promise<UpdateStatusInfo>,
     check: () => ipcRenderer.invoke(U.check) as Promise<UpdateStatusInfo>,
+    reinstall: () => ipcRenderer.invoke(U.reinstall) as Promise<UpdateStatusInfo>,
     pause: () => ipcRenderer.invoke(U.pause) as Promise<UpdateStatusInfo>,
     resume: () => ipcRenderer.invoke(U.resume) as Promise<UpdateStatusInfo>,
     cancel: () => ipcRenderer.invoke(U.cancel) as Promise<UpdateStatusInfo>,
     quitAndInstall: () => ipcRenderer.invoke(U.quitAndInstall) as Promise<void>,
+    openInstallerFolder: () => ipcRenderer.invoke(U.openInstallerFolder) as Promise<void>,
+    openDownloadUrl: () => ipcRenderer.invoke(U.openDownloadUrl) as Promise<void>,
     onStatus: (cb: (info: UpdateStatusInfo) => void) =>
       subscribe(BROADCAST.updateStatus, (info) => cb(info as UpdateStatusInfo))
   },

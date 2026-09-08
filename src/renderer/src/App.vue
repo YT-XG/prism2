@@ -182,6 +182,22 @@ watch(
           action: () => void window.electronAPI.update.quitAndInstall()
         })
         break
+      case 'error':
+        // 安装/更新失败：给出恢复路径（有安装包→打开目录手动装；否则→重新检查）
+        setStatus('update', {
+          tone: 'error',
+          icon: AlertCircle,
+          text: s.installerPath || s.downloadUrl ? `更新安装失败，可手动安装 v${s.version ?? ''}` : `更新失败：${s.error ?? '未知错误'}`,
+          title:
+            s.installerPath || s.downloadUrl
+              ? '点击打开安装包所在目录，手动完成安装'
+              : '点击重新检查更新',
+          action:
+            s.installerPath || s.downloadUrl
+              ? () => void window.electronAPI.update.openInstallerFolder()
+              : () => void window.electronAPI.update.check()
+        })
+        break
       default:
         removeStatusKey('update')
     }

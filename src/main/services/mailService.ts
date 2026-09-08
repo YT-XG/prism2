@@ -1089,7 +1089,7 @@ class MailService extends SqliteStore {
       await client.connect()
       await client.mailboxOpen(path)
       resetBackoff()
-      log.info(`[MailService] 监听连接已建立 (${String(acc.email)}, ${path})：IDLE 实时收信`)
+      log.debug(`[MailService] 监听连接已建立 (${String(acc.email)}, ${path})：IDLE 实时收信`)
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       log.warn(`[MailService] 监听连接建立失败 (${String(acc.email)}, ${path}):`, msg)
@@ -1144,7 +1144,13 @@ class MailService extends SqliteStore {
       state.reconnectTimer = null
       void this.#startWatch(accountId)
     }, delay)
-    log.warn(`[MailService] 监听连接断开 (accountId=${accountId})，${delay / 1000}s 后重连`)
+    // 常规服务端踢线（退避处于初始值，重连预期瞬回）仅 debug 记录，避免 163 等服务商高频踢线刷屏；
+    // 退避升级（连续重连失败）才按 warn 记录，保留真实异常的可观察性
+    if (delay > WATCH_RECONNECT_BASE_MS) {
+      log.warn(`[MailService] 监听连接重连失败升级 (accountId=${accountId})，${delay / 1000}s 后重试`)
+    } else {
+      log.debug(`[MailService] 监听连接断开 (accountId=${accountId})，${delay / 1000}s 后重连`)
+    }
   }
 
   // ---------------------------------------------------------------------------

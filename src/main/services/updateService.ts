@@ -15,14 +15,13 @@
  */
 import { app, ipcMain, net, shell } from 'electron'
 import log from 'electron-log'
-import { spawn } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { createReadStream, existsSync } from 'node:fs'
 import { access, mkdir, readdir, rename, rm } from 'node:fs/promises'
 import { constants } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import semver from 'semver'
-import AdmZip from 'adm-zip'
 import { broadcast } from '../utils/platform'
 import { notificationService } from './notificationService'
 import { MultiThreadDownloadEngine } from '../core/downloadEngine'
@@ -119,7 +118,13 @@ class UpdateService {
     const handleError = (err: unknown): void => {
       const message = err instanceof Error ? err.message : String(err)
       log.error('[UpdateService] 安装失败:', message)
-      this.#setStatus({ status: 'error', error: message })
+      // 安装失败时保留安装包并带出本地路径/下载链接，供用户手动安装（打开目录 / 浏览器下载）
+      this.#setStatus({
+        status: 'error',
+        error: message,
+        installerPath: this.downloadedZipPath ?? undefined,
+        downloadUrl: this.downloadedManifest ? this.#pickBinary(this.downloadedManifest)?.url ?? undefined : undefined
+      })
     }
 
     if (process.platform === 'darwin') {
@@ -165,12 +170,27 @@ class UpdateService {
     return this.getStatus()
   }
 
+  /**
+   * 重新安装最新版本：与 check() 同一流程，但跳过版本比较，强制下载最新安装包并进入「已下载可安装」状态。
+   * 用于验证安装流程（无需等待发布新版本）。
+   */
+  async reinstall(): Promise<UpdateStatusInfo> {
+    if (!app.isPackaged) {
+      this.#setStatus({
+        status: 'idle',
+        message: '开发模式不支持自动更新，请打包后测试'
+      })
+      return this.getStatus()
+    }
+    return this.#checkCustom(true)
+  }
+
   // ---------------------------------------------------------------------------
   // mac 自定义更新
   // ---------------------------------------------------------------------------
 
-  /** mac 自定义检查：拉取 manifest → 版本比较 → 自动下载 */
-  async #checkCustom(): Promise<UpdateStatusInfo> {
+  /** mac 自定义检查：拉取 manifest → 版本比较 → 自动下载；force=true 时跳过版本比较强制重装 */
+  async #checkCustom(force = false): Promise<UpdateStatusInfo> {
     const seq = ++this.checkSeq
     this.#setStatus({ status: 'checking' })
 
@@ -194,16 +214,19 @@ class UpdateService {
       return this.getStatus()
     }
 
-    const current = this.status.currentVersion
-    let isNewer = false
-    try {
-      isNewer = semver.gt(version, current)
-    } catch {
-      isNewer = version !== current
-    }
-    if (!isNewer) {
-      this.#setStatus({ status: 'up-to-date' })
-      return this.getStatus()
+    // 非强制检查才做版本比较；强制重装（reinstall）直接下载最新包
+    if (!force) {
+      const current = this.status.currentVersion
+      let isNewer = false
+      try {
+        isNewer = semver.gt(version, current)
+      } catch {
+        isNewer = version !== current
+      }
+      if (!isNewer) {
+        this.#setStatus({ status: 'up-to-date' })
+        return this.getStatus()
+      }
     }
 
     const binary = this.#pickBinary(manifest)
@@ -221,8 +244,8 @@ class UpdateService {
     notificationService.notify({
       type: 'info',
       source: 'update',
-      title: '发现新版本',
-      message: `v${version} 已发布，正在后台下载…`
+      title: force ? '重新安装最新版本' : '发现新版本',
+      message: force ? `v${version} 正在后台下载，完成后可安装` : `v${version} 已发布，正在后台下载…`
     })
 
     // 启动下载（实际进度经 #onUpdateTask 驱动状态机）
@@ -441,10 +464,15 @@ class UpdateService {
     const version = manifest.version
     const stagingDir = join(app.getPath('userData'), 'update-staging', version)
     const extractDir = join(stagingDir, 'extracted')
-    await mkdir(extractDir, { recursive: true })
 
-    // 解压（adm-zip）；zip 内含 top-level `Prism 2.app`
-    new AdmZip(zipPath).extractAllTo(extractDir, true)
+    // 解压更新包：mac 应用包 Frameworks 内含符号链接（Versions/Current → A、Resources → Versions/Current/Resources 等，
+    // 链接目标即条目内容，如 size=1/26），adm-zip 0.6.x 无符号链接支持会把链接条目当普通文件落地 → .app 无法启动；
+    // 且其 writeFileTo 在 macOS 上 openSync 失败后兜底 chmodSync 会对「路径尚不存在/残留半成品」抛 `chmod ENOENT`
+    // （线上即此报错）。改用 macOS 原生 ditto 解压，原生保留符号链接与权限；每次先清空旧解压残留，失败也清，
+    // 保证重试（含上一次失败遗留的脏 extracted/）都从全新目录开始。
+    await rm(extractDir, { recursive: true, force: true })
+    await mkdir(extractDir, { recursive: true })
+    await this.#extractMacZip(zipPath, extractDir)
 
     const appDirName = await this.#findAppDir(extractDir)
     if (!appDirName) {
@@ -479,7 +507,8 @@ class UpdateService {
       throw new Error(`应用更新替换失败: ${err instanceof Error ? err.message : String(err)}`)
     }
 
-    // 删除旧 Contents 备份 + 延迟清理 staging
+    // 删除旧 Contents 备份 + 延迟清理 staging：仅成功路径到达此处（失败在抛错处提前返回，staging 保留
+    // 安装包，供 quitAndInstall 的 handleError 带出 installerPath 手动安装）。
     await rm(oldContents, { recursive: true, force: true }).catch(() => {})
     setTimeout(() => {
       void rm(stagingDir, { recursive: true, force: true }).catch(() => {})
@@ -488,6 +517,24 @@ class UpdateService {
     log.info('[UpdateService] 更新已安装到应用目录，重启应用:', version)
     app.relaunch()
     app.quit()
+  }
+
+  /**
+   * macOS 原生解压 zip（`ditto -x -k`）：保留 Frameworks 符号链接与可执行权限，解压失败清理半成品目录并抛错。
+   * 不用 adm-zip（无符号链接支持，且存在 `chmod ENOENT` 类错误兜底路径）。
+   */
+  #extractMacZip(zipPath: string, extractDir: string): Promise<void> {
+    return new Promise((resolvePromise, reject) => {
+      execFile('ditto', ['-x', '-k', zipPath, extractDir], { timeout: 5 * 60 * 1000 }, (err) => {
+        if (err) {
+          void rm(extractDir, { recursive: true, force: true })
+            .catch(() => {})
+            .then(() => reject(err))
+        } else {
+          resolvePromise()
+        }
+      })
+    })
   }
 
   /**
@@ -554,6 +601,30 @@ class UpdateService {
   }
 
   // ---------------------------------------------------------------------------
+  // 手动安装引导（安装失败兜底）
+  // ---------------------------------------------------------------------------
+
+  /** 打开已下载安装包所在目录（Finder/资源管理器），供用户手动安装 */
+  openInstallerFolder(): void {
+    const zipPath = this.downloadedZipPath
+    if (!zipPath || !existsSync(zipPath)) {
+      this.#notifyError('安装包不可用', '暂存目录未找到安装包，请点击「检查更新」重新下载')
+      return
+    }
+    shell.showItemInFolder(zipPath)
+  }
+
+  /** 在系统浏览器打开安装包下载链接，供用户自行下载安装 */
+  openDownloadUrl(): void {
+    const url = this.downloadedManifest ? this.#pickBinary(this.downloadedManifest)?.url : undefined
+    if (!url) {
+      this.#notifyError('下载链接不可用', '未获取到安装包下载链接，请点击「检查更新」重新获取')
+      return
+    }
+    void shell.openExternal(url)
+  }
+
+  // ---------------------------------------------------------------------------
   // 通用
   // ---------------------------------------------------------------------------
 
@@ -576,10 +647,13 @@ class UpdateService {
     const U = SERVICE_CHANNELS.update
     ipcMain.handle(U.getStatus, () => this.getStatus())
     ipcMain.handle(U.check, () => this.check())
+    ipcMain.handle(U.reinstall, () => this.reinstall())
     ipcMain.handle(U.pause, () => this.pause())
     ipcMain.handle(U.resume, () => this.resume())
     ipcMain.handle(U.cancel, () => this.cancel())
     ipcMain.handle(U.quitAndInstall, () => this.quitAndInstall())
+    ipcMain.handle(U.openInstallerFolder, () => this.openInstallerFolder())
+    ipcMain.handle(U.openDownloadUrl, () => this.openDownloadUrl())
   }
 }
 
