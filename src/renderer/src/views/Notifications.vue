@@ -39,6 +39,7 @@
           :message="n.message"
           :time="formatTime(n.created_at)"
           :unread="n.read === 0"
+          :closable="false"
           role="button"
           tabindex="0"
           :style="cardDelay(index)"

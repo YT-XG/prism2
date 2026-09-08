@@ -8,7 +8,9 @@
     role="status"
   >
     <span v-if="unread" class="ui-notif__dot" aria-hidden="true" />
-    <component :is="iconFor(type)" :size="18" :stroke-width="1.75" class="ui-notif__icon" />
+    <span class="ui-notif__icon-box">
+      <component :is="iconFor(type)" :size="18" :stroke-width="1.75" class="ui-notif__icon" />
+    </span>
     <div class="ui-notif__body">
       <div class="ui-notif__title">{{ title }}</div>
       <div v-if="message" class="ui-notif__msg">{{ message }}</div>
@@ -94,9 +96,19 @@ function iconFor(type: ToastType): Component {
   background: var(--brand);
 }
 
-.ui-notif__icon {
+.ui-notif__icon-box {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
   flex-shrink: 0;
   margin-top: 1px;
+  border-radius: 10px;
+}
+
+.ui-notif__icon {
+  flex-shrink: 0;
 }
 
 .ui-notif__body {
@@ -115,13 +127,19 @@ function iconFor(type: ToastType): Component {
   font-size: var(--text-sm);
   line-height: 1.5;
   color: var(--text-secondary);
-  word-break: break-all;
+  overflow-wrap: anywhere;
 }
 
 .ui-notif__time {
   flex-shrink: 0;
   font-size: var(--text-xs);
   color: var(--text-muted);
+}
+
+/* 键盘可达：卡片可点击（role=button）时焦点环可见，不依赖 hover */
+.ui-notif:focus-visible {
+  outline: none;
+  box-shadow: var(--ring), var(--shadow-md);
 }
 
 .ui-notif__close {
@@ -171,19 +189,36 @@ function iconFor(type: ToastType): Component {
   color: var(--brand);
 }
 
+/* 图标容器按语义状态色浅底着色，图标用同色系深字保证对比度（各主题 --*-soft / --on-* 已校准） */
+.ui-notif--success .ui-notif__icon-box {
+  background: var(--success-soft);
+}
+
 .ui-notif--success .ui-notif__icon {
-  color: var(--success);
+  color: var(--on-success);
+}
+
+.ui-notif--error .ui-notif__icon-box {
+  background: var(--danger-soft);
 }
 
 .ui-notif--error .ui-notif__icon {
-  color: var(--danger);
+  color: var(--on-danger);
+}
+
+.ui-notif--warning .ui-notif__icon-box {
+  background: var(--warning-soft);
 }
 
 .ui-notif--warning .ui-notif__icon {
-  color: var(--warning);
+  color: var(--on-warning);
+}
+
+.ui-notif--info .ui-notif__icon-box {
+  background: var(--info-soft);
 }
 
 .ui-notif--info .ui-notif__icon {
-  color: var(--info);
+  color: var(--on-info);
 }
 </style>

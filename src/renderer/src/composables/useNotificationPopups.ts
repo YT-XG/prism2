@@ -2,7 +2,8 @@
  * 通知浮窗状态管理 —— 模块级单例 composable（仅通知浮窗窗口 NotificationPopup 使用）。
  *
  * - 订阅 onNew 广播，把新通知压入卡片栈（上限 MAX_POPUPS，超限丢弃最旧）。
- * - 普通卡片 POPUP_DURATION 后自动消失；邮件通知长时悬停不自动消失，等用户点击或点「已读」收起。
+ * - 普通卡片 POPUP_DURATION 后自动消失；悬停暂停、移开按剩余时长续走；邮件通知长时悬停不自动消失，
+ *   等用户点击或点「已读」收起。
  * - 卡片点击：剪贴板类（仅浮窗、不入中心）跳剪贴板历史；邮件类跳邮箱大师并标记已读；其余标记已读 + 跳通知中心。
  * - 内容高度变化时上报主进程缩放窗口（按显示位置锚定）。
  */
@@ -20,8 +21,14 @@ const LEAVE_MS = 200
 const popups = ref<NotificationItem[]>([])
 /** 浮窗显示位置（跟随主进程每次投递上报；顶部居中时切换动画方向） */
 const position = ref<NotificationPopupPosition>('bottom-right')
-/** 每条卡片的自动消失定时器（按 id） */
-const timers = new Map<number, ReturnType<typeof setTimeout>>()
+
+/** 单条卡片的自动消失调度：记录剩余毫秒，悬停暂停 / 移开续走（避免一悬停就重置为全时长） */
+interface DismissTimer {
+  timer: ReturnType<typeof setTimeout>
+  remaining: number
+  lastStartedAt: number
+}
+const dismissTimers = new Map<number, DismissTimer>()
 
 /** 订阅新通知到达（需在组件 setup 内调用，卸载自动清理） */
 function init(): void {
@@ -40,26 +47,43 @@ function push(item: NotificationItem): void {
   if (popups.value.some((p) => p.id === item.id)) return
   popups.value = [...popups.value, item].slice(-MAX_POPUPS)
   if (item.source !== 'mail') {
-    timers.set(
-      item.id,
-      setTimeout(() => dismiss(item.id), POPUP_DURATION)
-    )
+    dismissTimers.set(item.id, {
+      timer: setTimeout(() => dismiss(item.id), POPUP_DURATION),
+      remaining: POPUP_DURATION,
+      lastStartedAt: Date.now()
+    })
   }
   void resize()
 }
 
 /** 移除卡片（定时器触发或用户点关闭/已读） */
 function dismiss(id: number): void {
-  const t = timers.get(id)
+  const t = dismissTimers.get(id)
   if (t) {
-    clearTimeout(t)
-    timers.delete(id)
+    clearTimeout(t.timer)
+    dismissTimers.delete(id)
   }
   popups.value = popups.value.filter((p) => p.id !== id)
   setTimeout(() => {
     resize()
     if (!popups.value.length) window.electronAPI.window.notificationPopupHide()
   }, LEAVE_MS)
+}
+
+/** 悬停暂停自动消失（记录剩余时长；邮件通知无定时器，此调用为空操作） */
+function pause(id: number): void {
+  const t = dismissTimers.get(id)
+  if (!t) return
+  clearTimeout(t.timer)
+  t.remaining = Math.max(0, t.remaining - (Date.now() - t.lastStartedAt))
+}
+
+/** 移开恢复自动消失：按剩余时长续走，不重置为全时长 */
+function resume(id: number): void {
+  const t = dismissTimers.get(id)
+  if (!t || t.remaining <= 0) return
+  t.lastStartedAt = Date.now()
+  t.timer = setTimeout(() => dismiss(id), t.remaining)
 }
 
 /** 按来源跳转目标页 */
@@ -97,5 +121,5 @@ async function resize(): Promise<void> {
 }
 
 export function useNotificationPopups() {
-  return { popups, position, init, dismiss, open, markReadAndDismiss }
+  return { popups, position, init, dismiss, open, markReadAndDismiss, pause, resume }
 }

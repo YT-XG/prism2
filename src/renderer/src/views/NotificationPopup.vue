@@ -15,6 +15,8 @@
         @keydown.enter="open(p.id)"
         @close="dismiss(p.id)"
         @action="markReadAndDismiss(p.id)"
+        @mouseenter="pause(p.id)"
+        @mouseleave="resume(p.id)"
       />
     </TransitionGroup>
   </div>
@@ -32,7 +34,8 @@ import { useNotificationPopups } from '@renderer/composables/useNotificationPopu
  * 卡片完全可定制；窗口大小由 useNotificationPopups 上报主进程缩放。
  * position 决定入口动画方向（右下角自右滑入 / 顶部居中自下滑入），主进程每次投递通报。
  */
-const { popups, position, init, dismiss, open, markReadAndDismiss } = useNotificationPopups()
+const { popups, position, init, dismiss, open, markReadAndDismiss, pause, resume } =
+  useNotificationPopups()
 
 function isMail(p: NotificationItem): boolean {
   return p.source === 'mail'
@@ -48,7 +51,8 @@ init()
   flex-direction: column;
   align-items: stretch;
   gap: var(--sp-2);
-  padding: 0;
+  /* 四周留白：阴影/聚焦环落在窗口内不被裁切，卡片与屏幕边缘留出呼吸空间 */
+  padding: var(--sp-1);
   box-sizing: border-box;
 }
 
@@ -64,9 +68,10 @@ init()
   box-shadow: var(--shadow-lg);
 }
 
-/* 顶部居中（灵动岛）：卡片去阴影，仅保留描边 */
+/* 顶部居中（灵动岛）：卡片去阴影，仅保留描边；更大圆角贴近"岛"的胶囊悬浮感 */
 .notif-popup.is-top-center :deep(.ui-notif) {
   box-shadow: none;
+  border-radius: var(--radius-xl);
 }
 
 .notif-popup.is-top-center :deep(.ui-notif:hover) {
@@ -82,7 +87,8 @@ init()
   padding-bottom: 48px;
 }
 
-.notif-popup :deep(.ui-notif.is-mail .ui-notif__icon) {
+.notif-popup :deep(.ui-notif.is-mail .ui-notif__icon-box) {
+  align-self: flex-start;
   margin-top: 2px;
 }
 
@@ -97,12 +103,9 @@ init()
   line-height: 1.6;
 }
 
-/* 入场复用 toast-in，出场向下方加速淡出（右下角：自右滑入，整体右对齐锚定）
-   退场同样用 keyframes 动画，避免被 .ui-notif 更高优先级的 transition 覆盖导致瞬间消失。
-   position:absolute 让退场卡片在动画期间脱离文档流，后续卡片随即补位；
-   补位位移由 .ui-notif 的 transform 过渡平滑呈现，避免瞬移。 */
+/* 入场用 spring 弹跳缓动（到达时回弹），退场保持加速淡出且更短（退场 ≈ 入场的 60%） */
 .popup-enter-active {
-  animation: toast-in var(--duration-base) var(--ease-out-soft);
+  animation: popup-in var(--duration-base) var(--ease-spring);
 }
 
 .popup-leave-active {
@@ -117,7 +120,7 @@ init()
    `transition: transform, box-shadow`，会把含 opacity 的退场 transition 覆盖掉，
    导致 opacity 无过渡项而瞬间消失；animation 不受其影响，与入场路径一致。 */
 .popup-top-enter-active {
-  animation: notif-drop-in var(--duration-base) var(--ease-out-soft);
+  animation: notif-drop-in var(--duration-slow) var(--ease-spring);
 }
 
 .popup-top-leave-active {
@@ -129,11 +132,23 @@ init()
 </style>
 
 <style>
-/* 顶部居中：卡片从上往下滑入回弹 */
+/* 右下角：自右滑入 + 轻微缩放（spring 缓动回弹、行程更长，比 toast-in 更有桌面浮层质感） */
+@keyframes popup-in {
+  from {
+    opacity: 0;
+    transform: translateX(32px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+/* 顶部居中：卡片从上往下滑入（spring 回弹） */
 @keyframes notif-drop-in {
   from {
     opacity: 0;
-    transform: translateY(-14px) scale(0.98);
+    transform: translateY(-18px) scale(0.95);
   }
   to {
     opacity: 1;
@@ -149,7 +164,7 @@ init()
   }
 }
 
-/* 右下角：退场向下加速淡出 */
+/* 右下角：退场向下方加速淡出 */
 @keyframes popup-leave {
   to {
     opacity: 0;
