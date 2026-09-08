@@ -114,9 +114,11 @@ jobs:
 
           def classify(name):
               n = name.lower()
+              if n.endswith('.blockmap') or n.endswith('.dmg'):
+                  return None  # 非安装包（校验分块/磁盘镜像）不作为更新二进制
               if n.endswith('.zip'):
                   return 'mac' if ('-mac' in n or 'mac-' in n or '-osx' in n) else ('win' if 'win' in n else None)
-              if n.endswith('.exe') or '-setup' in n:
+              if n.endswith('.exe'):
                   return 'win'
               return None
 
