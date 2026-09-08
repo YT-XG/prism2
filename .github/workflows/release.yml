@@ -145,6 +145,31 @@ jobs:
           PY
           gh release upload --repo "${GITHUB_REPOSITORY}" "$GITHUB_REF_NAME" latest.json --clobber
 
+      - name: Generate self-hosted manifest (server base)
+        env:
+          PRISM2_UPDATE_BASE: ${{ vars.PRISM2_UPDATE_BASE || 'https://filedev.wxgx.com/prism2' }}
+          PRISM2_WEBHOOK_TOKEN: ${{ secrets.PRISM2_WEBHOOK_TOKEN }}
+        run: |
+          if [ -z "$PRISM2_WEBHOOK_TOKEN" ]; then
+            echo "PRISM2_WEBHOOK_TOKEN 未配置，跳过服务器推送（webhook/cron 兜底）。"
+            exit 0
+          fi
+          # 从 GitHub 自包含清单生成「服务器版」：仅把 binaries[].url 前缀改写为服务器下载基址，sha 不变。
+          # 必须在本 job 把 latest.json 覆盖为 Gitee 跳板指针(binaries:[])之前生成。
+          python3 - "$PRISM2_UPDATE_BASE" <<'PY'
+          import json, os, sys
+          from urllib.parse import unquote, urlparse
+          base = sys.argv[1].rstrip('/')
+          with open('latest.json', encoding='utf-8') as f:
+              m = json.load(f)
+          for b in m.get('binaries', []):
+              name = unquote(os.path.basename(urlparse(b['url']).path))
+              b['url'] = f"{base}/{name}"
+          with open('server-latest.json', 'w', encoding='utf-8') as f:
+              json.dump(m, f, ensure_ascii=False, indent=2)
+          print(json.dumps(m, ensure_ascii=False, indent=2))
+          PY
+
       - name: Push latest.json to Gitee anchor (redirect pointer)
         env:
           GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
@@ -189,6 +214,42 @@ jobs:
           [ "$remote" = "$VERSION" ] || { echo "Gitee 锚点版本不匹配（可能命中旧版/未成功推送），请检查 GITEE_TOKEN/GITEE_ANCHOR_REPO"; exit 1; }
           echo "Gitee 锚点校验通过。"
 
+      # ===== CI 直推自托管服务器（仅 443）=====
+      # 主通道：把 win/mac 安装包 + 服务器版最新清单经 HTTPS 上传到服务器 /prism2-upload/。
+      # 服务器 /usr/local/bin/prism2-sync.sh 的「本地新鲜短路」在 webhook 触发后秒级 finalize（marker+清理），不再依赖 GitHub 代理下载。
+      - name: Push installers + manifest to self-hosted server (443)
+        continue-on-error: true
+        env:
+          PRISM2_WEBHOOK_TOKEN: ${{ secrets.PRISM2_WEBHOOK_TOKEN }}
+          PRISM2_PUSH_URL: ${{ vars.PRISM2_PUSH_URL || 'https://filedev.wxgx.com/prism2-upload/' }}
+        run: |
+          if [ -z "$PRISM2_WEBHOOK_TOKEN" ]; then
+            echo "PRISM2_WEBHOOK_TOKEN 未配置，跳过服务器推送（cron 兜底）。"
+            exit 0
+          fi
+          set -euo pipefail
+          push_file() {
+            local f="$1"
+            local target="${2:-}"
+            local name
+            name="${target:-$(basename "$f")}"
+            local sha
+            sha="$(sha256sum "$f" | awk '{print $1}')"
+            echo "上传 ${name} ($(stat -c%s "$f") bytes, sha=${sha:0:12}...)"
+            curl -fS --retry 3 --retry-all-errors --retry-delay 3 \
+              -X PUT --upload-file "$f" \
+              -H "X-Prism2-Token: ${PRISM2_WEBHOOK_TOKEN}" \
+              -H "X-Prism2-Sha256: $sha" \
+              "${PRISM2_PUSH_URL}${name}" \
+              -w "  -> HTTP %{http_code}\n" -o /dev/null || echo "  上传失败: ${name}"
+          }
+          # 先上传二进制，最后上传服务器清单（latest.json，保证只在该版本二进制齐全后出现）
+          for f in dist-all/prism2-*-setup.exe dist-all/prism2-*-universal-mac.zip; do
+            if [ -f "$f" ]; then push_file "$f"; else echo "  (缺: $f)"; fi
+          done
+          if [ -f server-latest.json ]; then push_file server-latest.json latest.json; else echo "  缺 server-latest.json，跳过清单推送"; fi
+          echo "推送完成(best-effort)"
+
       - name: Notify self-hosted update server
         continue-on-error: true
         env:
@@ -199,7 +260,7 @@ jobs:
             echo "PRISM2_WEBHOOK_TOKEN 未配置，跳过服务器通知（cron 会兜底）。"
             exit 0
           fi
-          # 触发服务器立即同步镜像；失败不阻塞发版（cron 兜底）
+          # 触发服务器 finalize：CI 推送后由 sync.sh 的「本地新鲜短路」校验并补齐 marker/清理旧版本；失败不阻塞发版（cron 兜底）
           curl -fSs -o /dev/null -w 'webhook -> HTTP %{http_code}\n' \
             -X POST "${PRISM2_WEBHOOK_URL}?tok=${PRISM2_WEBHOOK_TOKEN}" \
             || echo "webhook 通知失败（cron 会兜底）"
