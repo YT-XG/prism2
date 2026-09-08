@@ -222,7 +222,7 @@ export interface AppSettings {
   notifyUpdate: boolean
   /** 新邮件通知（邮箱大师收到新邮件时提醒） */
   notifyMail: boolean
-  /** 邮箱大师轮询同步间隔（分钟，默认 1） */
+  /** 邮箱大师兜底轮询间隔（分钟，默认 1；实时收信以 IMAP IDLE 监听为主，轮询兜底保证不漏信） */
   mailPollIntervalMin: number
 }
 

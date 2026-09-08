@@ -2,9 +2,12 @@
  * 邮箱大师服务
  * @description 多账号 IMAP 收信：
  * - 账号管理（授权码经 safeStorage 加密后入库，不存明文）
+ * - 实时收信：每账号一条常驻监听连接（imapflow auto-IDLE，maxIdleTime 保活重启，
+ *   无 IDLE 能力自动降级库内 NOOP 轮询），新邮件 exists 事件防抖后触发全账号增量同步；
+ *   断线指数退避自动重连（2s→60s）
  * - 文件夹同步（首次每文件夹仅收最近 INITIAL_SYNC_MAX 封，此后按 UID 增量）
  * - 邮件正文解析入库（sql.js），附件落盘 userData/mail-attachments/<messageId>/
- * - 轮询同步（默认 60s，间隔读 settings.mailPollIntervalMin），短连接模式
+ * - 兜底轮询（默认 60s，间隔读 settings.mailPollIntervalMin）覆盖监听异常/重连窗口期，保证不漏信
  * - 新邮件通知（notificationService，受 notifyMail 开关控制）+ 未读广播
  *
  * 数据落盘：
@@ -48,6 +51,21 @@ const MAX_MESSAGES_PER_MAILBOX = 500
 /** 启动后首次轮询的延迟（ms）：已存账号在应用启动后稍作延迟即首轮同步 */
 const POLL_FIRST_DELAY_MS = 5000
 
+/** 监听连接 IDLE 保活上限：每 15 分钟主动断开重启，防服务器踢长连接（RFC 上限 29 分钟，QQ/163 等踢线更早） */
+const WATCH_IDLE_MAX_MS = 15 * 60 * 1000
+
+/** 监听连接断线重连的初始退避（ms），每次失败翻倍直至封顶 */
+const WATCH_RECONNECT_BASE_MS = 2000
+
+/** 监听连接断线重连的最大退避（ms） */
+const WATCH_RECONNECT_MAX_MS = 60_000
+
+/** exists 事件防抖窗口（ms）：合并服务器连续推送，避免同一批新邮件触发多次全账号同步 */
+const WATCH_EXISTS_DEBOUNCE_MS = 800
+
+/** init 时存量账号逐个启动监听连接的错开间隔（ms），避免启动瞬时全部握手 */
+const WATCH_STAGGER_MS = 1000
+
 /** 单页消息列表上限（防御性） */
 const MAX_PAGE_SIZE = 200
 
@@ -61,6 +79,19 @@ interface FetchedSummary {
   fromName: string
   fromAddr: string
   seen: boolean
+}
+
+/** 单个账号的常驻监听连接状态（IDLE 实时收信） */
+interface WatchState {
+  accountId: number
+  client: ImapFlow | null
+  /** 是否仍应保持监听（stopWatch/removeAccount 置 false 后不再重连） */
+  running: boolean
+  /** 当前重连退避值（ms），连接成功后重置回初始值 */
+  backoffMs: number
+  reconnectTimer: ReturnType<typeof setTimeout> | null
+  /** exists 防抖定时器：合并连续推送 */
+  existsTimer: ReturnType<typeof setTimeout> | null
 }
 
 /**
@@ -126,6 +157,9 @@ class MailService extends SqliteStore {
 
   /** 正在同步中的账号 id 集合（防止重复同步并发） */
   private readonly syncing = new Set<number>()
+
+  /** 各账号常驻监听连接状态表（IDLE 实时收信；key=accountId） */
+  private readonly watchStates = new Map<number, WatchState>()
 
   constructor() {
     super('mail.db', 'MailService')
@@ -212,11 +246,19 @@ class MailService extends SqliteStore {
     this.save()
     this.registerIPC()
     this.#startPolling()
+    // 为存量账号逐个启动常驻监听连接（错开间隔避免启动瞬时全部握手），实时收信
+    const accountIds = this.all<{ id: number }>('SELECT id FROM accounts ORDER BY id ASC')
+    for (let i = 0; i < accountIds.length; i++) {
+      setTimeout(() => void this.#startWatch(Number(accountIds[i].id)), WATCH_STAGGER_MS * i)
+    }
     log.info(`[MailService] 初始化完成，账号数:`, this.all<{ n: number }>('SELECT COUNT(*) AS n FROM accounts')[0]?.n ?? 0)
   }
 
-  /** 停止服务：停止轮询并落盘关闭数据库 */
+  /** 停止服务：停止监听连接与轮询并落盘关闭数据库 */
   stop(): void {
+    for (const accountId of this.watchStates.keys()) {
+      this.#stopWatch(accountId)
+    }
     this.#stopPolling()
     this.close()
   }
@@ -245,6 +287,8 @@ class MailService extends SqliteStore {
     log.info(`[MailService] 账号已添加:`, acc.email)
     // 立即首轮同步（fire-and-forget，失败不影响添加）
     void this.#syncAccount(id)
+    // 建立常驻监听连接，实时收信
+    void this.#startWatch(id)
     return { ok: true, id }
   }
 
@@ -297,8 +341,10 @@ class MailService extends SqliteStore {
       [name, email, host, port, ssl ? 1 : 0, enc, id]
     )
     this.save()
-    // 配置变更后立即重新同步（拉取新文件夹）
+    // 配置变更后先断开旧监听连接（连接参数已变），再立即重新同步并重建监听
+    this.#stopWatch(id)
     void this.#syncAccount(id)
+    void this.#startWatch(id)
     return { ok: true }
   }
 
@@ -307,6 +353,7 @@ class MailService extends SqliteStore {
     const id = Number(accountId)
     if (!Number.isInteger(id) || id <= 0) return { ok: false, error: '账号不存在' }
 
+    this.#stopWatch(id)
     const atts = this.all<{ file_path: string }>(
       `SELECT a.file_path FROM attachments a
        JOIN messages m ON a.message_id = m.id
@@ -443,9 +490,10 @@ class MailService extends SqliteStore {
     }
     this.save()
 
-    // 导入后为新增账号触发同步（fire-and-forget，失败不影响导入）
+    // 导入后为新增账号触发同步并建立监听连接（fire-and-forget，失败不影响导入）
     for (const id of newIds) {
       void this.#syncAccount(id)
+      void this.#startWatch(id)
     }
     log.info(`[MailService] 从备份导入账号：+${imported}/跳过${skipped}/待重填授权码${authMissing}`)
     return { imported, skipped, authMissing }
@@ -953,6 +1001,150 @@ class MailService extends SqliteStore {
     for (const a of accounts) {
       await this.#syncAccount(a.id)
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // 实时监听（IMAP IDLE）
+  // ---------------------------------------------------------------------------
+
+  /** 新建监听连接客户端（常驻；auto-IDLE 实时收信 + maxIdleTime 定时重启保活） */
+  #newWatchClient(email: string, host: string, port: number, ssl: boolean, pass: string): ImapFlow {
+    return new ImapFlow({
+      host,
+      port,
+      secure: ssl,
+      auth: { user: email, pass },
+      logger: false,
+      maxIdleTime: WATCH_IDLE_MAX_MS
+    })
+  }
+
+  /** 解析账号的收件箱 IMAP 路径：优先库内已同步的收件箱记录，未同步过回退 INBOX */
+  #inboxWatchPath(accountId: number): string {
+    const rows = this.all<{ path: string }>('SELECT path FROM mailboxes WHERE account_id = ?', [accountId])
+    for (const r of rows) {
+      if (this.#isInboxMailbox({ path: String(r.path), name: '' })) return String(r.path)
+    }
+    return 'INBOX'
+  }
+
+  /**
+   * 启动某个账号的常驻监听连接（IDLE 实时收信）。
+   * - 连接成功并选中收件箱后交给 imapflow auto-IDLE（空闲自动进 IDLE；maxIdleTime 定时重启保活；
+   *   服务器无 IDLE 能力时库内自动降级 NOOP 轮询）
+   * - 新邮件（exists 事件）防抖后触发全账号增量同步 #syncAccount，通知/未读广播自动生效；
+   *   同步走独立短连接，不与监听连接争用
+   * - 断线（close/error）指数退避自动重连，重连窗口期由兜底轮询兜住
+   */
+  async #startWatch(accountId: number): Promise<void> {
+    this.#stopWatch(accountId)
+    const acc = this.one<Record<string, unknown>>('SELECT * FROM accounts WHERE id = ?', [accountId])
+    if (!acc) return
+
+    let state = this.watchStates.get(accountId)
+    if (!state) {
+      state = {
+        accountId,
+        client: null,
+        running: false,
+        backoffMs: WATCH_RECONNECT_BASE_MS,
+        reconnectTimer: null,
+        existsTimer: null
+      }
+      this.watchStates.set(accountId, state)
+    }
+    if (state.running) return
+    state.running = true
+
+    const path = this.#inboxWatchPath(accountId)
+    const client = this.#newWatchClient(
+      String(acc.email),
+      String(acc.host),
+      Number(acc.port),
+      Boolean(acc.ssl),
+      this.#decrypt(String(acc.password_enc))
+    )
+    state.client = client
+
+    // 连接握手成功即重置重连退避（重连时 startWatch 会再次走到这里）
+    const resetBackoff = (): void => {
+      state.backoffMs = WATCH_RECONNECT_BASE_MS
+    }
+
+    client.on('exists', (data: { path?: string }) => {
+      if (!state.running) return
+      // 仅响应收件箱的 exists（监听连接本就只 SELECT 收件箱，此处按路径再校验兜底）
+      const p = String(data?.path ?? '').toLowerCase()
+      if (p && p !== 'inbox' && p !== '收件箱') return
+      if (state.existsTimer) clearTimeout(state.existsTimer)
+      state.existsTimer = setTimeout(() => {
+        state.existsTimer = null
+        void this.#syncAccount(accountId)
+      }, WATCH_EXISTS_DEBOUNCE_MS)
+    })
+    client.on('close', () => this.#handleWatchDisconnected(accountId, state))
+    client.on('error', () => this.#handleWatchDisconnected(accountId, state))
+
+    try {
+      await client.connect()
+      await client.mailboxOpen(path)
+      resetBackoff()
+      log.info(`[MailService] 监听连接已建立 (${String(acc.email)}, ${path})：IDLE 实时收信`)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      log.warn(`[MailService] 监听连接建立失败 (${String(acc.email)}, ${path}):`, msg)
+      // connect/mailboxOpen 失败的 close 事件可能不触发，手动收口到重连调度（reconnectTimer 守卫防重入）
+      this.#handleWatchDisconnected(accountId, state)
+    }
+  }
+
+  /** 停止某个账号的监听连接（幂等）：置停止标记、清定时器、关闭连接 */
+  #stopWatch(accountId: number): void {
+    const state = this.watchStates.get(accountId)
+    if (!state) return
+    state.running = false
+    if (state.reconnectTimer) {
+      clearTimeout(state.reconnectTimer)
+      state.reconnectTimer = null
+    }
+    if (state.existsTimer) {
+      clearTimeout(state.existsTimer)
+      state.existsTimer = null
+    }
+    const client = state.client
+    state.client = null
+    if (client) {
+      try {
+        client.close()
+      } catch {
+        /* 连接未建立/已断开时 close 抛错，忽略 */
+      }
+    }
+  }
+
+  /** 监听连接断开收口：仍应运行则按指数退避调度重连 */
+  #handleWatchDisconnected(accountId: number, state: WatchState | undefined): void {
+    if (!state) state = this.watchStates.get(accountId)
+    if (!state || !state.running) return
+    // 已调度重连（含 connect 失败后的手动收口）则忽略后续 close/error 事件，防重入
+    if (state.reconnectTimer) return
+
+    const client = state.client
+    state.client = null
+    if (client) {
+      try {
+        client.close()
+      } catch {
+        /* 忽略 */
+      }
+    }
+    const delay = state.backoffMs
+    state.backoffMs = Math.min(state.backoffMs * 2, WATCH_RECONNECT_MAX_MS)
+    state.reconnectTimer = setTimeout(() => {
+      state.reconnectTimer = null
+      void this.#startWatch(accountId)
+    }, delay)
+    log.warn(`[MailService] 监听连接断开 (accountId=${accountId})，${delay / 1000}s 后重连`)
   }
 
   // ---------------------------------------------------------------------------

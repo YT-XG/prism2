@@ -1,7 +1,7 @@
 /**
  * 主进程入口 —— 生命周期、单实例锁、服务初始化、托盘。
  */
-import { app, globalShortcut } from 'electron'
+import { app, globalShortcut, powerMonitor } from 'electron'
 import { electronApp, optimizer } from '@electron-toolkit/utils'
 import { platform, arch, release } from 'node:os'
 import log from 'electron-log'
@@ -96,6 +96,12 @@ app.whenReady().then(async () => {
 
   // 预创建自绘通知浮窗（隐藏态），避免首次通知到来时窗口还在加载、广播丢失
   windowFactory.getNotificationFrame()
+
+  // 睡眠/待机恢复（长时间待机后 GPU 重置等可能杀掉隐藏浮窗的渲染进程，且 rendererReady 仍是 true）：
+  // 主动校验并自愈通知浮窗，避免唤醒后复制/新邮件通知静默丢失
+  powerMonitor.on('resume', () => {
+    windowFactory.getNotificationFrame().recoverAfterResume()
+  })
 
   // macOS：点击 Dock 图标恢复主窗口
   app.on('activate', () => windowFactory.getMainPageFrame().showCentered())

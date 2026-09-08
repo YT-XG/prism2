@@ -153,8 +153,8 @@
         </div>
         <div class="setting-row">
           <div class="row-info">
-            <div class="row-name">同步间隔</div>
-            <div class="row-desc">后台自动检查新邮件的间隔（分钟，1-60）</div>
+            <div class="row-name">兜底轮询间隔</div>
+            <div class="row-desc">新邮件由服务器即时推送（实时收信）；此处为兜底自动检查间隔，覆盖监听异常时段保证不漏信（分钟，1-60）</div>
           </div>
           <input
             class="num-input"
@@ -163,7 +163,7 @@
             max="60"
             step="1"
             :value="settings.mailPollIntervalMin"
-            aria-label="同步间隔（分钟）"
+            aria-label="兜底轮询间隔（分钟）"
             @change="savePollInterval"
           />
         </div>
@@ -414,13 +414,13 @@ async function toggle(key: ToggleKey): Promise<void> {
   await window.electronAPI.settings.update({ [key]: next })
 }
 
-/** 保存邮箱轮询同步间隔（分钟，1-60；非法输入回退当前值） */
+/** 保存邮箱兜底轮询间隔（分钟，1-60；实时收信由 IMAP IDLE 监听承担；非法输入回退当前值） */
 async function savePollInterval(e: Event): Promise<void> {
   const raw = Number((e.target as HTMLInputElement).value)
   const min = Number.isFinite(raw) && raw >= 1 ? Math.min(60, Math.round(raw)) : settings.value.mailPollIntervalMin
   settings.value.mailPollIntervalMin = min
   await window.electronAPI.settings.update({ mailPollIntervalMin: min })
-  toast.success(`邮件同步间隔已设为 ${min} 分钟`)
+  toast.success(`邮件兜底轮询间隔已设为 ${min} 分钟`)
 }
 
 type ThemeValue = 'light' | 'lavender' | 'mint' | 'dark'
@@ -878,7 +878,7 @@ onMounted(async () => {
   margin-top: 2px;
 }
 
-/* 数字输入（邮箱同步间隔等） */
+/* 数字输入（邮箱兜底轮询间隔等） */
 .num-input {
   width: 72px;
   height: 32px;

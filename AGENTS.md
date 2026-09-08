@@ -41,7 +41,7 @@ src/
 │   │   ├── legacyImportService.ts # 旧版 v1 剪贴板数据一键导入（读 v1 userData/Prism/clipboard.db 合并）
 │   │   ├── legacyCleanupService.ts # 旧版 v1 安装检测/静默卸载/旧数据选择性删除 + 运行期系统残留清理（注册表 + NSIS /S / shell.trashItem）
 │   │   ├── notificationService.ts # 通知中心（持久化通知 + 自绘通知浮窗统一呈现，不依赖系统通知）
-│   │   ├── mailService.ts         # 邮箱大师（多账号 IMAP 收信：授权码 safeStorage 加密入库 + 首次最近 200 封/UID 增量同步（UIDVALIDITY 变化自动重置 + 序号尾部对账兜底）+ 附件落盘 + 轮询（默认 1 分钟，设置可调）+ 新邮件通知（仅收件箱）+ 同步中状态广播（标题栏状态中心「xx 同步中」条目））
+│   │   ├── mailService.ts         # 邮箱大师（多账号 IMAP 收信：授权码 safeStorage 加密入库 + 首次最近 200 封/UID 增量同步（UIDVALIDITY 变化自动重置 + 序号尾部对账兜底）+ 附件落盘 + 实时收信（每账号常驻监听连接 imapflow auto-IDLE，exists 事件触发增量同步，maxIdleTime 保活 + 断线指数退避重连）+ 兜底轮询（默认 1 分钟，设置可调）+ 新邮件通知（仅收件箱）+ 同步中状态广播（标题栏状态中心「xx 同步中」条目））
 │   │   ├── logService.ts          # 日志服务（定位 electron-log 落盘文件，托盘/设置页「查看日志」打开；warn/error 经 hooks 独立落盘 error.log，设置页「查看错误日志」；error 级再经 notifyAppError 广播，驱动标题栏状态区报错提示）
 │   │   └── trayService.ts
 │   └── utils/platform.ts         # broadcast()
@@ -111,7 +111,7 @@ scripts/make-server-manifest.mjs  # 生成自托管服务器版 latest.json（ur
 | 自动更新（Gitee 主源 + GitHub 兜底 latest.json；mac/win 统一检测+下载+sha256 校验；mac 原地替换 / win NSIS 静默；CI 自动生成 latest.json 并推送 Gitee 锚点 + 校验；换服务器只改锚点 redirect/mirrors、不改客户端） | ✅（接入就绪，待建仓库替换占位地址后实际发版） |
 | 下载管理（多线程分片下载引擎 + 任务持久化 + 主页/侧栏入口 + 下载管理页：进度/速度/ETA + 暂停/继续/取消/移除 + 打开文件所在目录） | ✅ |
 | 通知中心（持久化历史 + 未读/已读 + 自绘通知浮窗统一呈现（主窗口隐藏与否都弹，可承载链接/翻译等操作，不依赖系统通知）；剪贴板复制仅浮窗提醒不入中心，其余来源（更新/新邮件等）落库 + 托盘未读 tooltip） | ✅ |
-| 邮箱大师（多账号 IMAP 收信：授权码 safeStorage 加密 + 多文件夹同步（首次最近 200 封/UID 增量）+ 三栏收件界面（账号+文件夹 | 邮件列表 | 阅读窗）+ 附件下载/打开 + 新邮件通知（仅收件箱，notifyMail 开关）+ 侧栏未读角标 + 后台轮询（默认 1 分钟可调）+ 正文 dompurify 净化 + sandbox iframe + CSP 安全渲染；不包含发信） | ✅ |
+| 邮箱大师（多账号 IMAP 收信：授权码 safeStorage 加密 + 多文件夹同步（首次最近 200 封/UID 增量）+ 三栏收件界面（账号+文件夹 | 邮件列表 | 阅读窗）+ 附件下载/打开 + 新邮件通知（仅收件箱，notifyMail 开关）+ 侧栏未读角标 + IMAP IDLE 实时收信（每账号常驻监听，exists 事件秒级收信，断线自动重连）+ 兜底轮询（默认 1 分钟可调）+ 正文 dompurify 净化 + sandbox iframe + CSP 安全渲染；不包含发信） | ✅ |
 | 旧版数据引导导入（主页横幅一键合并 v1 剪贴板数据） | ✅ |
 | 旧版本（v1）检测 / 卸载 / 旧数据选择性清理（启动弹窗 + 设置页） | ✅ |
 | 翻译、Markdown 预览、文件互传、弹窗族、OCR | ⬜ 见 ../docs/prism2/migration-roadmap.md |

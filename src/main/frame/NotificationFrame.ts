@@ -62,25 +62,86 @@ export default class NotificationFrame extends BaseFrame {
   override create(): BrowserWindow {
     this.rendererReady = false
     this.pending = []
-    return super.create()
+    const win = super.create()
+    this.#attachLifecycle(win)
+    return win
   }
 
   /**
-   * 投递通知广播（统一入口）：渲染端就绪则立即广播到可见窗口，
-   * 否则暂存，待渲染端 `ready` 上报后按到达顺序补发（防首条通知丢失）。
+   * 监听渲染进程生命周期异常，恢复投递可靠：
+   * - render-process-gone：渲染进程崩溃/被杀（睡眠唤醒后 GPU 重置、系统回收后台进程等常见诱因——
+   *   此时 window 仍 "alive"、rendererReady 仍为 true，但 webContents 已死，后续广播静默丢失；
+   * - unresponsive：渲染进程长期无响应（长时间隐藏窗口被系统冻结等）。
+   * 两者都重置就绪标记：新到达的通知自然转回暂存队列，待重载后的渲染端 ready 上报按序补发。
+   */
+  #attachLifecycle(win: BrowserWindow): void {
+    const wc = win.webContents
+    wc.on('render-process-gone', (_event, details) => {
+      log.warn('[NotificationFrame] 渲染进程退出:', details.reason)
+      this.rendererReady = false
+    })
+    wc.on('unresponsive', () => {
+      log.warn('[NotificationFrame] 渲染进程无响应，重载自愈')
+      this.rendererReady = false
+      if (!win.isDestroyed() && !wc.isDestroyed()) win.reload()
+    })
+  }
+
+  /** 渲染端是否可直接投递：已就绪 + 渲染进程存活 + 不在加载中（加载中广播会丢） */
+  #rendererHealthy(): boolean {
+    const wc = this.window?.webContents
+    if (!wc || wc.isDestroyed() || wc.isCrashed() || wc.isLoadingMainFrame()) return false
+    return this.rendererReady
+  }
+
+  /** 渲染端不健康时自愈：窗口已销毁则重建（保留暂存），渲染进程崩溃则重载（重载后 ready 再补发） */
+  #ensureRendererRecovered(): void {
+    if (!this.isAlive()) {
+      const keep = this.pending
+      this.create()
+      this.pending = keep
+      return
+    }
+    const wc = this.window!.webContents
+    if (!wc.isDestroyed() && wc.isCrashed()) {
+      log.warn('[NotificationFrame] 渲染进程已崩溃，重载自愈（暂存通知待就绪后补发）')
+      this.window!.reload()
+    }
+  }
+
+  /**
+   * 投递通知广播（统一入口）：渲染端健康则立即广播到可见窗口，
+   * 否则先自愈（重建/重载）再暂存，待渲染端 `ready` 上报后按到达顺序补发。
+   * 兜住两类丢失：启动时渲染端未就绪（首条通知防丢）+ 运行期渲染进程异常（睡眠唤醒后常见）。
    */
   deliver(payload: NotificationNewPayload): void {
-    if (this.rendererReady) {
+    if (this.#rendererHealthy()) {
       broadcast(BROADCAST.notificationNew, payload, { onlyVisible: true })
     } else {
+      this.#ensureRendererRecovered()
       this.pending = [...this.pending, payload].slice(-MAX_PENDING)
     }
+  }
+
+  /**
+   * 系统睡眠/待机恢复后调用（powerMonitor 'resume'）：校验浮窗渲染进程健康，异常则重载自愈；
+   * 重载后的渲染端重新 ready 上报，暂存队列随之补发，避免唤醒后复制/新邮件通知静默丢失。
+   */
+  recoverAfterResume(): void {
+    if (!this.isAlive()) return
+    this.#ensureRendererRecovered()
   }
 
   /** 呼出浮窗：懒创建 → 按指定位置放置 → 不抢焦点地显示 */
   showPopups(position: NotificationPopupPosition = 'bottom-right'): void {
     this.position = position
-    if (!this.isAlive()) this.create()
+    if (!this.isAlive()) {
+      const keep = this.pending
+      this.create()
+      this.pending = keep
+    } else {
+      this.#ensureRendererRecovered()
+    }
     this.#place()
     this.window!.showInactive()
   }
