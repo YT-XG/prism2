@@ -586,6 +586,134 @@ export interface LogOpenResult {
   error?: string
 }
 
+/** 残留条目类型 */
+export type ResidueKind =
+  /** win：自启项指向的目标文件/目录不存在 */
+  | 'startup-orphan'
+  /** win：卸载注册项引用的路径全部不存在（孤儿卸载项） */
+  | 'uninstall-orphan'
+  /** Prism v1/v2 已知系统残留（win 右键菜单键、mac ~/Library 足迹） */
+  | 'prism-residue'
+  /** v2 userData 内 Chromium 缓存（Cache/Code Cache/GPUCache 等） */
+  | 'app-cache'
+  /** v2 日志目录 */
+  | 'app-log'
+
+/** 清理风险分级：safe=缓存/日志可直接清；confirm=需用户确认；danger=含数据或系统键，双重确认 */
+export type ResidueRisk = 'safe' | 'confirm' | 'danger'
+
+/** 残留条目（注册表项或文件/目录二选一承载字段） */
+export interface ResidueItem {
+  /** 稳定 id（注册表键+值名 / 绝对路径派生） */
+  id: string
+  kind: ResidueKind
+  /** 展示名（值名 / 文件夹名） */
+  title: string
+  /** 人读描述（含孤儿判定依据） */
+  detail: string
+  risk: ResidueRisk
+  /** 条目所属平台（win / darwin，与 ResidueScanResult.platform 一致） */
+  platform: 'win' | 'darwin'
+  /** 文件/目录绝对路径（文件类条目） */
+  path?: string
+  /** 字节（目录为递归合计） */
+  size?: number
+  /** 注册表项完整路径（注册表类条目，win） */
+  registryKey?: string
+  /** 注册表值名（值时）；子键清理时省略 */
+  registryValue?: string
+  /** 卸载项 DisplayName（uninstall-orphan） */
+  displayName?: string
+  publisher?: string
+  version?: string
+}
+
+/** 残留扫描结果 */
+export interface ResidueScanResult {
+  platform: 'win' | 'darwin'
+  items: ResidueItem[]
+  /** 仅统计有 size 的条目 */
+  totalReclaimableBytes: number
+  scannedAt: number
+  /** 扫描被用户取消（返回已完成的阶段结果） */
+  cancelled?: boolean
+  error?: string
+}
+
+/** 残留扫描进度（broadcast 载荷） */
+export interface ResidueScanProgress {
+  /** 阶段标识（registry-startup / registry-uninstall / prism-residue / app-cache / update-staging / done） */
+  phase: string
+  /** 阶段文案 */
+  label: string
+  /** 已登记条目数 */
+  items: number
+  /** 结束帧（完成 / 取消 / 不支持平台） */
+  finished: boolean
+}
+
+/** 残留清理结果 */
+export interface ResidueCleanResult {
+  ok: boolean
+  /** 已清理成功的条目 id */
+  cleanedIds: string[]
+  /** 已移入回收站的路径 */
+  trashed: string[]
+  /** 已删除的注册表键/值 */
+  regDeleted: string[]
+  /** 注册表删除前导出的 .reg 备份文件路径 */
+  backups: string[]
+  /** 失败条目描述 */
+  errors: string[]
+}
+
+/* 磁盘占用排行条目 */
+export interface DiskScanEntry {
+  path: string
+  name: string
+  /** 字节（目录为递归合计） */
+  size: number
+  kind: 'file' | 'dir'
+}
+
+/* 单个扫描根汇总 */
+export interface DiskScanRoot {
+  path: string
+  totalSize: number
+  files: number
+  dirs: number
+  /** 所在卷总容量（statfs，取不到时省略） */
+  totalBytes?: number
+  /** 所在卷可用容量（statfs，取不到时省略） */
+  freeBytes?: number
+}
+
+/* 磁盘扫描进度（broadcast 载荷） */
+export interface DiskScanProgress {
+  runId: number
+  currentPath: string
+  files: number
+  dirs: number
+  scannedBytes: number
+  skipped: number
+  /** 结束帧（done / cancelled / error） */
+  finished: boolean
+}
+
+/* 磁盘扫描结果 */
+export interface DiskScanResult {
+  runId: number
+  cancelled: boolean
+  error?: string
+  roots: DiskScanRoot[]
+  /** 按 size 降序，上限 200 */
+  topFiles: DiskScanEntry[]
+  /** 按 size 降序，上限 200 */
+  topDirs: DiskScanEntry[]
+  /** 无法访问/跳过的条目，上限 200 */
+  skipped: { path: string; reason: string }[]
+}
+
 // ---------------------------------------------------------------------------
 // 通道名常量
 // ---------------------------------------------------------------------------
@@ -736,6 +864,26 @@ export const SERVICE_CHANNELS = {
     uninstall: 'to-service-LegacyCleanupService:uninstall',
     deleteData: 'to-service-LegacyCleanupService:deleteData'
   },
+  residueScan: {
+    /** 扫描系统残留（win 注册表孤儿 / mac Prism 足迹 / 本应用缓存日志与历史更新包） */
+    scan: 'to-service-ResidueScanService:scan',
+    /** 取消当前扫描（无扫描时 no-op） */
+    cancel: 'to-service-ResidueScanService:cancel',
+    /** 清理选中的残留条目（文件入回收站 / 注册表删除前导出 .reg 备份） */
+    clean: 'to-service-ResidueScanService:clean',
+    /** 打开注册表备份目录（清理后可手动还原 .reg） */
+    openBackupDir: 'to-service-ResidueScanService:openBackupDir'
+  },
+  diskUsage: {
+    /** 弹系统文件夹多选框，返回选中目录（取消返回空数组） */
+    pickRoots: 'to-service-DiskUsageService:pickRoots',
+    /** 扫描指定目录/盘符，统计各根占用并返回 Top-N 大文件与大文件夹排行 */
+    scan: 'to-service-DiskUsageService:scan',
+    /** 取消当前扫描 */
+    cancel: 'to-service-DiskUsageService:cancel',
+    /** 在系统资源管理器中定位文件/文件夹 */
+    showItemInFolder: 'to-service-DiskUsageService:showItemInFolder'
+  },
   notification: {
     getList: 'to-service-NotificationService:getList',
     getUnread: 'to-service-NotificationService:getUnread',
@@ -800,7 +948,11 @@ export const BROADCAST = {
   /** 账号同步中状态变化（载荷：MailSyncingInfo[]，标题栏「同步中」指示） */
   mailSyncingChanged: 'broadcast:mail-syncing-changed',
   /** 应用发生 error 级报错（载荷：AppErrorPayload，标题栏左侧红点闪烁 + 版本号后错误提示） */
-  appError: 'broadcast:app-error'
+  appError: 'broadcast:app-error',
+  /** 残留扫描进度（载荷：ResidueScanProgress；结束帧 finished=true） */
+  residueScanProgress: 'broadcast:residue-scan-progress',
+  /** 磁盘占用扫描进度（载荷：DiskScanProgress；结束帧 finished=true） */
+  diskScanProgress: 'broadcast:disk-scan-progress'
 } as const
 
 // ---------------------------------------------------------------------------
@@ -1004,6 +1156,30 @@ export interface ElectronAPI {
     uninstall: () => Promise<LegacyCleanupResult>
     /** 将选中的旧版数据条目移入回收站（仅限旧版数据目录内的路径） */
     deleteData: (paths: string[]) => Promise<LegacyCleanupResult>
+  }
+  residueScan: {
+    /** 扫描系统残留（win 注册表孤儿 / mac Prism 足迹 / 本应用缓存日志与历史更新包） */
+    scan: () => Promise<ResidueScanResult>
+    /** 取消当前扫描（返回已完成的阶段结果） */
+    cancel: () => Promise<void>
+    /** 清理选中的残留条目（文件入回收站；注册表删除前导出 .reg 备份） */
+    clean: (ids: string[]) => Promise<ResidueCleanResult>
+    /** 打开注册表备份目录（清理后可手动还原 .reg） */
+    openBackupDir: () => Promise<void>
+    /** 订阅残留扫描进度（返回取消函数） */
+    onProgress: (cb: (progress: ResidueScanProgress) => void) => () => void
+  }
+  diskUsage: {
+    /** 弹系统文件夹多选框，返回选中目录（取消返回空数组） */
+    pickRoots: () => Promise<string[]>
+    /** 扫描指定目录/盘符，返回各根汇总与 Top-N 大文件/大文件夹排行（进度经 onProgress 广播，可 cancel） */
+    scan: (roots: string[]) => Promise<DiskScanResult>
+    /** 取消当前扫描 */
+    cancel: () => Promise<void>
+    /** 在系统资源管理器中定位文件/文件夹 */
+    showItemInFolder: (path: string) => Promise<void>
+    /** 订阅磁盘扫描进度（返回取消函数） */
+    onProgress: (cb: (progress: DiskScanProgress) => void) => () => void
   }
   notification: {
     /** 获取全部通知记录（按时间倒序） */

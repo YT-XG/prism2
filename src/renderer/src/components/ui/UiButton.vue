@@ -1,13 +1,18 @@
 <template>
-  <button class="ui-btn" :class="`ui-btn--${variant}`" type="button">
+  <button class="ui-btn" :class="[`ui-btn--${variant}`, `ui-btn--${size}`]" type="button">
     <slot />
   </button>
 </template>
 
 <script setup lang="ts">
-defineProps<{
-  variant?: 'primary' | 'secondary' | 'ghost' | 'danger'
-}>()
+withDefaults(
+  defineProps<{
+    variant?: 'primary' | 'secondary' | 'ghost' | 'danger'
+    /** 尺寸：xs=24px（列表行内）/ sm=30px（面板工具条）/ md=34px（默认，表单与弹窗） */
+    size?: 'xs' | 'sm' | 'md'
+  }>(),
+  { size: 'md' }
+)
 </script>
 
 <style scoped>
@@ -81,5 +86,17 @@ defineProps<{
 
 .ui-btn--danger:hover {
   background: color-mix(in srgb, var(--danger-bg) 88%, #000);
+}
+
+.ui-btn--xs {
+  height: 24px;
+  padding: 0 var(--sp-2);
+  font-size: var(--text-xs);
+}
+
+.ui-btn--sm {
+  height: 30px;
+  padding: 0 var(--sp-3);
+  font-size: var(--text-sm);
 }
 </style>

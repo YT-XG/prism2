@@ -80,6 +80,16 @@
             >{{ mailUnread > 99 ? '99+' : mailUnread }}</span>
             <span v-else-if="mailUnread && collapsed" class="nav-dot" />
           </RouterLink>
+          <RouterLink
+            class="nav-item"
+            :title="collapsed ? '存储优化' : undefined"
+            to="/mainPage/storage"
+          >
+            <HardDrive :size="16" :stroke-width="1.6" />
+            <Transition name="nav-fade">
+              <span v-if="!collapsed" class="nav-item__label">存储优化</span>
+            </Transition>
+          </RouterLink>
         </div>
 
         <div class="nav-group">
@@ -135,7 +145,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { House, ClipboardList, StickyNote, Bell, Settings2, ChevronsLeft, ChevronsRight, Download, Mail } from '@lucide/vue'
+import { House, ClipboardList, StickyNote, Bell, Settings2, ChevronsLeft, ChevronsRight, Download, Mail, HardDrive } from '@lucide/vue'
 import UiDialog from '@renderer/components/ui/UiDialog.vue'
 import UiButton from '@renderer/components/ui/UiButton.vue'
 import { useToast } from '@renderer/composables/useToast'

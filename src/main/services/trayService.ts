@@ -27,6 +27,8 @@ class TrayService {
       const menu = Menu.buildFromTemplate([
         { label: '显示主界面', click: () => windowFactory.getMainPageFrame().showCentered() },
         { type: 'separator' },
+        { label: '存储优化', click: () => windowFactory.getMainPageFrame().showPage('storage') },
+        { type: 'separator' },
         { label: '查看日志', click: () => void logService.openLogFile() },
         { type: 'separator' },
         { label: '退出', click: () => app.quit() }

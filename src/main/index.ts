@@ -15,6 +15,8 @@ import { updateService } from './services/updateService'
 import { downloadService } from './services/downloadService'
 import { legacyImportService } from './services/legacyImportService'
 import { legacyCleanupService } from './services/legacyCleanupService'
+import { residueScanService } from './services/residueScanService'
+import { diskUsageService } from './services/diskUsageService'
 import { notificationService } from './services/notificationService'
 import { mailService } from './services/mailService'
 import { errorLog, logService, notifyAppError } from './services/logService'
@@ -88,6 +90,8 @@ app.whenReady().then(async () => {
   downloadService.init()
   legacyImportService.init()
   legacyCleanupService.init()
+  residueScanService.init()
+  diskUsageService.init()
   mailService.init()
   logService.init()
 

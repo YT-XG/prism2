@@ -40,6 +40,9 @@ src/
 │   │   ├── downloadService.ts    # 多线程下载服务（core/downloadEngine 封装 + 任务持久化 download-tasks.json + IPC + broadcast）
 │   │   ├── legacyImportService.ts # 旧版 v1 剪贴板数据一键导入（读 v1 userData/Prism/clipboard.db 合并）
 │   │   ├── legacyCleanupService.ts # 旧版 v1 安装检测/静默卸载/旧数据选择性删除 + 运行期系统残留清理（注册表 + NSIS /S / shell.trashItem）
+│   │   ├── legacyPaths.ts          # 旧版 v1 系统路径/注册表常量（v1 数据目录名、Run 键、右键菜单键、mac Services 工作流；legacyCleanup 与 residueScan 共用）
+│   │   ├── residueScanService.ts   # 存储优化-系统残留扫描/清理（Win 仅 HKCU：失效自启项+孤儿卸载注册项+Prism 右键菜单残留+本应用缓存日志+历史更新包；mac：v1 ~/Library 足迹+旧安装，当前应用自身文件不列出；清理统一回收站+realpath 后路径边界校验（拒绝盘符/家目录/系统目录/当前应用本体/userData 根），注册表删除前 .reg 备份（保留最近 10 份、文件名带键哈希）且经 spawn 参数直传+键值名白名单校验防注入；环境变量未展开/UNC/盘符离线一律不判孤儿；扫描可取消 + 进度 broadcast；本应用缓存/日志逐子项清理容忍占用）
+│   │   ├── diskUsageService.ts     # 存储优化-大文件（夹）排行（任意目录/盘符递归扫描，有界 Top-N 堆，进度 broadcast，可取消；不跟随符号链接防环；win 长路径/UNC 前缀；根上限 16 并跳过被包含根；statfs 附卷容量；showItemInFolder 先校验存在）
 │   │   ├── notificationService.ts # 通知中心（持久化通知 + 自绘通知浮窗统一呈现，不依赖系统通知）
 │   │   ├── mailService.ts         # 邮箱大师（多账号 IMAP 收信：授权码 safeStorage 加密入库 + 首次最近 200 封/UID 增量同步（UIDVALIDITY 变化自动重置 + 序号尾部对账兜底）+ 附件落盘 + 实时收信（每账号常驻监听连接 imapflow auto-IDLE，exists 事件触发增量同步，maxIdleTime 保活 + 断线指数退避重连）+ 兜底轮询（默认 1 分钟，设置可调）+ 新邮件通知（仅收件箱）+ 同步中状态广播（标题栏状态中心「xx 同步中」条目））
 │   │   ├── logService.ts          # 日志服务（定位 electron-log 落盘文件，托盘/设置页「查看日志」打开；warn/error 经 hooks 独立落盘 error.log，设置页「查看错误日志」；error 级再经 notifyAppError 广播，驱动标题栏状态区报错提示）
@@ -63,7 +66,7 @@ src/
     ├── components/SnippetPlaceholderDialog.vue # 片段占位符输入弹窗（{{名称}}，填写后替换并粘贴）
     ├── components/ClipboardHistoryEditorDialog.vue # 剪贴板历史编辑弹窗（富文本）
     ├── composables/useIpcListener.ts  useToast.ts  useStatusCenter.ts（全局状态中心：同步/报错/更新/toast 统一条目，StatusCenter.vue 渲染）  useTheme.ts  useFeatureSearch.ts  useGlobalSearch.ts（命令面板与主页搜索共用的全局搜索聚合逻辑）  useDrag.ts  useHomeModules.ts  useNotifications.ts  useNotificationPopups.ts  useClipboardText.ts（富文本/纯文本预览工具：stripHtml/itemText）  useSnippetPlaceholder.ts（片段占位符：提取/替换 {{名称}}，单例弹窗状态）  useWordSplit.ts（拆词工具：splitWords 按换行/空白/标点/中英边界切分词组，MAX_WORD_CHIPS 卡片展示上限）  useMail.ts（邮箱大师共享状态：未读角标 + 账号列表 + onMailUnreadChanged/onMailSync 订阅）
-    ├── views/                    # MainPage / Home / ClipboardManager / StickyNotes / Notifications / NotificationPopup（自绘通知浮窗页） / SearchView（全局搜索独立窗页）/ Settings / DownloadManager（多线程下载管理页）/ Mail（邮箱大师：三栏布局 账号+文件夹 | 邮件列表 | 阅读窗，dompurify 净化 + sandbox iframe + CSP 渲染正文）
+    ├── views/                    # MainPage / Home / ClipboardManager / StickyNotes / Notifications / NotificationPopup（自绘通知浮窗页） / SearchView（全局搜索独立窗页）/ Settings / DownloadManager（多线程下载管理页）/ Mail（邮箱大师：三栏布局 账号+文件夹 | 邮件列表 | 阅读窗，dompurify 净化 + sandbox iframe + CSP 渲染正文）/ StorageOptimizer（存储优化：系统残留扫描 + 大文件（夹）排行，独立页由侧栏与托盘菜单进入）
     └── router/  types.d.ts
 scripts/import-legacy-db.mjs      # 旧剪贴板数据一次性导入（已由应用内 legacyImportService 承接）
 scripts/make-server-manifest.mjs  # 生成自托管服务器版 latest.json（url 指向服务器绝对 https + sha256；见 ../docs/prism2/self-host-update.md）
@@ -114,4 +117,5 @@ scripts/make-server-manifest.mjs  # 生成自托管服务器版 latest.json（ur
 | 邮箱大师（多账号 IMAP 收信：授权码 safeStorage 加密 + 多文件夹同步（首次最近 200 封/UID 增量）+ 三栏收件界面（账号+文件夹 | 邮件列表 | 阅读窗）+ 附件下载/打开 + 新邮件通知（仅收件箱，notifyMail 开关）+ 侧栏未读角标 + IMAP IDLE 实时收信（每账号常驻监听，exists 事件秒级收信，断线自动重连）+ 兜底轮询（默认 1 分钟可调）+ 正文 dompurify 净化 + sandbox iframe + CSP 安全渲染；不包含发信） | ✅ |
 | 旧版数据引导导入（主页横幅一键合并 v1 剪贴板数据） | ✅ |
 | 旧版本（v1）检测 / 卸载 / 旧数据选择性清理（启动弹窗 + 设置页） | ✅ |
+| 存储优化（系统残留扫描/清理：Win HKCU 自启项与卸载孤儿 + Prism 残留 + 本应用缓存日志 + 历史更新包，mac v1 ~/Library 足迹；大文件（夹）排行：任意目录/盘符递归 Top-200 + 卷容量 + 进度/取消；侧栏与托盘入口） | ✅ |
 | 翻译、Markdown 预览、文件互传、弹窗族、OCR | ⬜ 见 ../docs/prism2/migration-roadmap.md |

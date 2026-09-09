@@ -15,6 +15,8 @@ import type {
   BackupInspectResult,
   BackupSection,
   ClipboardRetention,
+  DiskScanProgress,
+  DiskScanResult,
   DownloadTaskSnapshot,
   ElectronAPI,
   FavoritesCursor,
@@ -40,6 +42,9 @@ import type {
   NotificationItem,
   NotificationNewPayload,
   QuickFolder,
+  ResidueCleanResult,
+  ResidueScanProgress,
+  ResidueScanResult,
   SetPagePayload,
   StartDownloadPayload,
   StartDownloadResult,
@@ -57,6 +62,8 @@ const U = SERVICE_CHANNELS.update
 const D = SERVICE_CHANNELS.download
 const L = SERVICE_CHANNELS.legacyImport
 const LC = SERVICE_CHANNELS.legacyCleanup
+const RS = SERVICE_CHANNELS.residueScan
+const DU = SERVICE_CHANNELS.diskUsage
 const NT = SERVICE_CHANNELS.notification
 const LG = SERVICE_CHANNELS.log
 const M = SERVICE_CHANNELS.mail
@@ -249,6 +256,26 @@ const electronAPI: ElectronAPI = {
     uninstall: () => ipcRenderer.invoke(LC.uninstall) as Promise<LegacyCleanupResult>,
     deleteData: (paths: string[]) =>
       ipcRenderer.invoke(LC.deleteData, paths) as Promise<LegacyCleanupResult>
+  },
+
+  residueScan: {
+    scan: () => ipcRenderer.invoke(RS.scan) as Promise<ResidueScanResult>,
+    cancel: () => ipcRenderer.invoke(RS.cancel) as Promise<void>,
+    clean: (ids: string[]) =>
+      ipcRenderer.invoke(RS.clean, ids) as Promise<ResidueCleanResult>,
+    openBackupDir: () => ipcRenderer.invoke(RS.openBackupDir) as Promise<void>,
+    onProgress: (cb: (p: ResidueScanProgress) => void) =>
+      subscribe(BROADCAST.residueScanProgress, (p) => cb(p as ResidueScanProgress))
+  },
+
+  diskUsage: {
+    pickRoots: () => ipcRenderer.invoke(DU.pickRoots) as Promise<string[]>,
+    scan: (roots: string[]) => ipcRenderer.invoke(DU.scan, roots) as Promise<DiskScanResult>,
+    cancel: () => ipcRenderer.invoke(DU.cancel) as Promise<void>,
+    showItemInFolder: (path: string) =>
+      ipcRenderer.invoke(DU.showItemInFolder, path) as Promise<void>,
+    onProgress: (cb: (p: DiskScanProgress) => void) =>
+      subscribe(BROADCAST.diskScanProgress, (p) => cb(p as DiskScanProgress))
   },
 
   notification: {

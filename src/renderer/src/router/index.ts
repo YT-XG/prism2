@@ -9,6 +9,7 @@ import Settings from '@renderer/views/Settings.vue'
 import Notifications from '@renderer/views/Notifications.vue'
 import DownloadManager from '@renderer/views/DownloadManager.vue'
 import Mail from '@renderer/views/Mail.vue'
+import StorageOptimizer from '@renderer/views/StorageOptimizer.vue'
 
 const router = createRouter({
   history: createWebHashHistory(),
@@ -24,6 +25,7 @@ const router = createRouter({
         { path: 'notifications', name: 'notifications', component: Notifications },
         { path: 'downloads', name: 'downloads', component: DownloadManager },
         { path: 'mail', name: 'mail', component: Mail },
+        { path: 'storage', name: 'storage', component: StorageOptimizer },
         { path: 'settings', name: 'settings', component: Settings }
       ]
     },

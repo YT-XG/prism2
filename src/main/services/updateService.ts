@@ -424,6 +424,8 @@ class UpdateService {
         message: `v${manifest.version} 已下载，重启后生效`
       })
       log.info('[UpdateService] 更新已校验通过并下载完成:', manifest.version)
+      // 清理历史版本暂存包（保留当前待装版本，供「打开安装包」兜底）
+      await this.#pruneStaging(manifest.version)
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       log.error('[UpdateService] 更新校验失败:', message)
@@ -435,6 +437,26 @@ class UpdateService {
         force: true
       }).catch(() => {})
     }
+  }
+
+  /**
+   * 清理 update-staging 下非当前待装版本的历史暂存包。
+   * 安装成功后只清理当前版本目录，历史版本会永久累积（单个安装包上百 MB），
+   * 这里在每次下载校验通过后顺手回收；保留 keepVersion 供「打开安装包」兜底。
+   */
+  async #pruneStaging(keepVersion: string): Promise<void> {
+    const base = join(app.getPath('userData'), 'update-staging')
+    let entries: string[]
+    try {
+      entries = await readdir(base)
+    } catch {
+      return
+    }
+    for (const name of entries) {
+      if (name === keepVersion) continue
+      await rm(join(base, name), { recursive: true, force: true }).catch(() => {})
+    }
+    log.info('[UpdateService] 已清理历史版本暂存包，保留:', keepVersion)
   }
 
   /** 计算文件 SHA-256 */

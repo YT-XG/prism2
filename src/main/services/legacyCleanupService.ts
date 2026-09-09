@@ -23,18 +23,17 @@ import type {
   LegacyDataEntry,
   LegacyInstallInfo
 } from '@preload/ipc'
+import {
+  LEGACY_DIR_NAMES,
+  MAC_SERVICES_WORKFLOW_NAME,
+  WIN_RUN_KEY,
+  WIN_SHELL_KEY
+} from './legacyPaths'
 
 const execAsync = promisify(exec)
 
-/** 旧版应用名（v1 userData 目录名候选：打包版大写 Prism、开发模式小写 prism） */
-const LEGACY_DIR_NAMES = ['Prism', 'prism'] as const
-
-/** Windows 开机自启注册表键（v1 由 app.setLoginItemSettings 写入 Run 值） */
-const WIN_RUN_KEY = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run'
-/** Windows 右键菜单集成注册表键（v1 shellIntegrationService 写入） */
-const WIN_SHELL_KEY = 'HKCU\\Software\\Classes\\*\\shell\\ShareWithPrism'
-/** macOS 右键菜单集成工作流（v1 shellIntegrationService 写入） */
-const MAC_SERVICES_WORKFLOW_NAME = '分享到妙妙屋.workflow'
+// 常量已抽到 ./legacyPaths，此处再导出保持既有引用不破坏
+export { LEGACY_DIR_NAMES, MAC_SERVICES_WORKFLOW_NAME, WIN_RUN_KEY, WIN_SHELL_KEY }
 
 /** 解析注册表 UninstallString：剥离引号得到 exe 路径与其余参数 */
 interface UninstallCommand {
