@@ -68,6 +68,12 @@ export interface WalkOptions {
   progressInterval?: number
 }
 
+/** 遍历时跳过的 Windows 系统目录（回收站 / 系统卷信息）——并非用户文件，
+ *  且含大量 *.asar 归档碎片，Electron 的 asar-aware fs 会对它们做归档解析报错 */
+function isSkippedSystemDir(name: string): boolean {
+  return /^\$recycle\.bin$/i.test(name) || /^system volume information$/i.test(name)
+}
+
 /**
  * 递归遍历目录并返回子树总字节数。不跟随符号链接；isCancelled() 为真时提前返回。
  * 计数（files/dirs/scannedBytes）与跳过累计统一写入 ctx，进度节流由调用方在
@@ -98,6 +104,10 @@ export async function walkTree(root: string, opts: WalkOptions): Promise<number>
         continue
       }
       if (ent.isDirectory()) {
+        if (isSkippedSystemDir(ent.name)) {
+          opts.noteSkipped?.(full, '系统目录，跳过')
+          continue
+        }
         size += await walkTree(full, opts)
       } else if (ent.isFile()) {
         const st = await fsp.stat(forFs(full))
