@@ -714,6 +714,143 @@ export interface DiskScanResult {
   skipped: { path: string; reason: string }[]
 }
 
+/* ============================================================
+ * 系统垃圾清理（JunkCleanService）
+ * ============================================================ */
+
+/** 垃圾分类 */
+export type JunkCategory =
+  | 'system-temp'
+  | 'browser-cache'
+  | 'app-cache'
+  | 'update-cache'
+  | 'thumbnail'
+  | 'crash-dump'
+  | 'recycle-bin'
+
+/** 清理风险分级（recycle-bin / 系统更新缓存等需确认） */
+export type JunkRisk = 'safe' | 'confirm'
+
+/** 单个垃圾条目（目录或文件） */
+export interface JunkScanItem {
+  id: string
+  category: JunkCategory
+  title: string
+  detail: string
+  path: string
+  /** 递归合计（目录）/ 文件大小 */
+  size?: number
+  /** 是否为目录（清理策略不同：目录逐子项入回收站） */
+  isDir?: boolean
+  risk: JunkRisk
+}
+
+/** 单个分类汇总 */
+export interface JunkCategoryResult {
+  category: JunkCategory
+  title: string
+  items: JunkScanItem[]
+  totalBytes: number
+}
+
+/** 垃圾扫描结果 */
+export interface JunkScanResult {
+  platform: 'win' | 'darwin'
+  categories: JunkCategoryResult[]
+  /** 仅统计有 size 的条目 */
+  totalReclaimableBytes: number
+  scannedAt: number
+  cancelled?: boolean
+  error?: string
+}
+
+/** 垃圾扫描进度（broadcast 载荷） */
+export interface JunkScanProgress {
+  phase: string
+  label: string
+  items: number
+  /** 结束帧（完成 / 取消 / 不支持平台） */
+  finished: boolean
+}
+
+/** 垃圾清理结果 */
+export interface JunkCleanResult {
+  ok: boolean
+  cleanedIds: string[]
+  trashed: string[]
+  reclaimedBytes: number
+  errors: string[]
+}
+
+/* ============================================================
+ * 重复文件去重（DuplicateFinderService）
+ * ============================================================ */
+
+/** 重复文件组中的单个文件 */
+export interface DuplicateFile {
+  path: string
+  name: string
+}
+
+/** 一组重复文件（size 与内容哈希相同；keepPath 为建议保留的一份） */
+export interface DuplicateGroup {
+  /** 稳定 key（size:hash） */
+  key: string
+  size: number
+  keepPath: string
+  files: DuplicateFile[]
+  /** 剔除保留项后可释放的字节 */
+  reclaimableBytes: number
+}
+
+/** 重复文件扫描结果 */
+export interface DuplicateScanResult {
+  runId: number
+  cancelled: boolean
+  error?: string
+  roots: string[]
+  groups: DuplicateGroup[]
+  /** 全部重复组（去掉保留项）合计可释放 */
+  totalDuplicateBytes: number
+  skipped: { path: string; reason: string }[]
+}
+
+/** 重复文件扫描进度（broadcast 载荷） */
+export interface DuplicateScanProgress {
+  runId: number
+  currentPath: string
+  files: number
+  scannedBytes: number
+  groups: number
+  skipped: number
+  /** 结束帧（done / cancelled / error） */
+  finished: boolean
+}
+
+/** 重复文件清理结果 */
+export interface DuplicateCleanResult {
+  ok: boolean
+  removed: string[]
+  reclaimedBytes: number
+  errors: string[]
+}
+
+/* ============================================================
+ * 磁盘容量总览（DiskOverviewService）
+ * ============================================================ */
+
+/** 单个分区/卷信息 */
+export interface VolumeInfo {
+  path: string
+  label?: string
+  totalBytes: number
+  freeBytes: number
+  usedBytes: number
+  readonly: boolean
+  /** 卷角色：system=系统盘（mac 主磁盘 / win 本地盘）；external=外接/挂载卷（mac /Volumes） */
+  role: 'system' | 'external'
+}
+
 // ---------------------------------------------------------------------------
 // 通道名常量
 // ---------------------------------------------------------------------------
@@ -884,6 +1021,28 @@ export const SERVICE_CHANNELS = {
     /** 在系统资源管理器中定位文件/文件夹 */
     showItemInFolder: 'to-service-DiskUsageService:showItemInFolder'
   },
+  junkClean: {
+    /** 扫描系统垃圾（临时/浏览器缓存/应用缓存/更新缓存/缩略图/崩溃转储/回收站） */
+    scan: 'to-service-JunkCleanService:scan',
+    /** 取消当前扫描 */
+    cancel: 'to-service-JunkCleanService:cancel',
+    /** 清理选中的垃圾条目（文件入回收站） */
+    clean: 'to-service-JunkCleanService:clean'
+  },
+  duplicateFinder: {
+    /** 弹系统文件夹多选框，返回选中目录（取消返回空数组） */
+    pickRoots: 'to-service-DuplicateFinderService:pickRoots',
+    /** 扫描重复文件分组 */
+    scan: 'to-service-DuplicateFinderService:scan',
+    /** 取消当前扫描 */
+    cancel: 'to-service-DuplicateFinderService:cancel',
+    /** 清理重复分组中多余的副本（入回收站） */
+    clean: 'to-service-DuplicateFinderService:clean'
+  },
+  diskOverview: {
+    /** 枚举系统各分区/卷容量与可用空间 */
+    listVolumes: 'to-service-DiskOverviewService:listVolumes'
+  },
   notification: {
     getList: 'to-service-NotificationService:getList',
     getUnread: 'to-service-NotificationService:getUnread',
@@ -952,7 +1111,11 @@ export const BROADCAST = {
   /** 残留扫描进度（载荷：ResidueScanProgress；结束帧 finished=true） */
   residueScanProgress: 'broadcast:residue-scan-progress',
   /** 磁盘占用扫描进度（载荷：DiskScanProgress；结束帧 finished=true） */
-  diskScanProgress: 'broadcast:disk-scan-progress'
+  diskScanProgress: 'broadcast:disk-scan-progress',
+  /** 系统垃圾扫描进度（载荷：JunkScanProgress；结束帧 finished=true） */
+  junkScanProgress: 'broadcast:junk-scan-progress',
+  /** 重复文件扫描进度（载荷：DuplicateScanProgress；结束帧 finished=true） */
+  duplicateScanProgress: 'broadcast:duplicate-scan-progress'
 } as const
 
 // ---------------------------------------------------------------------------
@@ -1180,6 +1343,32 @@ export interface ElectronAPI {
     showItemInFolder: (path: string) => Promise<void>
     /** 订阅磁盘扫描进度（返回取消函数） */
     onProgress: (cb: (progress: DiskScanProgress) => void) => () => void
+  }
+  junkClean: {
+    /** 扫描系统垃圾（临时/浏览器缓存/应用缓存/更新缓存/缩略图/崩溃转储/回收站） */
+    scan: () => Promise<JunkScanResult>
+    /** 取消当前扫描（无扫描时 no-op） */
+    cancel: () => Promise<void>
+    /** 清理选中的垃圾条目（文件入回收站；可回收字节数回传） */
+    clean: (ids: string[]) => Promise<JunkCleanResult>
+    /** 订阅垃圾扫描进度（返回取消函数） */
+    onProgress: (cb: (progress: JunkScanProgress) => void) => () => void
+  }
+  duplicateFinder: {
+    /** 弹系统文件夹多选框，返回选中目录（取消返回空数组） */
+    pickRoots: () => Promise<string[]>
+    /** 扫描重复文件分组（进度经 onProgress 广播，可 cancel） */
+    scan: (roots: string[]) => Promise<DuplicateScanResult>
+    /** 取消当前扫描 */
+    cancel: () => Promise<void>
+    /** 清理重复分组中多余的副本（入回收站） */
+    clean: (paths: string[]) => Promise<DuplicateCleanResult>
+    /** 订阅重复文件扫描进度（返回取消函数） */
+    onProgress: (cb: (progress: DuplicateScanProgress) => void) => () => void
+  }
+  diskOverview: {
+    /** 枚举系统各分区/卷容量与可用空间 */
+    listVolumes: () => Promise<VolumeInfo[]>
   }
   notification: {
     /** 获取全部通知记录（按时间倒序） */

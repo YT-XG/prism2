@@ -17,7 +17,14 @@ import type {
   ClipboardRetention,
   DiskScanProgress,
   DiskScanResult,
+  DuplicateCleanResult,
+  DuplicateScanProgress,
+  DuplicateScanResult,
   DownloadTaskSnapshot,
+  JunkCleanResult,
+  JunkScanProgress,
+  JunkScanResult,
+  VolumeInfo,
   ElectronAPI,
   FavoritesCursor,
   FavoriteItem,
@@ -64,6 +71,9 @@ const L = SERVICE_CHANNELS.legacyImport
 const LC = SERVICE_CHANNELS.legacyCleanup
 const RS = SERVICE_CHANNELS.residueScan
 const DU = SERVICE_CHANNELS.diskUsage
+const JC = SERVICE_CHANNELS.junkClean
+const DF = SERVICE_CHANNELS.duplicateFinder
+const DO = SERVICE_CHANNELS.diskOverview
 const NT = SERVICE_CHANNELS.notification
 const LG = SERVICE_CHANNELS.log
 const M = SERVICE_CHANNELS.mail
@@ -276,6 +286,27 @@ const electronAPI: ElectronAPI = {
       ipcRenderer.invoke(DU.showItemInFolder, path) as Promise<void>,
     onProgress: (cb: (p: DiskScanProgress) => void) =>
       subscribe(BROADCAST.diskScanProgress, (p) => cb(p as DiskScanProgress))
+  },
+
+  junkClean: {
+    scan: () => ipcRenderer.invoke(JC.scan) as Promise<JunkScanResult>,
+    cancel: () => ipcRenderer.invoke(JC.cancel) as Promise<void>,
+    clean: (ids: string[]) => ipcRenderer.invoke(JC.clean, ids) as Promise<JunkCleanResult>,
+    onProgress: (cb: (p: JunkScanProgress) => void) =>
+      subscribe(BROADCAST.junkScanProgress, (p) => cb(p as JunkScanProgress))
+  },
+
+  duplicateFinder: {
+    pickRoots: () => ipcRenderer.invoke(DF.pickRoots) as Promise<string[]>,
+    scan: (roots: string[]) => ipcRenderer.invoke(DF.scan, roots) as Promise<DuplicateScanResult>,
+    cancel: () => ipcRenderer.invoke(DF.cancel) as Promise<void>,
+    clean: (paths: string[]) => ipcRenderer.invoke(DF.clean, paths) as Promise<DuplicateCleanResult>,
+    onProgress: (cb: (p: DuplicateScanProgress) => void) =>
+      subscribe(BROADCAST.duplicateScanProgress, (p) => cb(p as DuplicateScanProgress))
+  },
+
+  diskOverview: {
+    listVolumes: () => ipcRenderer.invoke(DO.listVolumes) as Promise<VolumeInfo[]>
   },
 
   notification: {

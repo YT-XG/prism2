@@ -323,6 +323,8 @@ onBeforeUnmount(() => {
 .du-panel {
   display: flex;
   flex-direction: column;
+  flex: 1;
+  min-height: 0;
 }
 
 /* ---------- 卡头 ---------- */
@@ -376,8 +378,10 @@ onBeforeUnmount(() => {
   flex-direction: column;
   gap: var(--sp-3);
   padding: var(--sp-4) var(--sp-5) var(--sp-5);
-  /* 长列表在卡内滚动，避免把页面撑高、减少纵向滚轮下滑 */
-  max-height: 52vh;
+  /* 等高填充 + 长列表在卡内滚动 */
+  flex: 1;
+  min-height: 0;
+  max-height: min(52vh, 520px);
   overflow-y: auto;
 }
 

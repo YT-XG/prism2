@@ -26,9 +26,8 @@
  */
 import { app, ipcMain, shell } from 'electron'
 import { existsSync, promises as fsp } from 'node:fs'
-import { dirname, join, parse, resolve, sep } from 'node:path'
-import { exec, spawn } from 'node:child_process'
-import { createHash } from 'node:crypto'
+import { dirname, join, resolve } from 'node:path'
+import { exec } from 'node:child_process'
 import { promisify } from 'node:util'
 import log from 'electron-log'
 import { BROADCAST, SERVICE_CHANNELS } from '@preload/ipc'
@@ -47,6 +46,16 @@ import {
   WIN_RUN_KEY,
   WIN_SHELL_KEY
 } from './legacyPaths'
+import {
+  backupRegistryKey,
+  expandEnvPath,
+  isSafeRegArg,
+  pruneBackups,
+  reg,
+  trashDirContents,
+  verifiablePath,
+  verifiedCleanPath
+} from './storageCleanup'
 
 const execAsync = promisify(exec)
 
@@ -75,75 +84,9 @@ const APP_CACHE_DIRS = [
 const SIZE_CONCURRENCY = 8
 /** 单次扫描允许统计的最大条目数（防病态目录树长时间占用） */
 const MAX_WALK_ENTRIES = 200_000
-/** 永不清理的系统目录（纵深防御，即使落在允许根内也拒绝） */
-const FORBIDDEN_DIRS =
-  process.platform === 'darwin'
-    ? ['/System', '/usr', '/bin', '/sbin', '/etc', '/private', '/Volumes', '/Library']
-    : ['c:\\windows', 'c:\\program files', 'c:\\program files (x86)']
 
 /** 进度广播节流（毫秒） */
 const PROGRESS_INTERVAL_MS = 150
-
-/** 扩展环境变量路径（%ProgramFiles% 等），未知名原样保留 */
-function expandEnvPath(raw: string): string {
-  return raw.replace(/%([^%]+)%/g, (_, name: string) => process.env[name] ?? `%${name}%`)
-}
-
-/** 展开后仍残留 %VAR% 占位 → 无法核验（否则必然判定为「不存在」而误报孤儿） */
-function hasEnvPlaceholder(value: string): boolean {
-  return /%[^%]+%/.test(value)
-}
-
-/** 网络路径（UNC / 共享盘）：可能当前离线，核验结果不可靠 */
-function isNetworkPath(value: string): boolean {
-  return /^[\\/]{2}/.test(value)
-}
-
-/** 路径所在盘符不存在（移动硬盘/网络盘未连接）→ 无法核验 */
-function driveMissing(value: string): boolean {
-  if (process.platform !== 'win32') return false
-  const root = parse(value).root
-  return root.length > 0 && !existsSync(root)
-}
-
-/** 路径比较用归一化（Windows 路径大小写不敏感） */
-function normPath(p: string): string {
-  return process.platform === 'win32' ? p.toLowerCase() : p
-}
-
-/** 路径是否可被核验（非空、绝对、无未展开变量、非网络路径、盘符在线） */
-function verifiablePath(value: string): boolean {
-  return (
-    value.length > 0 && !hasEnvPlaceholder(value) && !isNetworkPath(value) && !driveMissing(value)
-  )
-}
-
-/**
- * 执行 reg.exe 子命令（EXPORT/DELETE）。
- * 键名/值名来自注册表扫描（第三方软件可写入任意名称），必须用参数数组
- * 直传、不经 shell，防止 `&`/`|`/引号等字符破坏命令甚至注入执行任意命令。
- */
-function reg(args: string[]): Promise<void> {
-  return new Promise((resolvePromise, reject) => {
-    const child = spawn('reg', args, { windowsHide: true, stdio: 'ignore' })
-    child.on('error', reject)
-    child.on('close', (code) => {
-      if (code === 0) resolvePromise()
-      else reject(new Error(`reg 命令失败（退出码 ${code ?? 'unknown'}）`))
-    })
-  })
-}
-
-/**
- * 注册表键/值名安全校验：reg.exe 会把以 `/` 或 `-` 开头的值名当作开关解析，
- * 引号会破坏命令行，控制字符会截断参数。不合法一律拒绝执行。
- */
-function isSafeRegArg(value: string): boolean {
-  if (!value || value.length > 512) return false
-  if (/^[-/]/.test(value)) return false
-
-  return !/["\u0000-\u001f]/.test(value)
-}
 
 /** 路径是否指向现存文件（对无扩展名路径同时尝试补 .exe，模拟 CreateProcess） */
 async function resolvesToFile(p: string): Promise<boolean> {
@@ -742,120 +685,11 @@ class ResidueScanService {
     }
   }
 
-  /** 导出注册表键为 .reg 备份，返回备份文件路径 */
-  async #backupRegistryKey(key: string, backupDir: string): Promise<string> {
-    await fsp.mkdir(backupDir, { recursive: true })
-    // 键名 → 文件名：截断避免超长，且带键名哈希后缀防止不同键映射到同一文件
-    const safe = key.replace(/[^A-Za-z0-9._-]/g, '_').slice(0, 80)
-    const suffix = createHash('sha1').update(key).digest('hex').slice(0, 8)
-    const file = join(backupDir, `${safe}-${suffix}.reg`)
-    await reg(['EXPORT', key, file, '/y'])
-    return file
-  }
-
-  /**
-   * 清理路径安全边界：只允许 ~/Library、/Applications、~/Applications 与
-   * 本应用 userData 内的路径；拒绝盘符/文件系统根、用户主目录本身、系统
-   * 目录、当前应用本体（mac .app 包 / win 安装目录）与 userData 根目录本身
-   * （纵深防御，配合扫描侧的当前应用排除）。
-   */
-  #isAllowedCleanPath(raw: string): boolean {
-    const resolved = resolve(raw)
-    const norm = normPath(resolved)
-    const home = app.getPath('home')
-    const userData = app.getPath('userData')
-    // 盘符根 / 文件系统根 / 用户主目录本身绝不清理
-    const root = parse(resolved).root
-    if (root && norm === normPath(root)) return false
-    if (norm === normPath(home)) return false
-    if (FORBIDDEN_DIRS.some((d) => norm === d || norm.startsWith(d + sep))) return false
-    const selfRoots = [dirname(process.execPath)]
-    const macApp = process.execPath.match(/^(.*\.app)[\\/]/i)?.[1]
-    if (macApp) selfRoots.push(macApp)
-    if (selfRoots.some((r) => norm === normPath(r) || norm.startsWith(normPath(r) + sep))) {
-      return false
-    }
-    if (norm === normPath(userData)) return false
-    const allowedRoots =
-      process.platform === 'darwin'
-        ? [join(home, 'Library'), '/Applications', join(home, 'Applications'), userData]
-        : [userData]
-    return allowedRoots.some((r) => norm.startsWith(normPath(r) + sep))
-  }
-
-  /**
-   * 清理前解析真实路径并二次校验：软链接可能把允许目录指向别处，
-   * realpath 后仍须落在允许根内；路径不存在/无法解析则拒绝。
-   */
-  async #verifiedCleanPath(raw: string): Promise<string | null> {
-    const resolved = resolve(raw)
-    if (!this.#isAllowedCleanPath(resolved)) return null
-    try {
-      const real = await fsp.realpath(resolved)
-      if (!this.#isAllowedCleanPath(real)) return null
-      return real
-    } catch {
-      return null
-    }
-  }
-
   async #isDirectory(p: string): Promise<boolean> {
     try {
       return (await fsp.stat(p)).isDirectory()
     } catch {
       return false
-    }
-  }
-
-  /**
-   * 逐子项移入回收站（被占用文件跳过）；全部子项成功（含空目录——无子项可占）
-   * 时目录本身也入回收站。
-   */
-  async #trashDirContents(
-    dir: string
-  ): Promise<{ trashedCount: number; lockedCount: number; dirTrashed: boolean }> {
-    let trashedCount = 0
-    let lockedCount = 0
-    let names: string[]
-    try {
-      names = await fsp.readdir(dir)
-    } catch {
-      return { trashedCount, lockedCount, dirTrashed: false }
-    }
-    for (const name of names) {
-      try {
-        await shell.trashItem(join(dir, name))
-        trashedCount += 1
-      } catch {
-        lockedCount += 1
-      }
-    }
-    // 空目录 names 为空：lockedCount 为 0，这里仍会把目录本身入回收站，否则
-    // clean 会误判为「目录内文件均被占用」而报错。
-    let dirTrashed = false
-    if (lockedCount === 0) {
-      try {
-        await shell.trashItem(dir)
-        dirTrashed = true
-      } catch {
-        // 目录被占用（如 Windows 上 Cache 被进程锁住）时保持原样
-      }
-    }
-    return { trashedCount, lockedCount, dirTrashed }
-  }
-
-  /** 只保留最近 N 个 .reg 备份目录，避免无限累积 */
-  async #pruneBackups(keep = 10): Promise<void> {
-    const base = join(app.getPath('userData'), 'residue-backups')
-    let entries: string[]
-    try {
-      entries = await fsp.readdir(base)
-    } catch {
-      return
-    }
-    entries.sort()
-    for (const victim of entries.slice(0, Math.max(0, entries.length - keep))) {
-      await fsp.rm(join(base, victim), { recursive: true, force: true }).catch(() => {})
     }
   }
 
@@ -890,6 +724,13 @@ class ResidueScanService {
         'residue-backups',
         new Date().toISOString().replace(/[:.]/g, '-')
       )
+      // 清理路径安全边界允许的根（与迁移到 storageCleanup 的 verifiedCleanPath 配套）
+      const home = app.getPath('home')
+      const userData = app.getPath('userData')
+      const allowedRoots =
+        process.platform === 'darwin'
+          ? [join(home, 'Library'), '/Applications', join(home, 'Applications'), userData]
+          : [userData]
 
       for (const id of new Set(ids)) {
         const item = byId.get(id)
@@ -899,7 +740,7 @@ class ResidueScanService {
         }
         try {
           if (item.path) {
-            const safePath = await this.#verifiedCleanPath(item.path)
+            const safePath = await verifiedCleanPath(item.path, allowedRoots)
             if (!safePath) {
               result.errors.push(`路径超出安全边界或已失效，已拒绝清理：${item.path}`)
               log.warn('[ResidueScan] 拒绝越界/失效路径清理:', item.path)
@@ -911,8 +752,7 @@ class ResidueScanService {
               (item.kind === 'app-cache' || item.kind === 'app-log') &&
               (await this.#isDirectory(safePath))
             ) {
-              const { trashedCount, lockedCount, dirTrashed } =
-                await this.#trashDirContents(safePath)
+              const { trashedCount, lockedCount, dirTrashed } = await trashDirContents(safePath)
               // 空目录 trashedCount 为 0：以 dirTrashed 或至少回收了部分内容为成功
               const reclaimed = dirTrashed || trashedCount > 0
               if (reclaimed) {
@@ -941,7 +781,7 @@ class ResidueScanService {
               result.errors.push(`注册表值名含不安全字符，已拒绝：${item.registryValue}`)
               continue
             }
-            const backup = await this.#backupRegistryKey(item.registryKey, backupDir)
+            const backup = await backupRegistryKey(item.registryKey, backupDir)
             result.backups.push(backup)
             if (item.registryValue) {
               await reg(['DELETE', item.registryKey, '/v', item.registryValue, '/f'])
@@ -966,7 +806,7 @@ class ResidueScanService {
       // 清理过的条目不再可重复操作
       this.#lastItems = this.#lastItems.filter((it) => !ids.includes(it.id))
       result.ok = result.errors.length === 0
-      await this.#pruneBackups()
+      await pruneBackups(join(app.getPath('userData'), 'residue-backups'))
       log.info(
         `[ResidueScan] 清理完成：成功 ${result.cleanedIds.length}，失败 ${result.errors.length}，备份 ${result.backups.length} 份`
       )

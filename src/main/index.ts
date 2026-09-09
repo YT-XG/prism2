@@ -17,6 +17,9 @@ import { legacyImportService } from './services/legacyImportService'
 import { legacyCleanupService } from './services/legacyCleanupService'
 import { residueScanService } from './services/residueScanService'
 import { diskUsageService } from './services/diskUsageService'
+import { junkCleanService } from './services/junkCleanService'
+import { duplicateFinderService } from './services/duplicateFinderService'
+import { diskOverviewService } from './services/diskOverviewService'
 import { notificationService } from './services/notificationService'
 import { mailService } from './services/mailService'
 import { errorLog, logService, notifyAppError } from './services/logService'
@@ -92,6 +95,9 @@ app.whenReady().then(async () => {
   legacyCleanupService.init()
   residueScanService.init()
   diskUsageService.init()
+  junkCleanService.init()
+  duplicateFinderService.init()
+  diskOverviewService.init()
   mailService.init()
   logService.init()
 

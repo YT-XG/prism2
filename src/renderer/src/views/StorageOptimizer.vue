@@ -6,7 +6,7 @@
       </div>
       <div class="storage-header__text">
         <h1 class="storage-title">存储优化</h1>
-        <p class="storage-subtitle">扫描系统残留、洞察磁盘占用，一键安全释放空间</p>
+        <p class="storage-subtitle">清垃圾、去重复、查残留、识占用，一键安全释放空间</p>
       </div>
       <div class="storage-header__safe">
         <ShieldCheck :size="14" :stroke-width="1.7" />
@@ -15,18 +15,32 @@
     </header>
 
     <div class="storage-body">
+      <section class="module-card" aria-label="磁盘容量总览">
+        <DiskOverviewCard />
+      </section>
+
       <div class="storage-stack">
-        <section class="module-card" aria-label="系统残留扫描">
-          <ResidueScanPanel />
-        </section>
-        <section class="module-card" aria-label="大文件（夹）排行">
-          <DiskUsagePanel />
-        </section>
+        <div class="storage-col">
+          <section class="module-card" aria-label="系统垃圾清理">
+            <JunkCleanPanel />
+          </section>
+          <section class="module-card" aria-label="系统残留扫描">
+            <ResidueScanPanel />
+          </section>
+        </div>
+        <div class="storage-col">
+          <section class="module-card" aria-label="重复文件去重">
+            <DuplicatePanel />
+          </section>
+          <section class="module-card" aria-label="大文件（夹）排行">
+            <DiskUsagePanel />
+          </section>
+        </div>
       </div>
 
       <section class="roadmap" aria-label="可扩展能力">
         <div class="roadmap__head">
-          <div class="roadmap__title">可扩展的能力</div>
+          <div class="roadmap__title">后续可扩展的能力</div>
           <div class="roadmap__desc">
             结合主流清理 / 卸载工具，为「存储优化」规划的下一步能力，后续版本逐步接入
           </div>
@@ -52,20 +66,20 @@
 import {
   HardDrive,
   ShieldCheck,
-  Trash2,
-  Copy,
   FileSearch,
   Package,
   Gauge,
   AppWindow,
-  FolderX,
-  Database
+  FolderX
 } from '@lucide/vue'
 import type { Component } from 'vue'
+import DiskOverviewCard from '@renderer/components/DiskOverviewCard.vue'
+import JunkCleanPanel from '@renderer/components/JunkCleanPanel.vue'
 import ResidueScanPanel from '@renderer/components/ResidueScanPanel.vue'
+import DuplicatePanel from '@renderer/components/DuplicatePanel.vue'
 import DiskUsagePanel from '@renderer/components/DiskUsagePanel.vue'
 
-/** 可扩展能力清单：仅作规划展示，未接入逻辑（tag 标记「规划中」） */
+/** 后续可扩展能力清单：仅作规划展示，未接入逻辑（tag 标记「规划中」） */
 interface PlannedFeature {
   name: string
   desc: string
@@ -75,18 +89,6 @@ interface PlannedFeature {
 }
 
 const plannedFeatures: PlannedFeature[] = [
-  {
-    name: '系统垃圾清理',
-    desc: 'Windows 临时文件、系统缓存、浏览器缓存一键清理',
-    tone: 'mint',
-    icon: Trash2
-  },
-  {
-    name: '重复文件去重',
-    desc: '按内容指纹查找重复文件，保留一份释放空间',
-    tone: 'blue',
-    icon: Copy
-  },
   {
     name: '磁盘空间可视化',
     desc: '矩形树图逐层下钻，一眼看清占用分布',
@@ -116,12 +118,6 @@ const plannedFeatures: PlannedFeature[] = [
     desc: '清理无内容的目录占位与 0 字节文件',
     tone: 'blue',
     icon: FolderX
-  },
-  {
-    name: '磁盘容量总览',
-    desc: '各分区容量、已用 / 可用一目了然',
-    tone: 'mint',
-    icon: Database
   }
 ]
 </script>
@@ -200,19 +196,37 @@ const plannedFeatures: PlannedFeature[] = [
   padding: var(--sp-5) var(--sp-7) var(--sp-6);
 }
 
-/* 多列：宽窗口两列并排，窄窗口自动回退单列，减少纵向滚轮下滑 */
+/* 两列瀑布：每列各自堆叠、卡片取自然高度（长列表卡内滚动），
+   避免同排强制等高导致「短卡大片空白」或「宽窗挤成多列又窄又高」；
+   窄窗自动回退单列 */
 .storage-stack {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(440px, 100%), 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--sp-5);
+  margin-top: var(--sp-5);
   align-items: start;
+}
+
+@media (max-width: 940px) {
+  .storage-stack {
+    grid-template-columns: 1fr;
+  }
+}
+
+.storage-col {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-5);
+  align-items: stretch;
+}
+
+.storage-col .module-card {
+  min-width: 0;
 }
 
 /* 模块卡壳：白面 + 圆角 + 柔和阴影，面板自己渲染头与内容区 */
 .module-card {
   min-width: 0;
-  display: flex;
-  flex-direction: column;
   background: var(--bg-surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
