@@ -381,6 +381,12 @@ onBeforeUnmount(() => {
   overflow-y: auto;
 }
 
+/* 关键：flex 列容器内部滚动时，子项默认会被压缩（含 overflow:hidden 的卡片子项
+   min-height 解析为 0），大量重复组会被压成横线；禁止子项收缩，改为整体滚动 */
+.panel-body > * {
+  flex-shrink: 0;
+}
+
 .dp-roots {
   display: flex;
   flex-wrap: wrap;

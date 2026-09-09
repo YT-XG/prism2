@@ -408,6 +408,12 @@ onMounted(() => {
   overflow-y: auto;
 }
 
+/* 关键：flex 列容器内部滚动时子项会被压缩（含 overflow:hidden 的卡片子项
+   min-height 解析为 0），列表会被压成横线；禁止子项收缩，改为整体滚动 */
+.panel-body > * {
+  flex-shrink: 0;
+}
+
 .panel-hint {
   display: flex;
   gap: var(--sp-2);
