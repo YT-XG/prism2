@@ -145,16 +145,16 @@ jobs:
           PY
           gh release upload --repo "${GITHUB_REPOSITORY}" "$GITHUB_REF_NAME" latest.json --clobber
 
-      - name: Generate OSS manifest (oss base)
+      - name: Generate R2 manifest (r2 base)
         env:
-          PRISM2_UPDATE_BASE: ${{ vars.PRISM2_UPDATE_BASE || 'https://prism2.oss-cn-hangzhou.aliyuncs.com/prism2' }}
-          OSS_ACCESS_KEY_ID: ${{ secrets.OSS_ACCESS_KEY_ID }}
+          PRISM2_UPDATE_BASE: ${{ vars.PRISM2_UPDATE_BASE || '' }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
         run: |
-          if [ -z "$OSS_ACCESS_KEY_ID" ]; then
-            echo "OSS AccessKey 未配置，跳过 OSS 清单生成（客户端走 Gitee→GitHub 兜底）。"
+          if [ -z "$PRISM2_UPDATE_BASE" ] || [ -z "$R2_ACCESS_KEY_ID" ]; then
+            echo "R2 未配置，跳过 R2 清单生成（客户端走 Gitee→GitHub 兜底）。"
             exit 0
           fi
-          # 从 GitHub 自包含清单生成「OSS 版」：仅把 binaries[].url 前缀改写为 OSS 下载基址，sha 不变。
+          # 从 GitHub 自包含清单生成「R2 版」：仅把 binaries[].url 前缀改写为 R2 下载基址，sha 不变。
           # 必须在本 job 把 latest.json 覆盖为 Gitee 跳板指针(binaries:[])之前生成。
           python3 - "$PRISM2_UPDATE_BASE" <<'PY'
           import json, os, sys
@@ -165,7 +165,7 @@ jobs:
           for b in m.get('binaries', []):
               name = unquote(os.path.basename(urlparse(b['url']).path))
               b['url'] = f"{base}/{name}"
-          with open('oss-latest.json', 'w', encoding='utf-8') as f:
+          with open('r2-latest.json', 'w', encoding='utf-8') as f:
               json.dump(m, f, ensure_ascii=False, indent=2)
           print(json.dumps(m, ensure_ascii=False, indent=2))
           PY
@@ -175,18 +175,21 @@ jobs:
           GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
           GITEE_USER: ${{ secrets.GITEE_USER }}
           GITEE_ANCHOR_REPO: ${{ secrets.GITEE_ANCHOR_REPO }}
-          PRISM2_UPDATE_BASE: ${{ vars.PRISM2_UPDATE_BASE || 'https://prism2.oss-cn-hangzhou.aliyuncs.com/prism2' }}
+          PRISM2_UPDATE_BASE: ${{ vars.PRISM2_UPDATE_BASE || '' }}
         run: |
           if [ -z "$GITEE_TOKEN" ] || [ -z "$GITEE_USER" ] || [ -z "$GITEE_ANCHOR_REPO" ]; then
             echo "Gitee anchor secrets 未配置，跳过 Gitee 推送。"
             exit 0
           fi
-          # Gitee 锚点改为「重定向指针」：客户端读 Gitee 主源 -> 跟随 redirect 到 OSS 下载。
+          # Gitee 锚点改为「重定向指针」：客户端读 Gitee 主源 -> 跟随 redirect 到 R2 下载。
           # GitHub Release 里的 latest.json 保持自包含(binaries->GitHub)作兜底，不变。
+          # R2 未配置（PRISM2_UPDATE_BASE 为空）时，redirect 回落到 GitHub 自包含清单：Gitee->GitHub 兜底。
           VERSION="${GITHUB_REF_NAME#v}"
-          python3 - "$VERSION" "$PRISM2_UPDATE_BASE" <<'PY'
+          python3 - "$VERSION" "$PRISM2_UPDATE_BASE" "$GITHUB_REPOSITORY" <<'PY'
           import json, sys
-          version, base = sys.argv[1], sys.argv[2]
+          version, base, repo = sys.argv[1], sys.argv[2], sys.argv[3]
+          if not base:
+              base = f"https://github.com/{repo}/releases/latest/download"
           manifest = {"version": version, "redirect": f"{base}/latest.json", "binaries": []}
           with open('latest.json', 'w', encoding='utf-8') as f:
               json.dump(manifest, f, ensure_ascii=False, indent=2)
@@ -214,57 +217,67 @@ jobs:
           [ "$remote" = "$VERSION" ] || { echo "Gitee 锚点版本不匹配（可能命中旧版/未成功推送），请检查 GITEE_TOKEN/GITEE_ANCHOR_REPO"; exit 1; }
           echo "Gitee 锚点校验通过。"
 
-      # ===== CI 上传到阿里云 OSS（主通道，客户端经 Gitee→OSS 下载）=====
-      - name: Upload installers + manifest to Aliyun OSS
+      # ===== CI 上传到 Cloudflare R2（主通道，客户端经 Gitee→R2 下载；R2 出站流量免费替代 OSS）=====
+      - name: Upload installers + manifest to Cloudflare R2
         continue-on-error: true
         env:
-          OSS_ACCESS_KEY_ID: ${{ secrets.OSS_ACCESS_KEY_ID }}
-          OSS_ACCESS_KEY_SECRET: ${{ secrets.OSS_ACCESS_KEY_SECRET }}
-          OSS_BUCKET: ${{ vars.OSS_BUCKET || 'prism2' }}
-          OSS_REGION: ${{ vars.OSS_REGION || 'oss-cn-hangzhou' }}
-          OSS_KEY_PREFIX: ${{ vars.OSS_KEY_PREFIX || 'prism2' }}
+          R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_ACCESS_KEY_SECRET: ${{ secrets.R2_ACCESS_KEY_SECRET }}
+          R2_BUCKET: ${{ vars.R2_BUCKET || 'prism2' }}
+          R2_KEY_PREFIX: ${{ vars.R2_KEY_PREFIX || 'prism2' }}
         run: |
-          if [ -z "$OSS_ACCESS_KEY_ID" ] || [ -z "$OSS_ACCESS_KEY_SECRET" ]; then
-            echo "OSS AccessKey 未配置，跳过 OSS 上传（客户端走 Gitee→GitHub 兜底）。"
+          if [ -z "$R2_ACCOUNT_ID" ] || [ -z "$R2_ACCESS_KEY_ID" ] || [ -z "$R2_ACCESS_KEY_SECRET" ]; then
+            echo "R2 凭证未配置，跳过 R2 上传（客户端走 Gitee→GitHub 兜底）。"
             exit 0
           fi
-          (python3 -m pip install --quiet --break-system-packages oss2 2>/dev/null || python3 -m pip install --quiet oss2)
+          (python3 -m pip install --quiet --break-system-packages boto3 2>/dev/null || python3 -m pip install --quiet boto3)
           python3 - <<'PY'
           import os, glob
-          import oss2
-          ak_id = os.environ["OSS_ACCESS_KEY_ID"]
-          ak_secret = os.environ["OSS_ACCESS_KEY_SECRET"]
-          bucket_name = os.environ["OSS_BUCKET"]
-          region = os.environ["OSS_REGION"]
-          prefix = os.environ.get("OSS_KEY_PREFIX", "prism2").strip("/")
-          auth = oss2.Auth(ak_id, ak_secret)
-          bucket = oss2.Bucket(auth, f"https://{region}.aliyuncs.com", bucket_name)
+          import boto3
+          from botocore.config import Config
+          account_id = os.environ["R2_ACCOUNT_ID"]
+          ak_id = os.environ["R2_ACCESS_KEY_ID"]
+          ak_secret = os.environ["R2_ACCESS_KEY_SECRET"]
+          bucket_name = os.environ["R2_BUCKET"]
+          prefix = os.environ.get("R2_KEY_PREFIX", "prism2").strip("/")
+          endpoint = f"https://{account_id}.r2.cloudflarestorage.com"
+          s3 = boto3.client(
+              "s3",
+              endpoint_url=endpoint,
+              aws_access_key_id=ak_id,
+              aws_secret_access_key=ak_secret,
+              region_name="auto",
+              config=Config(signature_version="s3v4"),
+          )
           def up(path, key):
-              bucket.put_object_from_file(key, path)
+              s3.upload_file(path, bucket_name, key)
               print(f"  uploaded {key}")
-          # 先上传二进制，最后上传 OSS 版清单（latest.json，保证只在该版本二进制齐全后出现）
+          # 先上传二进制，最后上传 R2 版清单（latest.json，保证只在该版本二进制齐全后出现）
           for pat in ("dist-all/prism2-*-setup.exe", "dist-all/prism2-*-universal-mac.zip"):
               for f in glob.glob(pat):
                   if os.path.isfile(f):
                       up(f, f"{prefix}/{os.path.basename(f)}")
-          if os.path.isfile("oss-latest.json"):
-              up("oss-latest.json", f"{prefix}/latest.json")
+          if os.path.isfile("r2-latest.json"):
+              up("r2-latest.json", f"{prefix}/latest.json")
           else:
-              print("  (缺 oss-latest.json，跳过 OSS 清单)")
-          # 只保留当前版本：删除 OSS 上所有其它版本号(prism2-<ver>-*)的对象；latest.json 不属于版本文件，保留
+              print("  (缺 r2-latest.json，跳过 R2 清单)")
+          # 只保留当前版本：删除 R2 上所有其它版本号(prism2-<ver>-*)的对象；latest.json 不属于版本文件，保留
           import re
           current = os.environ.get("GITHUB_REF_NAME", "").lstrip("v")
           ver_re = re.compile(r"^prism2-(\d+\.\d+\.\d+).*?\.(exe|zip|blockmap|dmg)$")
           if re.match(r"^\d+\.\d+\.\d+$", current):
               deleted = 0
-              for obj in oss2.ObjectIterator(bucket, prefix=f"{prefix}/"):
-                  name = obj.key.rsplit("/", 1)[-1]
-                  m = ver_re.match(name)
-                  if m and m.group(1) != current:
-                      bucket.delete_object(obj.key)
-                      deleted += 1
-                      print(f"  deleted old {obj.key}")
-              print(f"OSS cleanup: keep v{current}, deleted {deleted} old version object(s)")
+              paginator = s3.get_paginator("list_objects_v2")
+              for page in paginator.paginate(Bucket=bucket_name, Prefix=f"{prefix}/"):
+                  for obj in page.get("Contents", []):
+                      name = obj["Key"].rsplit("/", 1)[-1]
+                      m = ver_re.match(name)
+                      if m and m.group(1) != current:
+                          s3.delete_object(Bucket=bucket_name, Key=obj["Key"])
+                          deleted += 1
+                          print(f"  deleted old {obj['Key']}")
+              print(f"R2 cleanup: keep v{current}, deleted {deleted} old version object(s)")
           else:
-              print("  (非 tag 触发，跳过 OSS 旧版本清理)")
+              print("  (非 tag 触发，跳过 R2 旧版本清理)")
           PY

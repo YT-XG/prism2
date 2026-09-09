@@ -17,10 +17,10 @@ import { app, ipcMain, net, shell } from 'electron'
 import log from 'electron-log'
 import { execFile, spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { createReadStream, existsSync } from 'node:fs'
-import { access, mkdir, readdir, rename, rm } from 'node:fs/promises'
-import { constants } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { constants, createReadStream, existsSync } from 'node:fs'
+import { access, mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { homedir } from 'node:os'
+import { basename, dirname, join, resolve } from 'node:path'
 import semver from 'semver'
 import { broadcast } from '../utils/platform'
 import { notificationService } from './notificationService'
@@ -69,6 +69,9 @@ class UpdateService {
 
   /** 安装进行中标记（防止重复触发） */
   private installing = false
+
+  /** App Translocation（只读暂存副本）场景解析出的真实可执行文件路径，用于安装完成后拉起新版 */
+  private macRealExePath: string | null = null
 
   /** 检查序号：cancel() 或新检查会自增，使在途检查/下载结果失效（取消检查的幂等防护） */
   private checkSeq = 0
@@ -479,22 +482,42 @@ class UpdateService {
       throw new Error('更新包内未找到应用目录')
     }
 
-    const bundleRoot = resolve(dirname(app.getPath('exe')), '..', '..')
+    // 真实应用目录：正常由 exe 路径推导；若运行于 App Translocation 只读暂存副本
+    // （从下载目录/磁盘镜像等隔离位置直接启动触发），则解析真实安装位置再安装，
+    // 否则原地替换只会写进只读副本、且更新后拉起的仍是旧代码。
+    let bundleRoot: string
+    let realExePath: string | null = null
+    if (this.#isMacAppTranslocated()) {
+      const real = await this.#resolveMacRealBundleRoot()
+      if (!real) {
+        throw new Error('应用运行于 App Translocation 只读暂存位置且未定位到真实应用目录，请退出后从应用安装位置重新打开，或改为手动安装')
+      }
+      bundleRoot = real
+      realExePath = join(real, 'Contents', 'MacOS', basename(app.getPath('exe')))
+    } else {
+      bundleRoot = resolve(dirname(app.getPath('exe')), '..', '..')
+    }
+    this.macRealExePath = realExePath
+
     const contents = join(bundleRoot, 'Contents')
     const oldContents = `${contents}.old-${version}`
+    const newContents = join(extractDir, appDirName, 'Contents')
 
-    // 写权限检查（/Applications 等 root 目录可能只读）
+    // 写权限检查（/Applications 等 root 目录或 root 属主应用可能只读）：
+    // 普通路径原地替换；无权限则经系统鉴权弹窗以管理员权限完成同样的原子替换。
     try {
       await access(bundleRoot, constants.W_OK)
     } catch {
-      throw new Error('应用目录无写入权限（可能位于 /Applications 等受保护目录），请改为手动安装')
+      await this.#installOnMacAsAdmin(bundleRoot, oldContents, newContents)
+      this.#finishMacUpdate(stagingDir, version)
+      return
     }
 
     try {
       await rm(oldContents, { recursive: true, force: true }).catch(() => {})
       await rename(contents, oldContents)
       await rm(contents, { recursive: true, force: true }).catch(() => {})
-      await rename(join(extractDir, appDirName, 'Contents'), contents)
+      await rename(newContents, contents)
     } catch (err) {
       // 回滚：若新 Contents 未就位，把旧的内容还原
       try {
@@ -510,13 +533,128 @@ class UpdateService {
     // 删除旧 Contents 备份 + 延迟清理 staging：仅成功路径到达此处（失败在抛错处提前返回，staging 保留
     // 安装包，供 quitAndInstall 的 handleError 带出 installerPath 手动安装）。
     await rm(oldContents, { recursive: true, force: true }).catch(() => {})
+    this.#finishMacUpdate(stagingDir, version)
+  }
+
+  /** 是否运行于 App Translocation 只读暂存副本（macOS 对隔离应用的阴影执行） */
+  #isMacAppTranslocated(): boolean {
+    return process.execPath.includes('/AppTranslocation/')
+  }
+
+  /**
+   * 解析 App Translocation 场景的真实应用目录：暂存路径形如
+   * `.../T/AppTranslocation/<hash>/d/<App>.app/Contents/MacOS/<exe>`，`d/` 之后即为应用相对路径。
+   * 到 `/Applications` 与 `~/Applications` 匹配同名 `.app`，并按 CFBundleIdentifier 校验防止替换到错误应用；
+   * 未定位（如应用原先位于下载目录等）返回 null，交由外层转手动安装引导。
+   */
+  async #resolveMacRealBundleRoot(): Promise<string | null> {
+    const marker = '/AppTranslocation/'
+    const idx = process.execPath.indexOf(marker)
+    if (idx === -1) return null
+    const segs = process.execPath.slice(idx + marker.length).split('/')
+    if (segs.length < 3 || segs[1] !== 'd') return null
+    const appName = segs[2]
+    const exeName = basename(process.execPath)
+    const currentBundleId = await this.#readMacBundleId(resolve(dirname(process.execPath), '..'))
+    if (!currentBundleId) return null
+    const candidates = [join('/Applications', appName), join(homedir(), 'Applications', appName)]
+    for (const candidate of candidates) {
+      if (!existsSync(candidate)) continue
+      if (!existsSync(join(candidate, 'Contents', 'MacOS', exeName))) continue
+      if ((await this.#readMacBundleId(candidate)) === currentBundleId) return candidate
+    }
+    return null
+  }
+
+  /** 读取 macOS 应用包 CFBundleIdentifier（Info.plist XML 简单提取，失败返回 null） */
+  async #readMacBundleId(bundlePath: string): Promise<string | null> {
+    try {
+      const raw = await readFile(join(bundlePath, 'Contents', 'Info.plist'), 'utf8')
+      const m = raw.match(/CFBundleIdentifier<\/key>\s*<string>([^<]+)<\/string>/)
+      return m ? m[1].trim() : null
+    } catch {
+      return null
+    }
+  }
+
+  /**
+   * macOS 管理员授权安装：应用目录当前用户不可写（/Applications 等受保护位置或 root 属主）时调用。
+   * 将原子替换脚本写入 userData 后经 `osascript do shell script ... with administrator privileges`
+   * 拉起系统鉴权弹窗，以管理员权限完成与普通路径一致的 `Contents` 原子替换（`.old-<version>` 备份 + 失败回滚 +
+   * 恢复原属主，避免下次更新反复弹鉴权）。用户取消鉴权或执行失败则抛错，回落 error 状态与手动安装引导。
+   */
+  async #installOnMacAsAdmin(bundleRoot: string, oldContents: string, newContents: string): Promise<void> {
+    const scriptPath = join(app.getPath('userData'), 'admin-update-install.sh')
+    const script = [
+      '#!/bin/bash',
+      'set -e',
+      `APP=${this.#shellQuote(bundleRoot)}`,
+      `OLD=${this.#shellQuote(oldContents)}`,
+      `NEW=${this.#shellQuote(newContents)}`,
+      // 记录原 Contents 属主，管理员写入后归还，避免下次更新反复弹鉴权
+      'OWNER=$(stat -f \'%u:%g\' "$APP/Contents" 2>/dev/null || true)',
+      'rm -rf "$OLD"',
+      'mv "$APP/Contents" "$OLD"',
+      'if ! mv "$NEW" "$APP/Contents"; then',
+      '  mv "$OLD" "$APP/Contents" 2>/dev/null || true',
+      '  exit 1',
+      'fi',
+      '[ -n "$OWNER" ] && chown -R "$OWNER" "$APP/Contents" 2>/dev/null || true',
+      'rm -rf "$OLD"',
+      ''
+    ].join('\n')
+    await writeFile(scriptPath, script, { mode: 0o755 })
+    try {
+      await new Promise<void>((resolvePromise, reject) => {
+        execFile(
+          'osascript',
+          ['-e', `do shell script "${this.#escapeAppleScript(scriptPath)}" with administrator privileges`],
+          { timeout: 5 * 60 * 1000, maxBuffer: 1024 * 1024 },
+          (err, _stdout, stderr) => {
+            if (!err) {
+              resolvePromise()
+              return
+            }
+            const detail = `${err instanceof Error ? err.message : String(err)} ${stderr ?? ''}`.trim()
+            if (detail.includes('-128') || /user canceled/i.test(detail)) {
+              reject(new Error('未获得系统授权，已取消管理员安装，请改为手动安装'))
+            } else {
+              reject(new Error(`管理员安装失败: ${detail || '未知错误'}`))
+            }
+          }
+        )
+      })
+      log.info('[UpdateService] 经管理员授权完成安装，重启应用')
+    } finally {
+      await rm(scriptPath, { force: true }).catch(() => {})
+    }
+  }
+
+  /** bash 单引号安全引用（路径含空格/引号时防注入） */
+  #shellQuote(s: string): string {
+    return `'${s.replace(/'/g, `'\\''`)}'`
+  }
+
+  /** AppleScript 字符串字面量转义（`\` 与 `"`） */
+  #escapeAppleScript(s: string): string {
+    return s.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+  }
+
+  /** mac 安装成功收尾：延迟清理 staging + 重启（Translocation 场景显式拉起真实可执行文件） */
+  #finishMacUpdate(stagingDir: string, version: string): void {
     setTimeout(() => {
       void rm(stagingDir, { recursive: true, force: true }).catch(() => {})
     }, 2000)
-
     log.info('[UpdateService] 更新已安装到应用目录，重启应用:', version)
-    app.relaunch()
-    app.quit()
+    if (this.macRealExePath) {
+      const child = spawn(this.macRealExePath, [], { detached: true, stdio: 'ignore' })
+      child.on('error', () => {})
+      child.unref()
+      app.quit()
+    } else {
+      app.relaunch()
+      app.quit()
+    }
   }
 
   /**
