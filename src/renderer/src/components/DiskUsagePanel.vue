@@ -1,9 +1,12 @@
 <template>
   <div class="du-panel">
     <div class="panel-head">
+      <span class="panel-head__ic">
+        <FolderSearch :size="18" :stroke-width="1.6" />
+      </span>
       <div class="panel-head__info">
         <div class="panel-head__name">大文件（夹）排行</div>
-        <div class="panel-head__desc">分析任意目录/盘符的占用情况，列出占用最大的文件与文件夹</div>
+        <div class="panel-head__desc">分析任意目录 / 盘符的占用情况，列出占用最大的文件与文件夹</div>
       </div>
       <div class="panel-head__actions">
         <UiButton variant="secondary" size="sm" @click="addRoots">添加目录/盘符</UiButton>
@@ -16,113 +19,144 @@
       </div>
     </div>
 
-    <div v-if="roots.length" class="du-roots">
-      <span
-        v-for="(root, i) in roots"
-        :key="root"
-        class="du-root"
-        :class="{ 'is-stale': staleRoots.has(root) }"
-        :title="staleRoots.has(root) ? `${root}（路径不存在，请移除）` : root"
-      >
-        {{ root }}
-        <button
-          type="button"
-          class="du-root__x"
-          :disabled="scanning"
-          :aria-label="`移除 ${root}`"
-          @click="removeRoot(i)"
-        >
-          ✕
-        </button>
-      </span>
-    </div>
-    <div v-else class="du-root__hint">尚未添加目录，点击右上角添加</div>
-
-    <div v-if="scanning" class="du-progress">
-      <div class="du-progress__line">
-        <span class="du-progress__label">扫描中</span>
-        <span v-if="progress" class="du-progress__num">
-          {{ progress.dirs }} 个目录 / {{ progress.files }} 个文件
-        </span>
-      </div>
-      <div class="du-progress__path" :title="progress?.currentPath">
-        {{ progress?.currentPath || '…' }}
-      </div>
-      <div class="du-progress__meta">
-        已统计 {{ formatSize(progress?.scannedBytes ?? 0)
-        }}<template v-if="progress?.skipped"> ，{{ progress.skipped }} 处无法访问</template>
-      </div>
-    </div>
-
-    <template v-if="result">
-      <div class="du-summary">
+    <div class="panel-body">
+      <div v-if="roots.length" class="du-roots">
         <span
-          v-for="root in result.roots"
-          :key="root.path"
-          class="du-summary__item"
-          :title="root.path"
+          v-for="(root, i) in roots"
+          :key="root"
+          class="du-root"
+          :class="{ 'is-stale': staleRoots.has(root) }"
+          :title="staleRoots.has(root) ? `${root}（路径不存在，请移除）` : root"
         >
-          <span class="du-summary__size">{{ formatSize(root.totalSize) }}</span>
-          <span class="du-summary__path">{{ root.path }}</span>
-          <span class="du-summary__meta">{{ root.dirs }} 目录 · {{ root.files }} 文件</span>
-          <span v-if="root.totalBytes" class="du-summary__meta">
-            卷剩余 {{ formatSize(root.freeBytes ?? 0) }} / {{ formatSize(root.totalBytes) }}
-          </span>
+          <Folder :size="12" :stroke-width="1.6" />
+          <span class="du-root__path">{{ root }}</span>
+          <button
+            type="button"
+            class="du-root__x"
+            :disabled="scanning"
+            :aria-label="`移除 ${root}`"
+            @click="removeRoot(i)"
+          >
+            <X :size="12" :stroke-width="1.8" />
+          </button>
         </span>
-        <span v-if="!result.roots.length" class="du-summary__none">没有有效目录被扫描</span>
       </div>
+      <div v-else class="du-root__hint">尚未添加目录，点击右上角添加</div>
 
-      <div v-if="result.cancelled" class="du-note">扫描已取消，结果为取消前已完成部分。</div>
-      <div v-if="result.skipped.length" class="du-note">
-        <span>{{ result.skipped.length }} 处无法访问</span>
-        <template v-if="isMacPermissionDenied">
-          ，macOS 需在「系统设置 → 隐私与安全性 → 完全磁盘访问」中授权本应用
-        </template>
-        <ul class="du-note__list">
-          <li v-for="s in result.skipped.slice(0, 5)" :key="s.path">
-            {{ s.path }}：{{ s.reason }}
-          </li>
-        </ul>
-      </div>
-
-      <div class="du-tabs">
-        <UiPillTab :active="tab === 'files'" @click="tab = 'files'">大文件</UiPillTab>
-        <UiPillTab :active="tab === 'dirs'" @click="tab = 'dirs'">大文件夹</UiPillTab>
-      </div>
-
-      <div v-if="activeEntries.length" class="du-list">
-        <div v-for="entry in activeEntries" :key="entry.path" class="du-entry">
-          <span class="du-entry__size">{{ formatSize(entry.size) }}</span>
-          <span class="du-entry__main">
-            <span class="du-entry__name">{{ entry.name }}</span>
-            <span class="du-entry__path" :title="entry.path">{{ entry.path }}</span>
+      <div v-if="scanning" class="du-progress">
+        <div class="du-progress__line">
+          <span class="du-progress__label">扫描中</span>
+          <span v-if="progress" class="du-progress__num num">
+            {{ progress.dirs }} 目录 / {{ progress.files }} 文件
           </span>
-          <UiButton variant="secondary" size="xs" @click="locate(entry.path)">定位</UiButton>
+        </div>
+        <div class="du-progress__path" :title="progress?.currentPath">
+          {{ progress?.currentPath || '…' }}
+        </div>
+        <div class="du-progress__meta num">
+          已统计 {{ formatSize(progress?.scannedBytes ?? 0)
+          }}<template v-if="progress?.skipped"> ，{{ progress.skipped }} 处无法访问</template>
         </div>
       </div>
-      <div v-else class="du-empty">该分类没有可展示的条目</div>
-    </template>
 
-    <UiEmptyState
-      v-else-if="!scanning"
-      title="尚未开始分析"
-      hint="先添加要分析的目录（如 D:\ 或用户主目录），再点击「开始扫描」"
-    >
-      <template #action>
-        <UiButton variant="primary" size="sm" @click="addRoots">添加目录/盘符</UiButton>
+      <template v-if="result">
+        <div class="du-summary">
+          <div
+            v-for="root in result.roots"
+            :key="root.path"
+            class="du-summary__item"
+            :title="root.path"
+          >
+            <div class="du-summary__top">
+              <span class="du-summary__size num">{{ formatSize(root.totalSize) }}</span>
+              <span v-if="root.totalBytes" class="du-summary__pct num">{{
+                usagePercent(root).toFixed(0)
+              }}%</span>
+            </div>
+            <div class="du-summary__path" :title="root.path">{{ root.path }}</div>
+            <div class="du-summary__meta num">
+              {{ root.dirs }} 目录 · {{ root.files }} 文件
+            </div>
+            <div v-if="root.totalBytes && root.freeBytes != null" class="du-summary__vol">
+              <div class="du-vol__bar">
+                <div
+                  class="du-vol__fill"
+                  :style="{ width: usagePercent(root) + '%' }"
+                  role="progressbar"
+                  :aria-valuenow="usagePercent(root)"
+                  aria-valuemin="0"
+                  aria-valuemax="100"
+                ></div>
+              </div>
+              <div class="du-vol__meta num">
+                剩余 {{ formatSize(root.freeBytes) }} / {{ formatSize(root.totalBytes) }}
+              </div>
+            </div>
+          </div>
+          <div v-if="!result.roots.length" class="du-summary__none">没有有效目录被扫描</div>
+        </div>
+
+        <div v-if="result.cancelled" class="du-note">扫描已取消，结果为取消前已完成部分。</div>
+        <div v-if="result.skipped.length" class="du-note">
+          <span>{{ result.skipped.length }} 处无法访问</span>
+          <template v-if="isMacPermissionDenied">
+            ，macOS 需在「系统设置 → 隐私与安全性 → 完全磁盘访问」中授权本应用
+          </template>
+          <ul class="du-note__list">
+            <li v-for="s in result.skipped.slice(0, 5)" :key="s.path">
+              {{ s.path }}：{{ s.reason }}
+            </li>
+          </ul>
+        </div>
+
+        <div class="du-tabs">
+          <UiPillTab :active="tab === 'files'" @click="tab = 'files'">
+            <File :size="14" :stroke-width="1.6" />大文件
+          </UiPillTab>
+          <UiPillTab :active="tab === 'dirs'" @click="tab = 'dirs'">
+            <Folder :size="14" :stroke-width="1.6" />大文件夹
+          </UiPillTab>
+        </div>
+
+        <div v-if="activeEntries.length" class="du-list">
+          <div v-for="entry in activeEntries" :key="entry.path" class="du-entry">
+            <span class="du-entry__ic" :class="`is-${entry.kind}`">
+              <Folder v-if="entry.kind === 'dir'" :size="16" :stroke-width="1.6" />
+              <File v-else :size="16" :stroke-width="1.6" />
+            </span>
+            <span class="du-entry__main">
+              <span class="du-entry__name">{{ entry.name }}</span>
+              <span class="du-entry__path" :title="entry.path">{{ entry.path }}</span>
+            </span>
+            <span class="du-entry__size num">{{ formatSize(entry.size) }}</span>
+            <UiButton variant="secondary" size="xs" @click="locate(entry.path)">定位</UiButton>
+          </div>
+        </div>
+        <div v-else class="du-empty">该分类没有可展示的条目</div>
       </template>
-    </UiEmptyState>
+
+      <UiEmptyState
+        v-else-if="!scanning"
+        title="尚未开始分析"
+        hint="先添加要分析的目录（如 D:\ 或用户主目录），再点击「开始扫描」"
+      >
+        <template #action>
+          <UiButton variant="primary" size="sm" @click="addRoots">添加目录/盘符</UiButton>
+        </template>
+      </UiEmptyState>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { FolderSearch, File, Folder, X } from '@lucide/vue'
 import UiButton from '@renderer/components/ui/UiButton.vue'
 import UiPillTab from '@renderer/components/ui/UiPillTab.vue'
 import UiEmptyState from '@renderer/components/ui/UiEmptyState.vue'
 import { useToast } from '@renderer/composables/useToast'
 import { subscribeOnUnmounted } from '@renderer/composables/useIpcListener'
-import type { DiskScanEntry, DiskScanProgress, DiskScanResult } from '@preload/ipc'
+import type { DiskScanEntry, DiskScanProgress, DiskScanResult, DiskScanRoot } from '@preload/ipc'
 
 const toast = useToast()
 
@@ -175,6 +209,13 @@ const staleRoots = computed(() => {
   }
   return set
 })
+
+/** 根目录的卷使用率（%）；拿不到容量信息时返回 0 */
+function usagePercent(root: DiskScanRoot): number {
+  if (!root.totalBytes || root.freeBytes == null) return 0
+  const used = Math.max(root.totalBytes - root.freeBytes, 0)
+  return Math.min(100, (used / root.totalBytes) * 100)
+}
 
 /** 字节数格式化为人类可读 */
 function formatSize(bytes: number): string {
@@ -282,19 +323,32 @@ onBeforeUnmount(() => {
 .du-panel {
   display: flex;
   flex-direction: column;
-  gap: var(--sp-3);
-  padding: var(--sp-1) 0 var(--sp-2);
 }
 
+/* ---------- 卡头 ---------- */
 .panel-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--sp-4);
+  gap: var(--sp-3);
+  padding: var(--sp-4) var(--sp-5);
+  border-bottom: 1px solid var(--border);
+}
+
+.panel-head__ic {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border-radius: var(--radius-sm);
+  background: var(--accent-blue);
+  color: var(--text-on-accent-blue);
 }
 
 .panel-head__info {
   min-width: 0;
+  flex: 1;
 }
 
 .panel-head__name {
@@ -316,6 +370,17 @@ onBeforeUnmount(() => {
   flex-shrink: 0;
 }
 
+/* ---------- 卡体 ---------- */
+.panel-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding: var(--sp-4) var(--sp-5) var(--sp-5);
+  /* 长列表在卡内滚动，避免把页面撑高、减少纵向滚轮下滑 */
+  max-height: 52vh;
+  overflow-y: auto;
+}
+
 .du-roots {
   display: flex;
   flex-wrap: wrap;
@@ -325,9 +390,9 @@ onBeforeUnmount(() => {
 .du-root {
   display: inline-flex;
   align-items: center;
-  gap: var(--sp-2);
+  gap: var(--sp-1);
   max-width: 320px;
-  padding: 2px 8px 2px 10px;
+  padding: 4px 8px 4px 10px;
   border: 1px solid var(--border);
   border-radius: var(--radius-pill);
   background: var(--bg-hover);
@@ -343,16 +408,25 @@ onBeforeUnmount(() => {
   color: var(--on-danger);
 }
 
+.du-root__path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .du-root__x {
+  display: inline-flex;
+  align-items: center;
   border: none;
   background: transparent;
   color: var(--text-muted);
-  font-size: 10px;
   cursor: pointer;
   padding: 2px;
+  border-radius: var(--radius-pill);
+  transition: background-color var(--duration-fast) var(--ease-out-soft);
 }
 
 .du-root__x:hover:not(:disabled) {
+  background: var(--danger-soft);
   color: var(--on-danger);
 }
 
@@ -404,6 +478,7 @@ onBeforeUnmount(() => {
   color: var(--text-muted);
 }
 
+/* ---------- 根汇总（卷容量条） ---------- */
 .du-summary {
   display: flex;
   flex-wrap: wrap;
@@ -413,18 +488,37 @@ onBeforeUnmount(() => {
 .du-summary__item {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: var(--sp-2) var(--sp-3);
+  gap: var(--sp-1);
+  padding: var(--sp-3) var(--sp-4);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  max-width: 260px;
+  min-width: 240px;
+  flex: 1 1 240px;
+  background: var(--bg-selected-subtle);
+}
+
+.du-summary__top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-2);
 }
 
 .du-summary__size {
-  font-size: var(--text-md);
+  font-size: var(--text-lg);
   font-weight: var(--font-semibold);
   font-variant-numeric: tabular-nums;
   color: var(--text-primary);
+}
+
+.du-summary__pct {
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-on-accent-blue);
+  background: var(--accent-blue);
+  border-radius: var(--radius-pill);
+  padding: 1px 8px;
 }
 
 .du-summary__path {
@@ -437,6 +531,32 @@ onBeforeUnmount(() => {
 }
 
 .du-summary__meta {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.du-summary__vol {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  margin-top: 2px;
+}
+
+.du-vol__bar {
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--border);
+  overflow: hidden;
+}
+
+.du-vol__fill {
+  height: 100%;
+  border-radius: var(--radius-pill);
+  background: var(--brand);
+  transition: width var(--duration-slow) var(--ease-out-soft);
+}
+
+.du-vol__meta {
   font-size: var(--text-xs);
   color: var(--text-muted);
 }
@@ -473,8 +593,6 @@ onBeforeUnmount(() => {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   overflow: hidden;
-  max-height: 420px;
-  overflow-y: auto;
 }
 
 .du-entry {
@@ -483,6 +601,7 @@ onBeforeUnmount(() => {
   gap: var(--sp-3);
   padding: var(--sp-2) var(--sp-3);
   border-bottom: 1px solid var(--border);
+  transition: background-color var(--duration-fast) var(--ease-out-soft);
 }
 
 .du-entry:last-child {
@@ -493,14 +612,24 @@ onBeforeUnmount(() => {
   background: var(--bg-hover);
 }
 
-.du-entry__size {
+.du-entry__ic {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
   flex-shrink: 0;
-  width: 72px;
-  font-size: var(--text-sm);
-  font-variant-numeric: tabular-nums;
-  font-weight: var(--font-medium);
-  color: var(--text-primary);
-  text-align: right;
+  border-radius: var(--radius-sm);
+}
+
+.du-entry__ic.is-file {
+  background: var(--accent-blue);
+  color: var(--text-on-accent-blue);
+}
+
+.du-entry__ic.is-dir {
+  background: var(--accent-lavender);
+  color: var(--text-on-accent-lavender);
 }
 
 .du-entry__main {
@@ -524,6 +653,16 @@ onBeforeUnmount(() => {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.du-entry__size {
+  flex-shrink: 0;
+  width: 76px;
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--font-medium);
+  color: var(--text-primary);
+  text-align: right;
 }
 
 .du-empty {

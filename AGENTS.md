@@ -66,7 +66,7 @@ src/
     ├── components/SnippetPlaceholderDialog.vue # 片段占位符输入弹窗（{{名称}}，填写后替换并粘贴）
     ├── components/ClipboardHistoryEditorDialog.vue # 剪贴板历史编辑弹窗（富文本）
     ├── composables/useIpcListener.ts  useToast.ts  useStatusCenter.ts（全局状态中心：同步/报错/更新/toast 统一条目，StatusCenter.vue 渲染）  useTheme.ts  useFeatureSearch.ts  useGlobalSearch.ts（命令面板与主页搜索共用的全局搜索聚合逻辑）  useDrag.ts  useHomeModules.ts  useNotifications.ts  useNotificationPopups.ts  useClipboardText.ts（富文本/纯文本预览工具：stripHtml/itemText）  useSnippetPlaceholder.ts（片段占位符：提取/替换 {{名称}}，单例弹窗状态）  useWordSplit.ts（拆词工具：splitWords 按换行/空白/标点/中英边界切分词组，MAX_WORD_CHIPS 卡片展示上限）  useMail.ts（邮箱大师共享状态：未读角标 + 账号列表 + onMailUnreadChanged/onMailSync 订阅）
-    ├── views/                    # MainPage / Home / ClipboardManager / StickyNotes / Notifications / NotificationPopup（自绘通知浮窗页） / SearchView（全局搜索独立窗页）/ Settings / DownloadManager（多线程下载管理页）/ Mail（邮箱大师：三栏布局 账号+文件夹 | 邮件列表 | 阅读窗，dompurify 净化 + sandbox iframe + CSP 渲染正文）/ StorageOptimizer（存储优化：系统残留扫描 + 大文件（夹）排行，独立页由侧栏与托盘菜单进入）
+    ├── views/                    # MainPage / Home / ClipboardManager / StickyNotes / Notifications / NotificationPopup（自绘通知浮窗页） / SearchView（全局搜索独立窗页）/ Settings / DownloadManager（多线程下载管理页）/ Mail（邮箱大师：三栏布局 账号+文件夹 | 邮件列表 | 阅读窗，dompurify 净化 + sandbox iframe + CSP 渲染正文）/ StorageOptimizer（存储优化：系统残留扫描 + 大文件（夹）排行，独立页由侧栏与托盘菜单进入；页面为卡片式排版（ResidueScanPanel/DiskUsagePanel 各为一张卡，含图标卡头、卷容量条、文件/文件夹图标行），底部「可扩展能力」区预置 8 个规划模块位，见 ../docs/prism2/storage-optimizer-features.md）
     └── router/  types.d.ts
 scripts/import-legacy-db.mjs      # 旧剪贴板数据一次性导入（已由应用内 legacyImportService 承接）
 scripts/make-server-manifest.mjs  # 生成自托管服务器版 latest.json（url 指向服务器绝对 https + sha256；见 ../docs/prism2/self-host-update.md）

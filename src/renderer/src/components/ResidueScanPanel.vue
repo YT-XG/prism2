@@ -1,20 +1,24 @@
 <template>
-  <div class="residue-panel">
+  <div class="rp-panel">
     <div class="panel-head">
+      <span class="panel-head__ic">
+        <ScanSearch :size="18" :stroke-width="1.6" />
+      </span>
       <div class="panel-head__info">
-        <div class="panel-head__name">系统残留扫描</div>
+        <div class="panel-head__row">
+          <div class="panel-head__name">系统残留扫描</div>
+          <span v-if="result" class="panel-head__chip num">{{ result.items.length }} 项</span>
+        </div>
         <div class="panel-head__desc">
           <template v-if="result">
-            发现 {{ result.items.length }} 项残留<template v-if="result.totalReclaimableBytes">
-              ，预计可释放 {{ formatSize(result.totalReclaimableBytes) }}</template
-            >
+            预计可释放
+            <span class="panel-head__em">{{ formatSize(result.totalReclaimableBytes) }}</span>
             <template v-if="result.platform === 'darwin'">
-              ；macOS 无注册表，残留指卸载软件后遗留的 ~/Library 文件
+              ；macOS 无注册表，残留来自卸载后遗留的 ~/Library 文件
             </template>
           </template>
           <template v-else>
-            扫描注册表孤儿项（Win）、Prism
-            相关残留与本应用缓存日志；清理一律移入回收站，注册表删除前会导出 .reg 备份
+            扫描注册表孤儿项（Win）、Prism 相关残留与本应用缓存日志；清理一律移入回收站，注册表删除前会自动导出 .reg 备份
           </template>
         </div>
       </div>
@@ -29,63 +33,65 @@
       </div>
     </div>
 
-    <div v-if="scanning" class="panel-hint">
-      {{ progress ? `${progress.label}…` : '正在扫描…' }}
-      <span v-if="progress" class="panel-hint__num">已登记 {{ progress.items }} 项</span>
-    </div>
-
-    <template v-if="result && !scanning">
-      <div v-if="result.cancelled" class="panel-note">扫描已取消，结果为取消前已完成的阶段。</div>
-      <div v-if="!result.items.length" class="panel-empty">
-        {{ result.cancelled ? '取消前未发现残留' : '未发现系统残留' }}
+    <div class="panel-body">
+      <div v-if="scanning" class="panel-hint">
+        {{ progress ? `${progress.label}…` : '正在扫描…' }}
+        <span v-if="progress" class="panel-hint__num">已登记 {{ progress.items }} 项</span>
       </div>
-      <template v-else>
-        <div class="panel-toolbar">
-          <label class="rp-check rp-check--all">
-            <input
-              type="checkbox"
-              :checked="allSelectableChecked"
-              :indeterminate="selectedCount > 0 && !allSelectableChecked"
-              @change="toggleAll"
-            />
-            全选（不含危险项）
-          </label>
-          <span>{{ selectedCount }} 项已选</span>
+
+      <template v-if="result && !scanning">
+        <div v-if="result.cancelled" class="panel-note">扫描已取消，结果为取消前已完成的阶段。</div>
+        <div v-if="!result.items.length" class="panel-empty">
+          {{ result.cancelled ? '取消前未发现残留' : '未发现系统残留' }}
         </div>
-        <div v-for="group in groups" :key="group.title" class="rp-group">
-          <div class="rp-group__title">
-            {{ group.title }}
-            <span class="rp-group__count">{{ group.items.length }}</span>
+        <template v-else>
+          <div class="panel-toolbar">
+            <label class="rp-check rp-check--all">
+              <input
+                type="checkbox"
+                :checked="allSelectableChecked"
+                :indeterminate="selectedCount > 0 && !allSelectableChecked"
+                @change="toggleAll"
+              />
+              全选（不含危险项）
+            </label>
+            <span class="num">{{ selectedCount }} 项已选</span>
           </div>
-          <label
-            v-for="item in group.items"
-            :key="item.id"
-            class="rp-item"
-            :class="[`is-${item.risk}`]"
-          >
-            <input v-model="selectedIds" type="checkbox" :value="item.id" />
-            <span class="rp-item__main">
-              <span class="rp-item__title">{{ item.title }}</span>
-              <span class="rp-item__detail">{{ item.detail }}</span>
-              <span v-if="item.size != null" class="rp-item__size">{{
-                formatSize(item.size)
-              }}</span>
-            </span>
-            <span class="rp-risk" :class="`is-${item.risk}`">{{ RISK_LABEL[item.risk] }}</span>
-          </label>
-        </div>
-        <div class="panel-actions">
-          <UiButton
-            variant="danger"
-            size="sm"
-            :disabled="cleaning || !selectedIds.length"
-            @click="openConfirm"
-          >
-            {{ cleaning ? '清理中…' : `清理选中（${selectedIds.length}）` }}
-          </UiButton>
-        </div>
+          <div v-for="group in groups" :key="group.title" class="rp-group">
+            <div class="rp-group__title">
+              {{ group.title }}
+              <span class="rp-group__count num">{{ group.items.length }}</span>
+            </div>
+            <label
+              v-for="item in group.items"
+              :key="item.id"
+              class="rp-item"
+              :class="[`is-${item.risk}`]"
+            >
+              <input v-model="selectedIds" type="checkbox" :value="item.id" />
+              <span class="rp-item__main">
+                <span class="rp-item__title">{{ item.title }}</span>
+                <span class="rp-item__detail">{{ item.detail }}</span>
+                <span v-if="item.size != null" class="rp-item__size num">{{
+                  formatSize(item.size)
+                }}</span>
+              </span>
+              <span class="rp-risk" :class="`is-${item.risk}`">{{ RISK_LABEL[item.risk] }}</span>
+            </label>
+          </div>
+          <div class="panel-actions">
+            <UiButton
+              variant="danger"
+              size="sm"
+              :disabled="cleaning || !selectedIds.length"
+              @click="openConfirm"
+            >
+              {{ cleaning ? '清理中…' : `清理选中（${selectedIds.length}）` }}
+            </UiButton>
+          </div>
+        </template>
       </template>
-    </template>
+    </div>
 
     <UiDialog
       :model-value="confirmOpen"
@@ -132,6 +138,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { ScanSearch } from '@lucide/vue'
 import UiButton from '@renderer/components/ui/UiButton.vue'
 import UiDialog from '@renderer/components/ui/UiDialog.vue'
 import { useToast } from '@renderer/composables/useToast'
@@ -293,28 +300,41 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.residue-panel {
+.rp-panel {
   display: flex;
   flex-direction: column;
-  gap: var(--sp-3);
-  padding: var(--sp-1) 0 var(--sp-2);
 }
 
+/* ---------- 卡头 ---------- */
 .panel-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--sp-4);
+  gap: var(--sp-3);
+  padding: var(--sp-4) var(--sp-5);
+  border-bottom: 1px solid var(--border);
+}
+
+.panel-head__ic {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border-radius: var(--radius-sm);
+  background: var(--danger-soft);
+  color: var(--on-danger);
 }
 
 .panel-head__info {
   min-width: 0;
+  flex: 1;
 }
 
-.panel-head__actions {
+.panel-head__row {
   display: flex;
+  align-items: center;
   gap: var(--sp-2);
-  flex-shrink: 0;
 }
 
 .panel-head__name {
@@ -323,11 +343,43 @@ onMounted(() => {
   color: var(--text-primary);
 }
 
+.panel-head__chip {
+  padding: 0 8px;
+  border-radius: var(--radius-pill);
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  font-weight: var(--font-medium);
+}
+
 .panel-head__desc {
   margin-top: 2px;
   font-size: var(--text-sm);
   color: var(--text-secondary);
   line-height: 1.5;
+}
+
+.panel-head__em {
+  font-weight: var(--font-semibold);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+
+.panel-head__actions {
+  display: flex;
+  gap: var(--sp-2);
+  flex-shrink: 0;
+}
+
+/* ---------- 卡体 ---------- */
+.panel-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding: var(--sp-4) var(--sp-5) var(--sp-5);
+  /* 长列表在卡内滚动，避免把页面撑高、减少纵向滚轮下滑 */
+  max-height: 52vh;
+  overflow-y: auto;
 }
 
 .panel-hint {
@@ -342,7 +394,7 @@ onMounted(() => {
 }
 
 .panel-empty {
-  padding: var(--sp-5) 0;
+  padding: var(--sp-6) 0;
   text-align: center;
   font-size: var(--text-sm);
   color: var(--text-muted);
@@ -376,7 +428,7 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: var(--sp-2);
-  margin-top: var(--sp-2);
+  margin-top: var(--sp-1);
 }
 
 .rp-group__title {
@@ -412,6 +464,10 @@ onMounted(() => {
 
 .rp-item:hover {
   background: var(--bg-hover);
+}
+
+.rp-item.is-danger {
+  border-color: color-mix(in srgb, var(--danger) 35%, var(--border));
 }
 
 .rp-item input {
