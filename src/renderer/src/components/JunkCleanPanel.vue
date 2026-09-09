@@ -93,6 +93,9 @@
               全选安全项
             </label>
             <span class="panel-bar__count num">{{ selectedCount }} 项已选</span>
+            <UiButton variant="ghost" size="xs" @click="toggleCollapseAll">
+              {{ allCollapsed ? '展开全部' : '折叠全部' }}
+            </UiButton>
             <UiButton
               variant="danger"
               size="sm"
@@ -160,11 +163,22 @@ const collapsedCats = ref<Set<string>>(new Set())
 
 const groups = computed(() => (result.value?.categories ?? []).filter((c) => c.items.length))
 
+const allCollapsed = computed(
+  () => groups.value.length > 0 && groups.value.every((c) => collapsedCats.value.has(c.category))
+)
+
 function toggleCat(cat: string): void {
   const next = new Set(collapsedCats.value)
   if (next.has(cat)) next.delete(cat)
   else next.add(cat)
   collapsedCats.value = next
+}
+
+/** 折叠全部 / 展开全部 */
+function toggleCollapseAll(): void {
+  collapsedCats.value = allCollapsed.value
+    ? new Set()
+    : new Set(groups.value.map((c) => c.category))
 }
 
 const selectedCount = computed(() => selectedIds.value.length)
@@ -206,6 +220,7 @@ async function scan(): Promise<void> {
   try {
     result.value = await window.electronAPI.junkClean.scan()
     selectedIds.value = []
+    collapsedCats.value = new Set()
     if (result.value.error) toast.error(result.value.error)
   } catch (err) {
     toast.error(`扫描失败：${err instanceof Error ? err.message : String(err)}`)

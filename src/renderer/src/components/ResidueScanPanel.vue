@@ -93,6 +93,9 @@
               全选（不含危险项）
             </label>
             <span class="panel-bar__count num">{{ selectedCount }} 项已选</span>
+            <UiButton variant="ghost" size="xs" @click="toggleCollapseAll">
+              {{ allCollapsed ? '展开全部' : '折叠全部' }}
+            </UiButton>
             <UiButton
               variant="danger"
               size="sm"
@@ -204,6 +207,17 @@ const groups = computed(() =>
   })).filter((g) => g.items.length)
 )
 
+const allCollapsed = computed(
+  () => groups.value.length > 0 && groups.value.every((g) => collapsedGroups.value.has(g.title))
+)
+
+/** 折叠全部 / 展开全部 */
+function toggleCollapseAll(): void {
+  collapsedGroups.value = allCollapsed.value
+    ? new Set()
+    : new Set(groups.value.map((g) => g.title))
+}
+
 const selectedCount = computed(() => selectedIds.value.length)
 /** 「全选」只覆盖非危险项（危险项需逐项勾选 + 二次确认） */
 const selectableItems = computed(() =>
@@ -244,6 +258,7 @@ async function scan(): Promise<void> {
   try {
     result.value = await window.electronAPI.residueScan.scan()
     selectedIds.value = []
+    collapsedGroups.value = new Set()
     if (result.value.error) toast.error(result.value.error)
   } catch (err) {
     toast.error(`扫描失败：${err instanceof Error ? err.message : String(err)}`)

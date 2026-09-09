@@ -76,16 +76,41 @@
             />
             全选可删副本
           </label>
-          <span class="num">{{ selectedCount }} 项已选</span>
+          <span class="dp-toolbar__right">
+            <span class="num">{{ selectedCount }} 项已选</span>
+            <UiButton variant="ghost" size="xs" @click="toggleCollapseAll">
+              {{ allCollapsed ? '展开全部' : '折叠全部' }}
+            </UiButton>
+          </span>
         </div>
 
         <div v-for="g in groups" :key="g.key" class="dp-group">
-          <div class="dp-group__head">
-            <span class="dp-group__size num">{{ formatSize(g.size) }}</span>
-            <span class="dp-group__meta num">{{ g.files.length }} 份 · 可释放 {{ formatSize(g.reclaimableBytes) }}</span>
-          </div>
-          <div class="dp-files">
-            <div v-for="f in g.files" :key="f.path" class="dp-file" :class="{ 'is-keep': f.path === g.keepPath }">
+          <button
+            type="button"
+            class="dp-group__head"
+            :aria-expanded="!collapsedKeys.has(g.key)"
+            @click="toggleGroup(g.key)"
+          >
+            <span class="dp-group__head-main">
+              <ChevronDown
+                :size="15"
+                :stroke-width="1.7"
+                class="dp-group__chevron"
+                :class="{ 'is-collapsed': collapsedKeys.has(g.key) }"
+              />
+              <span class="dp-group__size num">{{ formatSize(g.size) }}</span>
+            </span>
+            <span class="dp-group__meta num">
+              {{ g.files.length }} 份 · 可释放 {{ formatSize(g.reclaimableBytes) }}
+            </span>
+          </button>
+          <div v-if="!collapsedKeys.has(g.key)" class="dp-files">
+            <div
+              v-for="f in g.files"
+              :key="f.path"
+              class="dp-file"
+              :class="{ 'is-keep': f.path === g.keepPath }"
+            >
               <input
                 v-if="f.path !== g.keepPath"
                 v-model="selectedPaths"
@@ -146,7 +171,7 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import { Copy, File, Folder, X } from '@lucide/vue'
+import { Copy, File, Folder, X, ChevronDown } from '@lucide/vue'
 import UiButton from '@renderer/components/ui/UiButton.vue'
 import UiDialog from '@renderer/components/ui/UiDialog.vue'
 import UiEmptyState from '@renderer/components/ui/UiEmptyState.vue'
@@ -201,6 +226,26 @@ const allRemovableChecked = computed(
   () => allRemovable.value.length > 0 && allRemovable.value.every((p) => selectedPaths.value.includes(p))
 )
 const groups = computed<DuplicateGroup[]>(() => result.value?.groups ?? [])
+
+/** 已折叠的重复组（点击组标题折叠/展开） */
+const collapsedKeys = ref<Set<string>>(new Set())
+const allCollapsed = computed(
+  () => groups.value.length > 0 && groups.value.every((g) => collapsedKeys.value.has(g.key))
+)
+
+function toggleGroup(key: string): void {
+  const next = new Set(collapsedKeys.value)
+  if (next.has(key)) next.delete(key)
+  else next.add(key)
+  collapsedKeys.value = next
+}
+
+/** 折叠全部 / 展开全部 */
+function toggleCollapseAll(): void {
+  collapsedKeys.value = allCollapsed.value
+    ? new Set()
+    : new Set(groups.value.map((g) => g.key))
+}
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
@@ -261,6 +306,7 @@ async function startScan(): Promise<void> {
   result.value = null
   progress.value = null
   selectedPaths.value = []
+  collapsedKeys.value = new Set()
   try {
     const r = await window.electronAPI.duplicateFinder.scan([...roots.value])
     currentRunId = r.runId
@@ -508,8 +554,15 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: var(--sp-2);
   font-size: var(--text-sm);
   color: var(--text-muted);
+}
+
+.dp-toolbar__right {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
 }
 
 .dp-check {
@@ -534,9 +587,42 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: space-between;
   gap: var(--sp-2);
+  width: 100%;
   padding: var(--sp-2) var(--sp-3);
+  border: none;
   background: var(--bg-selected-subtle);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
   font-size: var(--text-sm);
+  transition: background-color var(--duration-fast) var(--ease-out-soft);
+}
+
+.dp-group__head:hover {
+  background: var(--bg-hover);
+}
+
+.dp-group__head:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+
+.dp-group__head-main {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+
+.dp-group__chevron {
+  color: var(--text-muted);
+  flex-shrink: 0;
+  transition: transform var(--duration-base) var(--ease-out-soft);
+}
+
+.dp-group__chevron.is-collapsed {
+  transform: rotate(-90deg);
 }
 
 .dp-group__size {
