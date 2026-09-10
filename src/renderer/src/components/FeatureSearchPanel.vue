@@ -19,7 +19,7 @@
               v-model="query"
               class="palette-input"
               type="text"
-              placeholder="搜索功能、剪贴板、片段、快捷文件夹…"
+              placeholder="搜索功能、剪贴板、片段、快捷打开…"
               spellcheck="false"
             />
             <span class="palette-kbd">Esc</span>
@@ -185,10 +185,10 @@ function buildItems(r: GlobalSearchResult): PaletteItem[] {
   return [...featureItems, ...folderItems, ...snippetItems, ...historyItems]
 }
 
-/** 在系统资源管理器中打开快捷文件夹（失败给出 Toast 反馈） */
+/** 打开快捷项（文件夹在资源管理器、文件用默认应用；失败给出 Toast 反馈） */
 async function openQuickFolder(folder: QuickFolder): Promise<void> {
   const r = await window.electronAPI.quickFolders.openFolder(folder.path)
-  if (!r.ok) toast.error(`打开文件夹失败：${r.error ?? '未知错误'}`)
+  if (!r.ok) toast.error(`打开失败：${r.error ?? '未知错误'}`)
 }
 
 /** 关闭面板：standalone 下额外隐藏独立搜索窗口（Esc / 选中 / 点击遮罩均经此） */

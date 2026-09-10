@@ -276,7 +276,7 @@ const centerRef = ref<HTMLElement | null>(null)
 const { modules, setModule } = useHomeModules()
 const moduleDefs: HomeModuleDef[] = [
   { key: 'compactClipboard', label: '精简剪贴板' },
-  { key: 'quickFolders', label: '快捷文件夹' }
+  { key: 'quickFolders', label: '快捷打开' }
 ]
 
 /** 点击面板外区域关闭「显示」面板 */

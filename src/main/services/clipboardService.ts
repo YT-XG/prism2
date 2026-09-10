@@ -19,7 +19,8 @@ import {
   ClipboardItem,
   app,
   dialog,
-  BrowserWindow
+  BrowserWindow,
+  shell
 } from 'electron'
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from 'node:fs'
@@ -47,7 +48,8 @@ import type {
   BackupInspectResult,
   BackupImportResult,
   BackupSection,
-  FavoritesCursor
+  FavoritesCursor,
+  ClipboardOpenImageResult
 } from '@preload/ipc'
 
 /** 轮询间隔（ms） */
@@ -371,6 +373,20 @@ class ClipboardService extends SqliteStore {
   /** 图片文件完整路径 */
   #imagePath(filename: string): string {
     return join(this.#imageDir(), filename)
+  }
+
+  /** 用系统默认看图程序打开剪贴板图片文件（文件名经格式校验） */
+  async openImage(filename: string): Promise<ClipboardOpenImageResult> {
+    const name = String(filename ?? '')
+    if (!IMAGE_NAME_RE.test(name) || !existsSync(this.#imagePath(name))) {
+      return { ok: false, error: '图片不存在或已被清理' }
+    }
+    const err = await shell.openPath(this.#imagePath(name))
+    if (err) {
+      log.error('[ClipboardService] 打开图片失败:', err)
+      return { ok: false, error: err }
+    }
+    return { ok: true }
   }
 
   /** 删除图片文件（静默失败：文件不存在等） */
@@ -1166,8 +1182,9 @@ class ClipboardService extends SqliteStore {
     )
     ipcMain.handle(C.inspectBackup, () => this.inspectBackup())
     ipcMain.handle(C.importBackup, (_e, path: string, sections: BackupSection[], mode: BackupImportMode) =>
-      this.importBackup(String(path ?? ''), Array.isArray(sections) ? sections : [], mode)
+      this.importBackup(String(path ?? ''), sections, mode)
     )
+    ipcMain.handle(C.openImage, (_e, filename: string) => this.openImage(filename))
   }
 }
 

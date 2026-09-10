@@ -6,7 +6,7 @@
 
 ## 产品
 
-桌面效率工具集（剪贴板管理、翻译、Markdown 预览、多线程下载、局域网互传、全局搜索、JSON 工具、Claude Code 监控通知、邮箱大师多账号收信）。当前进度：**骨架 + 剪贴板 + 主页/便利贴/功能搜索/快捷文件夹 + 通知中心 + 邮箱大师**已落地。
+桌面效率工具集（剪贴板管理、翻译、Markdown 预览、多线程下载、局域网互传、全局搜索、JSON 工具、Claude Code 监控通知、邮箱大师多账号收信）。当前进度：**骨架 + 剪贴板 + 主页/便利贴/功能搜索/快捷打开（原快捷文件夹）+ 通知中心 + 邮箱大师**已落地。
 
 ## 技术栈（创建时锁定，见 ../docs/prism2/migration-roadmap.md 的版本决策）
 
@@ -34,7 +34,7 @@ src/
 │   │   ├── settingsService.ts
 │   │   ├── clipboardService.ts   # 剪贴板（历史/收藏/检索/保留期/导入/图片自定义协议；片段游标分页 getFavorites(limit,before,category)；图片廉价签名去重；服务级落盘防抖 SAVE_DEBOUNCE_MS=2000；.prismbackup 备份导出/导入：clipboard/stickyNotes/quickFolders/mail 四分区，zip 打包）
 │   │   ├── stickyNotesService.ts # 便利贴（sql.js 持久化，无广播）
-│   │   ├── quickFoldersService.ts # 快捷文件夹（主页快捷打开，sql.js 持久化 + 系统文件夹多选/拖放路径批量添加 + 行拖拽排序持久化 + 自定义别名 + 失效路径实时标记 + shell.openPath）
+│   │   ├── quickFoldersService.ts # 快捷打开（原快捷文件夹：主页快捷打开文件/文件夹，sql.js 持久化 + 系统文件/文件夹多选或拖放路径批量添加 + 自定义分组分类（quick_folder_groups 表 + group_id 归属，删除分组条目移回未分组）+ 组内行拖拽排序持久化 + 自定义别名 + 失效路径实时标记 + 文件/文件夹图标区分 isFile + shell.openPath）
 │   │   ├── inputService.ts       # 模拟粘贴（平台分支）
 │   │   ├── updateService.ts      # 应用更新（Gitee 主源 + GitHub 兜底 latest.json；mac/win 统一检测+下载+sha256；mac 原地替换 / win NSIS 静默；redirect/mirrors 换服务器不改客户端）
 │   │   ├── downloadService.ts    # 多线程下载服务（core/downloadEngine 封装 + 任务持久化 download-tasks.json + IPC + broadcast）
@@ -63,9 +63,9 @@ src/
 └── renderer/src/
     ├── assets/styles/            # tokens.css / animations.css / main.css
     ├── components/ui/            # 设计系统组件层（含 RichTextEditor.vue 富文本编辑器、StatusCenter.vue 全局状态中心（标题栏品牌区后统一呈现邮箱同步/应用报错/软件更新/toast 状态条目，独立搜索窗退化为右上角浮动、通知浮窗不显示）、UiShortcutRecorder.vue 快捷键录制组件（点击录制组合键，Esc 取消 / Backspace 清除，录制期间经 settings.suspendShortcuts 暂停全局快捷键））
-    ├── components/FeatureSearchPanel.vue  # 功能搜索命令面板（Ctrl/Cmd+K 独立搜索窗 SearchFrame 与主页内嵌共用；功能跳转 + 剪贴板/片段/快捷文件夹数据搜索，文件夹回车即在资源管理器打开；剪贴板历史结果条目下自动展示分词胶囊（splitWords），点某词即只粘贴该词；standalone 模式铺满独立窗、失焦自动隐藏、开关无过渡，重开由主进程 SearchFrame 每次显示时发的 show 事件（onSearchShow）显式驱动，不依赖 visibilitychange；与主页合并记录框共用同一全局搜索逻辑 useGlobalSearch）
+    ├── components/FeatureSearchPanel.vue  # 功能搜索命令面板（Ctrl/Cmd+K 独立搜索窗 SearchFrame 与主页内嵌共用；功能跳转 + 剪贴板/片段/快捷打开数据搜索，文件/文件夹回车即在系统打开；剪贴板历史结果条目下自动展示分词胶囊（splitWords），点某词即只粘贴该词；standalone 模式铺满独立窗、失焦自动隐藏、开关无过渡，重开由主进程 SearchFrame 每次显示时发的 show 事件（onSearchShow）显式驱动，不依赖 visibilitychange；与主页合并记录框共用同一全局搜索逻辑 useGlobalSearch）
     ├── components/HomeNoteCard.vue        # 贴到主页的便利贴可拖拽卡片
-    ├── components/QuickFolderPanel.vue    # 主页快捷文件夹单面板（可拖拽/缩放，框内列表行展示 + 行拖拽排序 + 行内重命名别名 + 悬浮/聚焦操作 + 失效标记 + 空态引导）
+    ├── components/QuickFolderPanel.vue    # 主页快捷打开单面板（可拖拽/缩放，框内按自定义分组分区展示 + 分组折叠/组头重命名删除 + 文件/文件夹图标区分 + 组内行拖拽排序/跨组拖拽归组 + 行内「移动到分组」菜单 + 行内重命名别名 + 失效标记 + 空态引导）
     ├── components/StickyNoteEditorDialog.vue # 便利贴大编辑框（富文本 + 颜色，主页/便利贴页共用）
     ├── components/SnippetEditorDialog.vue # 片段添加/编辑弹窗（剪贴板页/主页共用，内容为富文本）
     ├── components/SnippetPlaceholderDialog.vue # 片段占位符输入弹窗（{{名称}}，填写后替换并粘贴）
@@ -116,7 +116,7 @@ scripts/make-server-manifest.mjs  # 生成自托管服务器版 latest.json（ur
 | 骨架（入口/托盘/主页/设置/设计系统/契约层） | ✅ |
 | 剪贴板管理（历史/收藏/搜索/保留期/导入/富文本编辑：历史与片段均可用富文本编辑器修改并保留格式粘贴） | ✅ |
 | 主页（可拖拽合并记录框：剪贴板+片段跨类全搜 + 自定义尺寸 + 概览 + 入口卡（新增便利贴/新增片段） + 模块显隐开关） | ✅ |
-| 快捷文件夹（主页「快捷入口」弹系统文件夹多选 / 从资源管理器拖放添加 → 主页快捷文件夹整合为一个可拖拽/缩放面板，框内列表行展示 + 行拖拽排序（持久化 sort_order）+ 行内重命名自定义别名（持久化 alias，别名优先展示、留空还原文件夹名），单击行在资源管理器打开 + 成功高亮，失效路径置灰标记，行操作「重命名/打开/移除」悬浮与聚焦可及；Ctrl/Cmd+K 全局搜索（别名/名称/路径）也可直接打开；「显示」面板开关控制显隐） | ✅ |
+| 快捷打开（原快捷文件夹：主页「快捷入口」弹系统文件/文件夹多选 / 从资源管理器拖放文件或文件夹添加 → 主页快捷打开面板整合为一个可拖拽/缩放框，框内按自定义分组分区展示（quick_folder_groups 表，分组可折叠/重命名/删除，删除后条目移回未分组）+ 组内行拖拽排序 / 跨组拖拽归组（拖到目标行前后精确插入、空组追加末尾，持久化 sort_order + group_id）+ 行内重命名自定义别名（持久化 alias，别名优先展示、留空还原文件名/文件夹名）+ 行内「移动到分组」菜单，文件用文件图标、文件夹用文件夹图标区分，单击行打开（文件夹 → 资源管理器，文件 → 默认应用）+ 成功高亮，失效路径置灰标记，行操作「移动到/重命名/打开/移除」悬浮与聚焦可及；Ctrl/Cmd+K 全局搜索（别名/名称/路径）也可直接打开；「显示」面板开关控制显隐） | ✅ |
 | 便利贴（本地便签，增删改 + 富文本大编辑框 + 贴到主页可拖拽定位/自由缩放 + 主页点击编辑/一键创建默认贴主页） | ✅ |
 | 功能搜索（命令面板，Ctrl/Cmd+K） | ✅ |
 | 自动更新（Gitee 主源 + GitHub 兜底 latest.json；mac/win 统一检测+下载+sha256 校验；mac 原地替换 / win NSIS 静默；CI 自动生成 latest.json 并推送 Gitee 锚点 + 校验；换服务器只改锚点 redirect/mirrors、不改客户端） | ✅（接入就绪，待建仓库替换占位地址后实际发版） |

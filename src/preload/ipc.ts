@@ -23,6 +23,12 @@ export interface HistoryItem {
   type: HistoryItemType
 }
 
+/** 打开剪贴板图片结果（用系统默认看图程序打开） */
+export interface ClipboardOpenImageResult {
+  ok: boolean
+  error?: string
+}
+
 /** 片段内容类型：文本 / 富文本（richtext 的 content 为 HTML） */
 export type FavoriteItemType = 'text' | 'richtext'
 
@@ -70,16 +76,28 @@ export interface StickyNote {
   updated_at: number
 }
 
-/** 快捷文件夹（主页快捷打开的可拖拽卡片） */
+/** 快捷打开分组（用户自定义分类；「未分组」为虚拟桶不落库，group_id=null） */
+export interface QuickFolderGroup {
+  id: number
+  /** 分组名 */
+  name: string
+  created_at: number
+}
+
+/** 快捷打开项（主页快捷打开的可拖拽面板，可放文件或文件夹） */
 export interface QuickFolder {
   id: number
-  /** 文件夹绝对路径 */
+  /** 文件或文件夹的绝对路径 */
   path: string
   /** 显示名（路径 basename，作为默认展示名） */
   name: string
+  /** 路径是否为文件（false = 文件夹），读取时实时校验 */
+  isFile: boolean
+  /** 所属分组 id（null = 未分组） */
+  group_id: number | null
   /** 自定义别名（可选）：设置了则列表/搜索展示别名，未设置回退到 name */
   alias: string | null
-  /** 路径当前是否失效（读取时实时校验：文件夹被移动/删除后为 true） */
+  /** 路径当前是否失效（读取时实时校验：文件/文件夹被移动或删除后为 true） */
   missing: boolean
   /** 主页画布内位置（px，相对画布内容区左上角）；未定位过为 null */
   home_x: number | null
@@ -90,7 +108,7 @@ export interface QuickFolder {
   created_at: number
 }
 
-/** 在系统资源管理器中打开文件夹的结果 */
+/** 打开快捷项的结果（文件夹在资源管理器打开；文件用系统默认应用打开） */
 export interface QuickFolderOpenResult {
   ok: boolean
   /** 失败原因（ok=false 时） */
@@ -942,7 +960,8 @@ export const SERVICE_CHANNELS = {
     writeText: 'to-service-ClipboardService:writeText',
     exportBackup: 'to-service-ClipboardService:exportBackup',
     inspectBackup: 'to-service-ClipboardService:inspectBackup',
-    importBackup: 'to-service-ClipboardService:importBackup'
+    importBackup: 'to-service-ClipboardService:importBackup',
+    openImage: 'to-service-ClipboardService:openImage'
   },
   stickyNotes: {
     getNotes: 'to-service-StickyNotesService:getNotes',
@@ -955,19 +974,29 @@ export const SERVICE_CHANNELS = {
   },
   quickFolders: {
     getFolders: 'to-service-QuickFoldersService:getFolders',
-    /** 弹出系统文件夹多选对话框并入库；返回更新后的完整列表 */
+    /** 弹出系统文件/文件夹多选对话框并入库；返回更新后的完整列表 */
     addFolders: 'to-service-QuickFoldersService:addFolders',
-    /** 按给定路径批量入库（拖放添加来源，主进程校验存在性/目录类型）；返回更新后的完整列表 */
+    /** 按给定路径批量入库（拖放添加来源，主进程校验存在性）；返回更新后的完整列表 */
     addFoldersByPaths: 'to-service-QuickFoldersService:addFoldersByPaths',
     deleteFolder: 'to-service-QuickFoldersService:deleteFolder',
-    /** 按给定 id 顺序重排（面板内拖拽排序） */
+    /** 按给定 id 顺序重排（组内拖拽排序，orderedIds 须为同一分组内的 id 集合） */
     reorder: 'to-service-QuickFoldersService:reorder',
-    /** 设置自定义别名（null/空串 = 清除别名，回退到文件夹名） */
+    /** 设置自定义别名（null/空串 = 清除别名，回退到文件/文件夹名） */
     setAlias: 'to-service-QuickFoldersService:setAlias',
     setPosition: 'to-service-QuickFoldersService:setPosition',
     setSize: 'to-service-QuickFoldersService:setSize',
-    /** 在系统资源管理器中打开文件夹 */
-    openFolder: 'to-service-QuickFoldersService:openFolder'
+    /** 打开快捷项：文件夹在系统资源管理器中打开，文件用系统默认应用打开 */
+    openFolder: 'to-service-QuickFoldersService:openFolder',
+    /** 获取全部分组（按创建顺序） */
+    getGroups: 'to-service-QuickFoldersService:getGroups',
+    /** 新建分组（重名允许）；返回更新后的分组列表 */
+    addGroup: 'to-service-QuickFoldersService:addGroup',
+    /** 重命名分组；返回更新后的分组列表 */
+    renameGroup: 'to-service-QuickFoldersService:renameGroup',
+    /** 删除分组（组内条目移回未分组）；返回更新后的分组列表 */
+    deleteGroup: 'to-service-QuickFoldersService:deleteGroup',
+    /** 把快捷项移入分组（groupId=null 移回未分组），新条目排到目标分组末尾 */
+    moveToGroup: 'to-service-QuickFoldersService:moveToGroup'
   },
   update: {
     getStatus: 'to-service-UpdateService:getStatus',
@@ -1225,6 +1254,8 @@ export interface ElectronAPI {
       sections: BackupSection[],
       mode: BackupImportMode
     ) => Promise<BackupImportResult>
+    /** 用系统默认看图程序打开指定剪贴板图片（content 为文件名） */
+    openImage: (filename: string) => Promise<ClipboardOpenImageResult>
     onNewItem: (cb: (item: HistoryItem) => void) => () => void
     /** 历史变更（新增/删除/清空/导入）通知，用于侧栏计数等 UI 刷新 */
     onHistoryChanged: (cb: () => void) => () => void
@@ -1243,22 +1274,32 @@ export interface ElectronAPI {
   }
   quickFolders: {
     getFolders: () => Promise<QuickFolder[]>
-    /** 弹出系统文件夹多选框并添加；返回更新后的完整列表（取消则原样返回） */
+    /** 弹出系统文件/文件夹多选框并添加；返回更新后的完整列表（取消则原样返回） */
     addFolders: () => Promise<QuickFolder[]>
-    /** 按给定路径批量添加（拖放来源，主进程校验存在性与目录类型）；返回更新后的完整列表 */
+    /** 按给定路径批量添加（拖放来源，主进程校验存在性）；返回更新后的完整列表 */
     addFoldersByPaths: (paths: string[]) => Promise<QuickFolder[]>
-    /** 移除快捷文件夹（仅删快捷记录，不影响磁盘上的文件夹） */
+    /** 移除快捷项（仅删记录，不影响磁盘上的文件/文件夹） */
     deleteFolder: (id: number) => Promise<void>
     /** 按给定 id 顺序重排（面板内拖拽排序）；id 集合需与当前列表一致 */
     reorder: (orderedIds: number[]) => Promise<void>
-    /** 设置自定义别名（null/空串 = 清除别名，回退到文件夹名） */
+    /** 设置自定义别名（null/空串 = 清除别名，回退到文件/文件夹名） */
     setAlias: (id: number, alias: string | null) => Promise<void>
-    /** 记录快捷文件夹在主页画布上的位置（px） */
+    /** 记录快捷项在主页画布上的位置（px） */
     setPosition: (id: number, x: number, y: number) => Promise<void>
-    /** 记录快捷文件夹在主页画布上的尺寸（px） */
+    /** 记录快捷项在主页画布上的尺寸（px） */
     setSize: (id: number, w: number, h: number) => Promise<void>
-    /** 在系统资源管理器中打开文件夹 */
+    /** 打开快捷项：文件夹在系统资源管理器中打开，文件用系统默认应用打开 */
     openFolder: (path: string) => Promise<QuickFolderOpenResult>
+    /** 获取全部分组（按创建顺序） */
+    getGroups: () => Promise<QuickFolderGroup[]>
+    /** 新建分组（空名忽略）；返回更新后的分组列表 */
+    addGroup: (name: string) => Promise<QuickFolderGroup[]>
+    /** 重命名分组（空名忽略）；返回更新后的分组列表 */
+    renameGroup: (id: number, name: string) => Promise<QuickFolderGroup[]>
+    /** 删除分组（组内条目移回未分组）；返回更新后的分组列表 */
+    deleteGroup: (id: number) => Promise<QuickFolderGroup[]>
+    /** 把快捷项移入分组（groupId=null 移回未分组）；新条目排到目标分组末尾 */
+    moveToGroup: (id: number, groupId: number | null) => Promise<void>
   }
   update: {
     /** 获取当前更新状态 */

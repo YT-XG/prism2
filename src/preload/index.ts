@@ -15,6 +15,7 @@ import type {
   BackupInspectResult,
   BackupSection,
   ClipboardRetention,
+  ClipboardOpenImageResult,
   DiskScanProgress,
   DiskScanResult,
   DuplicateCleanResult,
@@ -49,6 +50,7 @@ import type {
   NotificationItem,
   NotificationNewPayload,
   QuickFolder,
+  QuickFolderGroup,
   ResidueCleanResult,
   ResidueScanProgress,
   ResidueScanResult,
@@ -188,6 +190,8 @@ const electronAPI: ElectronAPI = {
     inspectBackup: () => ipcRenderer.invoke(C.inspectBackup) as Promise<BackupInspectResult>,
     importBackup: (path: string, sections: BackupSection[], mode: BackupImportMode) =>
       ipcRenderer.invoke(C.importBackup, path, sections, mode) as Promise<BackupImportResult>,
+    openImage: (filename: string) =>
+      ipcRenderer.invoke(C.openImage, filename) as Promise<ClipboardOpenImageResult>,
     onNewItem: (cb: (item: HistoryItem) => void) => subscribe(BROADCAST.clipboardNew, (item) => cb(item as HistoryItem)),
     onHistoryChanged: (cb: () => void) => subscribe(BROADCAST.clipboardHistoryChanged, cb),
   },
@@ -222,6 +226,15 @@ const electronAPI: ElectronAPI = {
       ipcRenderer.invoke(QF.setSize, id, w, h) as Promise<void>,
     openFolder: (path: string) =>
       ipcRenderer.invoke(QF.openFolder, path) as Promise<{ ok: boolean; error?: string }>,
+    getGroups: () => ipcRenderer.invoke(QF.getGroups) as Promise<QuickFolderGroup[]>,
+    addGroup: (name: string) =>
+      ipcRenderer.invoke(QF.addGroup, name) as Promise<QuickFolderGroup[]>,
+    renameGroup: (id: number, name: string) =>
+      ipcRenderer.invoke(QF.renameGroup, id, name) as Promise<QuickFolderGroup[]>,
+    deleteGroup: (id: number) =>
+      ipcRenderer.invoke(QF.deleteGroup, id) as Promise<QuickFolderGroup[]>,
+    moveToGroup: (id: number, groupId: number | null) =>
+      ipcRenderer.invoke(QF.moveToGroup, id, groupId) as Promise<void>,
   },
 
   update: {

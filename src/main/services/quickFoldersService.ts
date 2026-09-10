@@ -1,13 +1,13 @@
 /**
- * 快捷文件夹服务
- * @description 主页「快捷打开文件夹」：记录要快捷打开的文件夹（路径 + 画布位置/尺寸），
- * 用 sql.js 持久化到 userData/quick-folders.db，并在系统资源管理器中打开文件夹。
+ * 快捷打开服务（原快捷文件夹）
+ * @description 主页「快捷打开文件/文件夹」：记录要快捷打开的路径（文件或文件夹 + 画布位置/尺寸），
+ * 用 sql.js 持久化到 userData/quick-folders.db，点击在系统默认应用/资源管理器中打开。
  *
  * v2 架构（仿 StickyNotesService）：
  * - 继承 SqliteStore，复用 sql.js 初始化 / 落盘 / 结果解析。
  * - 数据量小，全量拉取即可，无分页、无广播（唯一消费端为主页）。
- * - 系统文件夹选择（多选）在 add() 内用 dialog.showOpenDialog 弹出。
- * - 打开文件夹经 shell.openPath 交给系统资源管理器。
+ * - 系统文件/文件夹选择（多选）在 add() 内用 dialog.showOpenDialog 弹出。
+ * - 打开路径经 shell.openPath 交给系统（文件夹 → 资源管理器，文件 → 默认应用）。
  * - 所有 IPC handler 入参做类型收窄的防御性处理。
  */
 import { dialog, ipcMain, shell } from 'electron'
@@ -17,7 +17,12 @@ import log from 'electron-log'
 import type { Database } from 'sql.js'
 import { SqliteStore } from './db/sqliteDatabase'
 import { SERVICE_CHANNELS } from '@preload/ipc'
-import type { BackupImportMode, QuickFolder, QuickFolderOpenResult } from '@preload/ipc'
+import type {
+  BackupImportMode,
+  QuickFolder,
+  QuickFolderGroup,
+  QuickFolderOpenResult
+} from '@preload/ipc'
 
 class QuickFoldersService extends SqliteStore {
   constructor() {
@@ -34,6 +39,7 @@ class QuickFoldersService extends SqliteStore {
          path TEXT NOT NULL UNIQUE,
          name TEXT NOT NULL,
          alias TEXT,
+         group_id INTEGER,
          home_x INTEGER,
          home_y INTEGER,
          home_w INTEGER,
@@ -43,6 +49,15 @@ class QuickFoldersService extends SqliteStore {
        )`
     )
     this.run('CREATE INDEX IF NOT EXISTS idx_quick_folders_created ON quick_folders(created_at)')
+
+    // 分组表：用户自定义分类；「未分组」为虚拟桶（group_id=null），不落库
+    this.run(
+      `CREATE TABLE IF NOT EXISTS quick_folder_groups (
+         id INTEGER PRIMARY KEY AUTOINCREMENT,
+         name TEXT NOT NULL,
+         created_at INTEGER NOT NULL
+       )`
+    )
 
     // 存量库迁移：补 sort_order 列并按既有顺序（创建时间）回填，保证老用户首次排序稳定
     const cols = this.all<{ name: string }>('PRAGMA table_info(quick_folders)')
@@ -56,6 +71,10 @@ class QuickFoldersService extends SqliteStore {
     if (!cols.some((c) => c.name === 'alias')) {
       this.run('ALTER TABLE quick_folders ADD COLUMN alias TEXT')
     }
+    // 存量库迁移：补 group_id 列（分组分类；默认 null = 未分组）
+    if (!cols.some((c) => c.name === 'group_id')) {
+      this.run('ALTER TABLE quick_folders ADD COLUMN group_id INTEGER')
+    }
 
     this.save()
     this.registerIPC()
@@ -66,15 +85,25 @@ class QuickFoldersService extends SqliteStore {
     this.close()
   }
 
-  /** 查询全部快捷文件夹（按 sort_order 正序，新增的排在最后）；path 实时校验，失效的标记 missing */
+  /** 查询全部快捷项（按 sort_order 正序，新增的排在最后）；path 实时校验，失效的标记 missing，区分文件/文件夹 */
   getAll(): QuickFolder[] {
     return this.all<QuickFolder>(
       'SELECT * FROM quick_folders ORDER BY sort_order ASC, created_at ASC, id ASC'
-    ).map((r) => ({ ...r, missing: !existsSync(r.path) }))
+    ).map((r) => ({
+      ...r,
+      isFile: (() => {
+        try {
+          return statSync(r.path).isFile()
+        } catch {
+          return false
+        }
+      })(),
+      missing: !existsSync(r.path)
+    }))
   }
 
   /**
-   * 校验并入库一批路径（仅保留存在的目录；path 唯一去重）。
+   * 校验并入库一批路径（仅保留存在的文件/文件夹；path 唯一去重）。
    * 系统多选对话框与拖放添加共用此逻辑。
    */
   private insertValidPaths(paths: string[]): void {
@@ -86,7 +115,7 @@ class QuickFoldersService extends SqliteStore {
       if (!path || !existsSync(path)) continue
       let name: string
       try {
-        if (!statSync(path).isDirectory()) continue
+        if (!statSync(path).isFile() && !statSync(path).isDirectory()) continue
         name = basename(path) || path
       } catch {
         continue
@@ -100,23 +129,23 @@ class QuickFoldersService extends SqliteStore {
   }
 
   /**
-   * 弹出系统文件夹多选对话框并添加去重入库。
+   * 弹出系统文件/文件夹多选对话框并添加去重入库。
    * 用户取消时返回当前列表不变。
    */
   async add(): Promise<QuickFolder[]> {
     const { canceled, filePaths } = await dialog.showOpenDialog({
-      title: '选择要快捷打开的文件夹',
-      properties: ['openDirectory', 'multiSelections']
+      title: '选择要快捷打开的文件或文件夹',
+      properties: ['openFile', 'openDirectory', 'multiSelections']
     })
     if (canceled || filePaths.length === 0) return this.getAll()
 
     this.insertValidPaths(filePaths)
     this.save()
-    log.info(`[QuickFoldersService] 已添加快捷文件夹:`, filePaths)
+    log.info(`[QuickFoldersService] 已添加(文件/文件夹)快捷项:`, filePaths)
     return this.getAll()
   }
 
-  /** 按给定路径批量添加（拖放来源）；仅入库合法目录，返回更新后的完整列表 */
+  /** 按给定路径批量添加（拖放来源）；仅入库存在的文件/文件夹，返回更新后的完整列表 */
   addPaths(paths: string[]): QuickFolder[] {
     this.insertValidPaths(Array.isArray(paths) ? paths : [])
     this.save()
@@ -137,6 +166,74 @@ class QuickFoldersService extends SqliteStore {
         this.run('UPDATE quick_folders SET sort_order = ? WHERE id = ?', [i, id])
       }
     })
+    this.save()
+  }
+
+  // -------------------------------------------------------------------------
+  // 分组分类：用户自定义分组；「未分组」为虚拟桶（group_id=null）不落库
+  // -------------------------------------------------------------------------
+
+  /** 查询全部分组（按创建顺序） */
+  getGroups(): QuickFolderGroup[] {
+    return this.all<QuickFolderGroup>(
+      'SELECT * FROM quick_folder_groups ORDER BY created_at ASC, id ASC'
+    )
+  }
+
+  /** 新建分组（空名忽略）；返回更新后的分组列表 */
+  addGroup(nameRaw: unknown): QuickFolderGroup[] {
+    const name = typeof nameRaw === 'string' ? nameRaw.trim() : ''
+    if (!name) return this.getGroups()
+    this.run('INSERT INTO quick_folder_groups (name, created_at) VALUES (?, ?)', [name, Date.now()])
+    this.save()
+    log.info('[QuickFoldersService] 已新建分组:', name)
+    return this.getGroups()
+  }
+
+  /** 重命名分组（空名忽略）；返回更新后的分组列表 */
+  renameGroup(idRaw: unknown, nameRaw: unknown): QuickFolderGroup[] {
+    const id = Number(idRaw)
+    const name = typeof nameRaw === 'string' ? nameRaw.trim() : ''
+    if (!Number.isInteger(id) || id <= 0 || !name) return this.getGroups()
+    this.run('UPDATE quick_folder_groups SET name = ? WHERE id = ?', [name, id])
+    this.save()
+    return this.getGroups()
+  }
+
+  /** 删除分组（组内条目移回未分组）；返回更新后的分组列表 */
+  deleteGroup(idRaw: unknown): QuickFolderGroup[] {
+    const id = Number(idRaw)
+    if (!Number.isInteger(id) || id <= 0) return this.getGroups()
+    this.run('UPDATE quick_folders SET group_id = NULL WHERE group_id = ?', [id])
+    this.run('DELETE FROM quick_folder_groups WHERE id = ?', [id])
+    this.save()
+    return this.getGroups()
+  }
+
+  /** 把快捷项移入分组（groupId=null 移回未分组），排到目标分组末尾 */
+  moveToGroup(folderIdRaw: unknown, groupIdRaw: unknown): void {
+    const folderId = Number(folderIdRaw)
+    if (!Number.isInteger(folderId) || folderId <= 0) return
+    const groupId = groupIdRaw === null || groupIdRaw === undefined ? null : Number(groupIdRaw)
+    if (groupId !== null && (!Number.isInteger(groupId) || groupId <= 0)) return
+    if (groupId !== null) {
+      const g = this.one<{ id: number }>('SELECT id FROM quick_folder_groups WHERE id = ?', [
+        groupId
+      ])
+      if (!g) return
+    }
+    // 目标分组末尾：取该分组当前最大 sort_order + 1
+    const cond = groupId === null ? 'group_id IS NULL' : 'group_id = ?'
+    const args: Array<number | string> = groupId === null ? [] : [groupId]
+    const max = this.one<{ m: number }>(
+      `SELECT COALESCE(MAX(sort_order), 0) AS m FROM quick_folders WHERE ${cond}`,
+      args
+    )
+    this.run('UPDATE quick_folders SET group_id = ?, sort_order = ? WHERE id = ?', [
+      groupId,
+      (max?.m ?? 0) + 1,
+      folderId
+    ])
     this.save()
   }
 
@@ -188,6 +285,20 @@ class QuickFoldersService extends SqliteStore {
     db: Database,
     mode: BackupImportMode
   ): { imported: number; skipped: number } {
+    // 分组表先导入（replace 模式先清空），保证条目 group_id 引用有效
+    const gres = db.exec('SELECT * FROM quick_folder_groups')
+    const gcols = gres[0]?.columns ?? []
+    const grows = gres[0]?.values ?? []
+    if (mode === 'replace') this.run('DELETE FROM quick_folder_groups')
+    for (const row of grows) {
+      const o: Record<string, unknown> = {}
+      gcols.forEach((c, i) => (o[c] = row[i]))
+      this.db?.run(
+        'INSERT OR IGNORE INTO quick_folder_groups (id, name, created_at) VALUES (?, ?, ?)',
+        [o.id, o.name, o.created_at]
+      )
+    }
+
     const res = db.exec('SELECT * FROM quick_folders')
     const cols = res[0]?.columns ?? []
     const rows = res[0]?.values ?? []
@@ -199,12 +310,13 @@ class QuickFoldersService extends SqliteStore {
       const o: Record<string, unknown> = {}
       cols.forEach((c, i) => (o[c] = row[i]))
       this.db?.run(
-        'INSERT OR IGNORE INTO quick_folders (id, path, name, alias, home_x, home_y, home_w, home_h, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        'INSERT OR IGNORE INTO quick_folders (id, path, name, alias, group_id, home_x, home_y, home_w, home_h, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
         [
           o.id,
           o.path,
           o.name,
           o.alias,
+          o.group_id ?? null,
           o.home_x,
           o.home_y,
           o.home_w,
@@ -223,23 +335,14 @@ class QuickFoldersService extends SqliteStore {
     return { imported, skipped }
   }
 
-  /** 在系统资源管理器中打开文件夹 */
+  /** 打开快捷项：文件夹在系统资源管理器中打开，文件用系统默认应用打开 */
   async openFolder(path: string): Promise<QuickFolderOpenResult> {
     if (!path || !existsSync(path)) {
-      return { ok: false, error: '文件夹不存在或已被移动' }
-    }
-    let isDir = false
-    try {
-      isDir = statSync(path).isDirectory()
-    } catch {
-      isDir = false
-    }
-    if (!isDir) {
-      return { ok: false, error: '路径不是有效的文件夹' }
+      return { ok: false, error: '路径不存在或已被移动' }
     }
     const err = await shell.openPath(path)
     if (err) {
-      log.error('[QuickFoldersService] 打开文件夹失败:', err)
+      log.error('[QuickFoldersService] 打开失败:', err)
       return { ok: false, error: err }
     }
     return { ok: true }
@@ -263,6 +366,15 @@ class QuickFoldersService extends SqliteStore {
       this.setSize(Number(id), Number(w), Number(h))
     )
     ipcMain.handle(QF.openFolder, (_e, path: string) => this.openFolder(String(path ?? '')))
+    ipcMain.handle(QF.getGroups, () => this.getGroups())
+    ipcMain.handle(QF.addGroup, (_e, name: string) => this.addGroup(name))
+    ipcMain.handle(QF.renameGroup, (_e, id: number, name: string) =>
+      this.renameGroup(Number(id), name)
+    )
+    ipcMain.handle(QF.deleteGroup, (_e, id: number) => this.deleteGroup(Number(id)))
+    ipcMain.handle(QF.moveToGroup, (_e, id: number, groupId: number | null) =>
+      this.moveToGroup(Number(id), groupId)
+    )
   }
 }
 

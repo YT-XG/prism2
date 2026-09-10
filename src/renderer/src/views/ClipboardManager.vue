@@ -171,6 +171,15 @@
                       <span v-else class="cm-card__time">{{ formatClock(item.created_at) }}</span>
                       <div v-if="!selectMode" class="cm-card__actions" @click.stop>
                         <button
+                          v-if="item.type === 'image'"
+                          class="action-btn"
+                          title="用默认程序打开"
+                          aria-label="用默认程序打开"
+                          @click="previewImage(item)"
+                        >
+                          <ZoomIn :size="14" :stroke-width="1.6" />
+                        </button>
+                        <button
                           v-if="item.type !== 'image'"
                           class="action-btn"
                           title="收藏"
@@ -309,7 +318,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
-import { History, Star, Search, Plus, Trash2, Pencil, Check, SquareCheckBig, X } from '@lucide/vue'
+import { History, Star, Search, Plus, Trash2, Pencil, Check, SquareCheckBig, X, ZoomIn } from '@lucide/vue'
 import UiPillTab from '@renderer/components/ui/UiPillTab.vue'
 import UiInput from '@renderer/components/ui/UiInput.vue'
 import UiButton from '@renderer/components/ui/UiButton.vue'
@@ -471,6 +480,14 @@ function formatClock(ts: number): string {
 /** 剪贴板图片协议 URL（渲染端 <img> 直接引用，免 base64 过 IPC） */
 function imageUrl(filename: string): string {
   return `prism-image://clipboard-images/${filename}`
+}
+
+/** 用系统默认看图程序打开剪贴板图片文件 */
+async function previewImage(item: DisplayItem): Promise<void> {
+  const r = await window.electronAPI.clipboard.openImage(item.content)
+  if (!r.ok) {
+    toast.error(`打开图片失败：${r.error ?? '未知错误'}`)
+  }
 }
 
 async function fetchHistory(): Promise<void> {

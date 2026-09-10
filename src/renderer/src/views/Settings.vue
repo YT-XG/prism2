@@ -545,7 +545,7 @@ const importMode = ref<BackupImportMode>('merge')
 const BACKUP_OPTIONS: { section: BackupSection; label: string; desc: string }[] = [
   { section: 'clipboard', label: '剪贴板数据', desc: '历史记录、片段收藏与图片' },
   { section: 'stickyNotes', label: '便利贴', desc: '全部便利贴（含贴主页的便签）' },
-  { section: 'quickFolders', label: '快捷文件夹', desc: '主页快捷打开的文件夹列表' },
+  { section: 'quickFolders', label: '快捷打开', desc: '主页快捷打开的文件与文件夹列表' },
   {
     section: 'mail',
     label: '邮箱账号',
@@ -608,7 +608,7 @@ async function confirmBackup(): Promise<void> {
         parts.push(`历史 ${r.historyCount ?? 0}、收藏 ${r.favoriteCount ?? 0}、图片 ${r.imageCount ?? 0}`)
       }
       if (sections.includes('stickyNotes')) parts.push(`便利贴 ${r.stickyNoteCount ?? 0}`)
-      if (sections.includes('quickFolders')) parts.push(`快捷文件夹 ${r.quickFolderCount ?? 0}`)
+      if (sections.includes('quickFolders')) parts.push(`快捷打开 ${r.quickFolderCount ?? 0}`)
       if (sections.includes('mail')) parts.push(`邮箱账号 ${r.mailAccountCount ?? 0}`)
       toast.success(`已导出：${r.path}（${parts.join('、')}）`)
     } else {
@@ -630,7 +630,7 @@ async function confirmBackup(): Promise<void> {
         parts.push(`历史 ${r.importedHistory ?? 0}、收藏 ${r.importedFavorites ?? 0}、图片 ${r.importedImages ?? 0}`)
       }
       if (sections.includes('stickyNotes')) parts.push(`便利贴 ${r.importedStickyNotes ?? 0}`)
-      if (sections.includes('quickFolders')) parts.push(`快捷文件夹 ${r.importedQuickFolders ?? 0}`)
+      if (sections.includes('quickFolders')) parts.push(`快捷打开 ${r.importedQuickFolders ?? 0}`)
       if (sections.includes('mail')) parts.push(`邮箱账号 ${r.importedMailAccounts ?? 0}`)
       toast.success(`已替换导入：${parts.join('、')}`)
     } else {
@@ -643,7 +643,7 @@ async function confirmBackup(): Promise<void> {
         parts.push(`便利贴 +${r.importedStickyNotes ?? 0}（跳过 ${r.skippedStickyNotes ?? 0}）`)
       }
       if (sections.includes('quickFolders')) {
-        parts.push(`快捷文件夹 +${r.importedQuickFolders ?? 0}（跳过 ${r.skippedQuickFolders ?? 0}）`)
+        parts.push(`快捷打开 +${r.importedQuickFolders ?? 0}（跳过 ${r.skippedQuickFolders ?? 0}）`)
       }
       if (sections.includes('mail')) {
         parts.push(`邮箱账号 +${r.importedMailAccounts ?? 0}（跳过 ${r.skippedMailAccounts ?? 0}）`)

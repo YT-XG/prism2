@@ -62,10 +62,10 @@
       @dragleave.prevent="onDragLeave"
       @drop.prevent="onCanvasDrop"
     >
-      <!-- 拖放提示遮罩：文件夹拖入画布时浮现 -->
+      <!-- 拖放提示遮罩：文件/文件夹拖入画布时浮现 -->
       <div v-if="dropActive" class="drop-overlay">
         <FolderPlus :size="20" :stroke-width="1.6" />
-        松开以添加快捷文件夹
+        松开以添加快捷打开
       </div>
 
       <!-- 合并记录框：左=剪贴板，右=片段，框顶跨两类全搜（模块显隐开关控制显示） -->
@@ -118,6 +118,14 @@
                   <Check :size="12" :stroke-width="3" /> 已复制
                 </span>
                 <span class="row__actions" @click.stop>
+                  <button
+                    v-if="item.type === 'image'"
+                    class="row-btn"
+                    title="用默认程序打开"
+                    @click="previewImage(item)"
+                  >
+                    <ZoomIn :size="13" :stroke-width="1.6" />
+                  </button>
                   <button class="row-btn" title="收藏" @click="quickFavorite(item)">
                     <Star :size="13" :stroke-width="1.6" />
                   </button>
@@ -197,10 +205,11 @@
         @resize-end="persistNoteSize"
       />
 
-      <!-- 快捷文件夹面板（一个可拖拽/可缩放框，框内列表行展示全部快捷文件夹；「显示」面板开关控制显隐） -->
+      <!-- 快捷打开面板（一个可拖拽/可缩放框，框内按分组分区展示全部快捷项；「显示」面板开关控制显隐） -->
       <QuickFolderPanel
         v-if="modules.quickFolders"
         :folders="quickFolders"
+        :groups="quickGroups"
         :canvas="getCanvas"
         :pos="qfPanelPos ?? qfDefaultPos()"
         :size="qfPanelSize"
@@ -208,6 +217,11 @@
         @open="openFolder"
         @remove="requestRemoveFolder"
         @add="addQuickFolders"
+        @add-group="addQuickGroup"
+        @rename-group="renameQuickGroup"
+        @delete-group="requestDeleteGroup"
+        @move-to-group="moveQuickFolderToGroup"
+        @move-across="moveQuickFolderAcross"
         @reorder="reorderQuickFolders"
         @rename="renameQuickFolder"
         @drag-end="persistQfPanelPos"
@@ -223,7 +237,10 @@
     >
       <p class="confirm-text">
         <template v-if="deleteTarget?.kind === 'folder'">
-          确定移除「{{ deleteTargetName }}」快捷方式吗？仅移除主页快捷方式，不会删除磁盘上的文件夹。
+          确定移除「{{ deleteTargetName }}」快捷方式吗？仅移除主页快捷方式，不会删除磁盘上的文件或文件夹。
+        </template>
+        <template v-else-if="deleteTarget?.kind === 'group'">
+          确定删除分组「{{ deleteTargetName }}」吗？组内快捷项将移至未分组，不会删除磁盘上的文件或文件夹。
         </template>
         <template v-else>
           确定删除这条{{ deleteTarget?.kind === 'snippet' ? '片段' : deleteTarget?.kind === 'note' ? '便利贴' : '记录' }}吗？此操作不可恢复。
@@ -269,7 +286,8 @@ import {
   GripVertical,
   Pencil,
   FolderPlus,
-  Download
+  Download,
+  ZoomIn
 } from '@lucide/vue'
 import type { Component } from 'vue'
 import { useRouter } from 'vue-router'
@@ -295,7 +313,8 @@ import type {
   StickyNoteColor,
   CategoryItem,
   LegacyImportState,
-  QuickFolder
+  QuickFolder,
+  QuickFolderGroup
 } from '@preload/ipc'
 
 const toast = useToast()
@@ -502,8 +521,8 @@ let copiedTimer: ReturnType<typeof setTimeout> | null = null
 let searchTimer: ReturnType<typeof setTimeout> | null = null
 /** 单条删除确认 */
 const deleteTarget = ref<{
-  kind: 'history' | 'snippet' | 'note' | 'folder'
-  item: HistoryItem | FavoriteItem | StickyNote | QuickFolder
+  kind: 'history' | 'snippet' | 'note' | 'folder' | 'group'
+  item: HistoryItem | FavoriteItem | StickyNote | QuickFolder | QuickFolderGroup
 } | null>(null)
 const deleteConfirm = ref(false)
 
@@ -534,16 +553,18 @@ const deleteDialogTitle = computed(() =>
     : deleteTarget.value?.kind === 'note'
       ? '删除便利贴'
       : deleteTarget.value?.kind === 'folder'
-        ? '移除快捷文件夹'
-        : '删除记录'
+        ? '移除快捷打开'
+        : deleteTarget.value?.kind === 'group'
+          ? '删除分组'
+          : '删除记录'
 )
 
-/** 删除/移除确认弹窗中需要展示的名称（快捷文件夹：别名优先，回退文件夹名） */
+/** 删除/移除确认弹窗中需要展示的名称（快捷打开：别名优先，回退文件名/文件夹名；分组：分组名） */
 const deleteTargetName = computed(() => {
   const t = deleteTarget.value
-  return t?.kind === 'folder'
-    ? (t.item as QuickFolder).alias || (t.item as QuickFolder).name
-    : ''
+  if (t?.kind === 'folder') return (t.item as QuickFolder).alias || (t.item as QuickFolder).name
+  if (t?.kind === 'group') return (t.item as QuickFolderGroup).name
+  return ''
 })
 
 /** 快捷入口卡（图标 + 名称 + 动作）；「下载管理」按模块显隐开关（modules.downloadManager）决定是否展示 */
@@ -560,7 +581,7 @@ const entries = computed<Array<{ label: string; icon: Component; action: () => v
       action: openCreateSnippet
     },
     {
-      label: '快捷文件夹',
+      label: '快捷打开',
       icon: FolderPlus,
       action: addQuickFolders
     }
@@ -608,6 +629,14 @@ function rowDelay(index: number): Record<string, string> {
 /** 剪贴板图片协议 URL（渲染端 <img> 直接引用，免 base64 过 IPC） */
 function imageUrl(filename: string): string {
   return `prism-image://clipboard-images/${filename}`
+}
+
+/** 用系统默认看图程序打开剪贴板图片文件 */
+async function previewImage(item: HistoryItem): Promise<void> {
+  const r = await window.electronAPI.clipboard.openImage(item.content)
+  if (!r.ok) {
+    toast.error(`打开图片失败：${r.error ?? '未知错误'}`)
+  }
 }
 
 async function fetchRecent(): Promise<void> {
@@ -703,31 +732,77 @@ async function persistNoteSize(payload: { id: number; w: number; h: number }): P
 // 快捷文件夹
 // ---------------------------------------------------------------------------
 
-/** 主页快捷文件夹列表（面板内列表行展示） */
+/** 主页快捷打开列表（面板内按分组分区展示） */
 const quickFolders = ref<QuickFolder[]>([])
+/** 快捷打开分组（自定义分类） */
+const quickGroups = ref<QuickFolderGroup[]>([])
 
 async function fetchQuickFolders(): Promise<void> {
-  quickFolders.value = await window.electronAPI.quickFolders.getFolders()
+  const [groups, folders] = await Promise.all([
+    window.electronAPI.quickFolders.getGroups(),
+    window.electronAPI.quickFolders.getFolders()
+  ])
+  quickGroups.value = groups
+  quickFolders.value = folders
 }
 
-/** 点击「快捷文件夹」入口：弹出系统文件夹多选框（多选）并添加 */
+/** 点击「快捷打开」入口：弹出系统文件/文件夹多选框（多选）并添加 */
 async function addQuickFolders(): Promise<void> {
   const before = quickFolders.value.length
   quickFolders.value = await window.electronAPI.quickFolders.addFolders()
   const added = quickFolders.value.length - before
-  if (added > 0) toast.success(`已添加 ${added} 个快捷文件夹`)
+  if (added > 0) toast.success(`已添加 ${added} 个快捷打开`)
 }
 
-/** 面板内行拖拽排序：持久化并同步本地列表顺序 */
-async function reorderQuickFolders(orderedIds: number[]): Promise<void> {
-  await window.electronAPI.quickFolders.reorder(orderedIds)
-  const byId = new Map(quickFolders.value.map((f) => [f.id, f]))
-  quickFolders.value = orderedIds
-    .map((id) => byId.get(id))
-    .filter((f): f is QuickFolder => Boolean(f))
+/** 新建分组（默认名「新建分组」，可随后点分组名重命名） */
+async function addQuickGroup(): Promise<void> {
+  quickGroups.value = await window.electronAPI.quickFolders.addGroup('新建分组')
+  toast.success('已新建分组，可点分组名重命名')
 }
 
-/** 行内重命名：设置别名（null=清除，回退到文件夹名）并同步本地 */
+/** 重命名分组：持久化并同步本地 */
+async function renameQuickGroup(payload: { id: number; name: string }): Promise<void> {
+  quickGroups.value = await window.electronAPI.quickFolders.renameGroup(payload.id, payload.name)
+}
+
+/** 删除分组（组内条目移回未分组）：进入确认弹窗 */
+function requestDeleteGroup(id: number): void {
+  const g = quickGroups.value.find((x) => x.id === id)
+  if (!g) return
+  deleteTarget.value = { kind: 'group', item: g }
+  deleteConfirm.value = true
+}
+
+/** 把快捷项移入分组（groupId=null 移回未分组）：持久化并同步本地 */
+async function moveQuickFolderToGroup(payload: {
+  id: number
+  groupId: number | null
+}): Promise<void> {
+  await window.electronAPI.quickFolders.moveToGroup(payload.id, payload.groupId)
+  quickFolders.value = await window.electronAPI.quickFolders.getFolders()
+}
+
+/** 跨组拖拽：先归入目标组（末尾），再按拖拽后的目标组顺序重排 */
+async function moveQuickFolderAcross(payload: {
+  id: number
+  groupId: number | null
+  orderedIds: number[]
+}): Promise<void> {
+  await window.electronAPI.quickFolders.moveToGroup(payload.id, payload.groupId)
+  await window.electronAPI.quickFolders.reorder(payload.orderedIds)
+  quickFolders.value = await window.electronAPI.quickFolders.getFolders()
+}
+
+/** 组内行拖拽排序：持久化并同步本地列表顺序 */
+async function reorderQuickFolders(payload: {
+  groupId: number | null
+  orderedIds: number[]
+}): Promise<void> {
+  await window.electronAPI.quickFolders.reorder(payload.orderedIds)
+  quickFolders.value = await window.electronAPI.quickFolders.getFolders()
+}
+
+/** 行内重命名：设置别名（null=清除，回退到文件/文件夹名）并同步本地 */
 async function renameQuickFolder(payload: { id: number; alias: string | null }): Promise<void> {
   await window.electronAPI.quickFolders.setAlias(payload.id, payload.alias)
   const f = quickFolders.value.find((x) => x.id === payload.id)
@@ -735,9 +810,9 @@ async function renameQuickFolder(payload: { id: number; alias: string | null }):
 }
 
 // ---------------------------------------------------------------------------
-// 拖放添加：从资源管理器拖文件夹到主页画布即添加快捷入口
+// 拖放添加：从资源管理器拖文件/文件夹到主页画布即添加快捷入口
 // ---------------------------------------------------------------------------
-/** 是否有文件夹拖入画布（显示提示遮罩） */
+/** 是否有文件/文件夹拖入画布（显示提示遮罩） */
 const dropActive = ref(false)
 /** dragenter/dragleave 配平计数：避免在子元素间移动时遮罩闪烁 */
 let dragDepth = 0
@@ -764,8 +839,8 @@ async function onCanvasDrop(e: DragEvent): Promise<void> {
   const before = quickFolders.value.length
   quickFolders.value = await window.electronAPI.quickFolders.addFoldersByPaths(paths)
   const added = quickFolders.value.length - before
-  if (added > 0) toast.success(`已添加 ${added} 个快捷文件夹`)
-  else toast.info('所选路径中没有新的有效文件夹')
+  if (added > 0) toast.success(`已添加 ${added} 个快捷打开`)
+  else toast.info('所选路径中没有新的有效文件或文件夹')
 }
 
 // ---------------------------------------------------------------------------
@@ -777,7 +852,7 @@ let flashTimer: ReturnType<typeof setTimeout> | null = null
 /** 双击去重：同一卡片 300ms 内的重复打开请求只执行一次（单击+双击叠加会连发多次） */
 const lastOpen = ref<{ id: number; at: number } | null>(null)
 
-/** 在系统资源管理器中打开文件夹（失效路径不响应） */
+/** 打开文件/文件夹（文件夹在资源管理器、文件用默认应用；失效路径不响应） */
 async function openFolder(folder: QuickFolder): Promise<void> {
   if (folder.missing) return
   const now = Date.now()
@@ -786,7 +861,7 @@ async function openFolder(folder: QuickFolder): Promise<void> {
 
   const r = await window.electronAPI.quickFolders.openFolder(folder.path)
   if (!r.ok) {
-    toast.error(`打开文件夹失败：${r.error ?? '未知错误'}`)
+    toast.error(`打开失败：${r.error ?? '未知错误'}`)
     return
   }
   // 成功：卡片短暂高亮 + Toast 反馈
@@ -979,7 +1054,13 @@ async function confirmDelete(): Promise<void> {
   } else if (target.kind === 'folder') {
     await window.electronAPI.quickFolders.deleteFolder(target.item.id)
     quickFolders.value = quickFolders.value.filter((f) => f.id !== target.item!.id)
-    toast.success('已移除快捷文件夹')
+    toast.success('已移除快捷打开')
+  } else if (target.kind === 'group') {
+    const g = target.item as QuickFolderGroup
+    quickGroups.value = await window.electronAPI.quickFolders.deleteGroup(g.id)
+    // 组内条目已移回未分组：同步刷新列表
+    quickFolders.value = await window.electronAPI.quickFolders.getFolders()
+    toast.success('已删除分组')
   } else {
     await window.electronAPI.stickyNotes.deleteNote(target.item.id)
     pinnedNotes.value = pinnedNotes.value.filter((n) => n.id !== target.item!.id)
