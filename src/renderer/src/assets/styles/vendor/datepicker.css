@@ -1,0 +1,173 @@
+/*
+ * 第三方组件库主题桥接：@vuepic/vue-datepicker → 项目 token（唯一落点）。
+ *
+ * 为什么在全局而不是组件 scoped：日历面板经 teleport 挂到 <body>，已脱离组件 DOM 树，
+ * scoped 属性选择器命中不到；组件库自身的 .dp--* 类名也只能全局覆盖。
+ * 引入顺序：main.ts 里必须排在 `@vuepic/vue-datepicker/dist/main.css` 之后。
+ *
+ * 组件库自带 light/dark 两套 Material 风格变量，这里把两套都指向项目 token：
+ * 项目已按 data-theme 切换 token，因此无需给组件传 dark 开关即可自动跟随全部主题。
+ */
+
+/* ---------- 1. 变量桥接（颜色 / 字体 / 形状 / 密度） ---------- */
+.dp--theme-light,
+.dp--theme-dark {
+  /* 颜色 */
+  --dp-background-color: var(--bg-surface);
+  --dp-text-color: var(--text-primary);
+  --dp-hover-color: var(--bg-hover);
+  --dp-hover-text-color: var(--text-primary);
+  --dp-hover-icon-color: var(--text-secondary);
+  --dp-primary-color: var(--brand);
+  --dp-primary-disabled-color: color-mix(in srgb, var(--brand) 40%, var(--bg-surface));
+  --dp-primary-text-color: var(--text-on-primary);
+  --dp-secondary-color: var(--text-muted);
+  --dp-border-color: var(--border);
+  --dp-menu-border-color: var(--border);
+  --dp-border-color-hover: var(--text-muted);
+  --dp-border-color-focus: var(--brand);
+  --dp-disabled-color: var(--bg-selected-subtle);
+  --dp-disabled-color-text: var(--text-muted);
+  --dp-scroll-bar-background: transparent;
+  --dp-scroll-bar-color: var(--border);
+  --dp-icon-color: var(--text-muted);
+  --dp-danger-color: var(--danger);
+  --dp-marker-color: var(--brand);
+  --dp-tooltip-color: var(--bg-surface);
+  --dp-highlight-color: color-mix(in srgb, var(--brand) 12%, transparent);
+  --dp-range-between-dates-background-color: color-mix(in srgb, var(--brand) 10%, transparent);
+  --dp-range-between-dates-text-color: var(--text-primary);
+  --dp-range-between-border-color: transparent;
+  --dp-loader: 5px solid var(--brand);
+
+  /* 字体 */
+  --dp-font-family: var(--font-sans);
+  --dp-font-size: var(--text-md);
+  --dp-preview-font-size: var(--text-sm);
+  --dp-time-font-size: var(--text-sm);
+
+  /* 形状与动效（显式列属性，替代库自带的 transition: all）。
+     单元格药丸形：区间端点成圆、色带直边衔接，与设计系统药丸语言一致 */
+  --dp-border-radius: var(--radius-sm);
+  --dp-cell-border-radius: var(--radius-pill);
+  --dp-common-transition: background-color var(--duration-fast) var(--ease-out-soft),
+    color var(--duration-fast) var(--ease-out-soft), border-color var(--duration-fast) var(--ease-out-soft);
+  --dp-animation-duration: var(--duration-base);
+  --dp-menu-appear-transition-timing: var(--ease-out-soft);
+  --dp-transition-timing: var(--ease-out-soft);
+  --dp-transition-timing-general: var(--duration-fast);
+  --dp-transition-length: 10px;
+
+  /* 密度：紧凑但保持 34px 触摸热区 */
+  --dp-cell-size: 34px;
+  --dp-cell-padding: 0;
+  --dp-common-padding: var(--sp-2);
+  --dp-menu-padding: var(--sp-3);
+  --dp-calendar-wrap-padding: 0;
+  --dp-month-year-row-height: 32px;
+  --dp-month-year-row-button-size: 30px;
+  --dp-button-height: 30px;
+  --dp-button-icon-height: 15px;
+  --dp-calendar-header-cell-padding: var(--sp-2) 0;
+  --dp-row-margin: 2px 0;
+  --dp-multi-calendars-spacing: var(--sp-4);
+  --dp-two-calendars-spacing: var(--sp-4);
+  --dp-overlay-col-padding: 2px;
+
+  /* 触发器（原生输入框）：左内边距与图标区（14px 图标 + 2×11px）精确对位 */
+  --dp-input-padding: 0 var(--sp-3) 0 36px;
+  --dp-input-icon-padding: 36px;
+  --dp-input-not-clearable-padding: var(--sp-3);
+}
+
+/* ---------- 2. 触发器：与 UiInput / 药丸筛选控件同高同形 ---------- */
+.dp--input {
+  height: 30px;
+  border-radius: var(--radius-pill);
+  font-size: var(--text-md);
+  text-overflow: ellipsis;
+  cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease-out-soft),
+    background-color var(--duration-fast) var(--ease-out-soft),
+    box-shadow var(--duration-fast) var(--ease-out-soft);
+}
+
+.dp--input::placeholder {
+  color: var(--text-muted);
+  opacity: 1;
+}
+
+.dp--input-focus {
+  border-color: var(--brand);
+  box-shadow: var(--ring);
+}
+
+/* 前置日历图标：与输入框 padding-left（36px）对位，垂直居中 */
+.dp--input-icons {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+  padding: 0 11px;
+  font-size: var(--text-md);
+  line-height: 1;
+}
+
+.dp--input-icon {
+  color: var(--text-muted);
+}
+
+/* ---------- 3. 面板：卡片级圆角 + 柔和弥散阴影（纯日历，无操作行） ---------- */
+.dp--menu {
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+}
+
+/* auto-apply 下操作行所有按钮均已隐藏，整行不再占据空档 */
+.dp--action-row {
+  display: none;
+}
+
+/* ---------- 4. 日历：表头/今天/区间色带 ---------- */
+.dp--month-year-select-base {
+  font-size: var(--text-base);
+  font-weight: var(--font-semibold);
+}
+
+/* 星期表头：弱化为静音小字，不画分隔线（两份日历共享同一根视觉基线） */
+.dp--calendar-header-cell {
+  border-bottom: none;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+}
+
+.dp--calendar-item {
+  font-size: var(--text-md);
+}
+
+/* 相邻月补位日期：降一级透明度，与本月日期拉开层次 */
+.dp--cell-offset {
+  color: var(--text-muted);
+  opacity: 0.55;
+}
+
+/* 今天：品牌色描边 + 品牌色字，不填充（避免与选中的实底态混淆） */
+.dp--today {
+  border-color: var(--brand);
+  color: var(--brand);
+  font-weight: var(--font-semibold);
+}
+
+/* 区间色带：品牌色 10% 透明底，比库默认的灰底更明确「这是一段范围」 */
+.dp--cell-in-between,
+.dp--range-between {
+  background: color-mix(in srgb, var(--brand) 10%, transparent);
+  color: var(--text-primary);
+  border-color: transparent;
+}
+
+/* 区间预览：虚线边框换成品牌色实线细边，弱化但可辨 */
+.dp--range-preview {
+  border-top: 1px solid var(--brand);
+  border-bottom: 1px solid var(--brand);
+}

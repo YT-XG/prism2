@@ -75,26 +75,11 @@
       </div>
       <!-- 日期区间筛选（选择态隐藏，聚焦批量操作） -->
       <div v-if="!selectMode" class="cm-toolbar-row cm-datefilter">
-        <span class="cm-datefilter__label">日期</span>
-        <div class="cm-daterange" role="group" aria-label="日期区间">
-          <UiInput
-            type="date"
-            v-model="dateFrom"
-            aria-label="开始日期"
-            class="cm-daterange__input"
-          >
-            <template #leading><Calendar :size="14" :stroke-width="1.6" /></template>
-          </UiInput>
-          <span class="cm-daterange__sep" aria-hidden="true">至</span>
-          <UiInput
-            type="date"
-            v-model="dateTo"
-            aria-label="结束日期"
-            class="cm-daterange__input"
-          >
-            <template #leading><Calendar :size="14" :stroke-width="1.6" /></template>
-          </UiInput>
-        </div>
+        <UiDateRangePicker
+          v-model:from="dateFrom"
+          v-model:to="dateTo"
+          class="cm-datefilter__picker"
+        />
         <UiButton
           v-if="dateFrom || dateTo"
           variant="ghost"
@@ -104,6 +89,19 @@
         >
           <RotateCcw :size="13" :stroke-width="1.6" /> 清除
         </UiButton>
+        <!-- 常用快捷区间：右侧浅色药丸组，点击即填起止并触发查询 -->
+        <div class="cm-presets" role="group" aria-label="常用日期区间">
+          <button
+            v-for="p in presets"
+            :key="p.key"
+            type="button"
+            class="cm-preset num"
+            :class="{ 'is-active': isPresetActive(p.key) }"
+            @click="applyPreset(p.key)"
+          >
+            {{ p.label }}
+          </button>
+        </div>
         <!-- 库内实际数据跨度：让用户知道最早/最晚记录时间，点击一键填入完整范围 -->
         <button
           v-if="timeRange.from != null && timeRange.to != null"
@@ -384,7 +382,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
-import { History, Star, Search, Plus, Trash2, Pencil, Check, SquareCheckBig, X, ZoomIn, ChevronDown, RotateCcw, Calendar, CalendarRange } from '@lucide/vue'
+import { History, Star, Search, Plus, Trash2, Pencil, Check, SquareCheckBig, X, ZoomIn, ChevronDown, RotateCcw, CalendarRange } from '@lucide/vue'
 import UiPillTab from '@renderer/components/ui/UiPillTab.vue'
 import UiInput from '@renderer/components/ui/UiInput.vue'
 import UiButton from '@renderer/components/ui/UiButton.vue'
@@ -392,6 +390,7 @@ import UiEmptyState from '@renderer/components/ui/UiEmptyState.vue'
 import UiDialog from '@renderer/components/ui/UiDialog.vue'
 import UiSwitch from '@renderer/components/ui/UiSwitch.vue'
 import UiSelect from '@renderer/components/ui/UiSelect.vue'
+import UiDateRangePicker from '@renderer/components/ui/UiDateRangePicker.vue'
 import SnippetEditorDialog from '@renderer/components/SnippetEditorDialog.vue'
 import ClipboardHistoryEditorDialog from '@renderer/components/ClipboardHistoryEditorDialog.vue'
 import { subscribeOnUnmounted } from '@renderer/composables/useIpcListener'
@@ -415,6 +414,66 @@ const dateFrom = ref('')
 const dateTo = ref('')
 /** 库内历史记录实际时间跨度（最早/最晚记录；空库为 null），用于日期筛选行提示与一键填入 */
 const timeRange = ref<{ from: number | null; to: number | null }>({ from: null, to: null })
+
+// ---------------------------------------------------------------------------
+// 常用日期区间快捷键（工具栏药丸组；range 惰性求值，跨零点后仍取当下）
+// ---------------------------------------------------------------------------
+type PresetKey = 'today' | 'last7' | 'last30' | 'thisMonth' | 'last3m'
+
+/** 本地日期 → 'YYYY-MM-DD'（与查询区间同源） */
+function fmtDate(d: Date): string {
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
+function addDays(base: Date, n: number): Date {
+  const d = new Date(base)
+  d.setDate(d.getDate() + n)
+  return d
+}
+
+const pair = (a: Date, b: Date): [string, string] => [fmtDate(a), fmtDate(b)]
+
+const presets: Array<{ key: PresetKey; label: string; range: () => [string, string] }> = [
+  { key: 'today', label: '今天', range: () => pair(new Date(), new Date()) },
+  { key: 'last7', label: '近 7 天', range: () => pair(addDays(new Date(), -6), new Date()) },
+  { key: 'last30', label: '近 30 天', range: () => pair(addDays(new Date(), -29), new Date()) },
+  {
+    key: 'thisMonth',
+    label: '本月',
+    range: () => {
+      const t = new Date()
+      return pair(new Date(t.getFullYear(), t.getMonth(), 1), t)
+    }
+  },
+  {
+    key: 'last3m',
+    label: '近 3 个月',
+    range: () => {
+      const t = new Date()
+      return pair(new Date(t.getFullYear(), t.getMonth() - 3, t.getDate()), t)
+    }
+  }
+]
+
+function findPreset(key: PresetKey): (typeof presets)[number] | undefined {
+  return presets.find((p) => p.key === key)
+}
+
+/** 当前起止日期与该预设完全一致时高亮 */
+function isPresetActive(key: PresetKey): boolean {
+  const p = findPreset(key)
+  if (!p) return false
+  const [from, to] = p.range()
+  return dateFrom.value === from && dateTo.value === to
+}
+
+function applyPreset(key: PresetKey): void {
+  const p = findPreset(key)
+  if (!p) return
+  const [from, to] = p.range()
+  dateFrom.value = from
+  dateTo.value = to
+}
 /** 按日折叠：已折叠的日 key（toDayKey 产出）集合 */
 const collapsedDays = ref<Set<string>>(new Set())
 const favKeyword = ref('')
@@ -1099,8 +1158,10 @@ onBeforeUnmount(() => {
   gap: var(--sp-3);
 }
 
+/* 工具栏搜索框：宽屏下限制阅读宽度，避免控件被拉伸成一条空长的横杠 */
 .cm-toolbar .ui-input {
   flex: 1;
+  max-width: 460px;
 }
 
 .cm-select-btn {
@@ -1115,87 +1176,55 @@ onBeforeUnmount(() => {
   color: var(--text-secondary);
 }
 
-/* 日期区间筛选行（历史页工具栏第二行） */
+/* 日期区间筛选行（历史页工具栏第二行）：单颗药丸触发自绘日历面板 */
 .cm-datefilter {
   align-items: center;
   gap: var(--sp-2);
+  flex-wrap: wrap;
 }
 
-.cm-datefilter__label {
+.cm-datefilter__picker {
   flex-shrink: 0;
+}
+
+/* 常用快捷区间：淡色药丸组，选中态品牌色描边（过滤态用轻强调，不及导航激活的重） */
+.cm-presets {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.cm-preset {
+  height: 28px;
+  padding: 0 var(--sp-3);
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
+  background: transparent;
   font-size: var(--text-sm);
-  font-weight: 500;
   color: var(--text-secondary);
   white-space: nowrap;
-}
-
-/* 日期区间：单一描边容器 + 内部无边框字段，视觉上是一个范围控件整体。
-   空闲态与搜索输入同为白底描边，避免灰底控件显得「已填充/可编辑」 */
-.cm-daterange {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  padding: 3px;
-  background: var(--bg-surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  transition: border-color var(--duration-fast) var(--ease-out-soft),
-    box-shadow var(--duration-fast) var(--ease-out-soft);
-}
-
-.cm-daterange:hover {
-  border-color: var(--text-muted);
-}
-
-.cm-daterange:focus-within {
-  border-color: var(--brand);
-  box-shadow: var(--ring);
-}
-
-.cm-daterange .cm-daterange__input {
-  width: 150px;
-  flex-shrink: 0;
-}
-
-/* 组内字段去边框扁平化；hover/聚焦的单字段浮起浅底，表明当前面板归属 */
-.cm-daterange :deep(.ui-input) {
-  height: 28px;
-  padding: 0 var(--sp-2);
-  background: transparent;
-  border: none;
-  box-shadow: none;
-  border-radius: var(--radius-sm);
-}
-
-.cm-daterange :deep(.ui-input:hover) {
-  background: var(--bg-selected-subtle);
-}
-
-.cm-daterange :deep(.ui-input:focus-within) {
-  background: var(--bg-selected-subtle);
-}
-
-.cm-daterange :deep(.ui-input__leading) {
-  color: var(--text-muted);
-}
-
-.cm-daterange :deep(.ui-input input) {
   cursor: pointer;
-  font-size: var(--text-sm);
+  transition: background-color var(--duration-fast) var(--ease-out-soft),
+    color var(--duration-fast) var(--ease-out-soft),
+    border-color var(--duration-fast) var(--ease-out-soft);
+}
+
+.cm-preset:hover {
+  background: var(--bg-hover);
   color: var(--text-primary);
 }
 
-/* 隐藏浏览器默认日历指示器，改由前置日历图标表达；点击整行经 UiInput.showPicker() 唤出面板 */
-.cm-daterange :deep(.ui-input input::-webkit-calendar-picker-indicator) {
-  display: none;
+.cm-preset.is-active {
+  background: var(--bg-selected-subtle);
+  border-color: color-mix(in srgb, var(--brand) 35%, transparent);
+  color: var(--brand);
+  font-weight: 500;
 }
 
-.cm-daterange__sep {
-  flex-shrink: 0;
-  padding: 0 var(--sp-1);
-  font-size: var(--text-sm);
-  color: var(--text-muted);
-  user-select: none;
+.cm-preset:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
 }
 
 .cm-datefilter__clear {
@@ -1299,12 +1328,6 @@ onBeforeUnmount(() => {
   gap: var(--sp-3);
 }
 
-.cm-fav-list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-3);
-}
-
 /* 片段列表底部哨兵（滚动到底自动加载下一页）：轻量占位，不参与交互 */
 .cm-fav-sentinel {
   display: flex;
@@ -1371,10 +1394,14 @@ onBeforeUnmount(() => {
   background: var(--bg-selected-subtle);
 }
 
-.cm-day__cards {
-  display: flex;
-  flex-direction: column;
+/* 卡片区：自适应多列网格 —— 宽屏一屏容纳多条记录（单列满宽会让右侧大片留空、
+   且正文行宽远超舒适阅读长度）；卡片等高、操作区贴底对齐，视觉成行 */
+.cm-day__cards,
+.cm-fav-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
   gap: var(--sp-3);
+  align-items: stretch;
 }
 
 /* 卡片列表过渡（TransitionGroup）：
@@ -1399,6 +1426,9 @@ onBeforeUnmount(() => {
 
 .cm-card {
   position: relative;
+  /* 网格内等高：纵向弹性布局，页脚贴底对齐（同行卡片的操作区在同一水平线） */
+  display: flex;
+  flex-direction: column;
   padding: var(--sp-4);
   border-radius: var(--radius-md);
   border: 1px solid var(--border);
@@ -1408,7 +1438,7 @@ onBeforeUnmount(() => {
     border-color var(--duration-base) var(--ease-out-soft);
   /* 长列表原生虚拟化：未进入视口的卡片跳过布局/绘制，显著降大列表渲染与内存 */
   content-visibility: auto;
-  contain-intrinsic-size: auto 88px;
+  contain-intrinsic-size: auto 112px;
 }
 
 /* 顶部品牌色细高光条：hover 时浮现，营造"面板"层次 */
@@ -1576,7 +1606,9 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-top: var(--sp-3);
+  /* 等高卡片：页脚推到卡片底部，同行卡片的时间/操作区对齐 */
+  margin-top: auto;
+  padding-top: var(--sp-3);
 }
 
 .cm-card__time {

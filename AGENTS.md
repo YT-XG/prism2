@@ -62,7 +62,7 @@ src/
 │   ├── index.d.ts
 └── renderer/src/
     ├── assets/styles/            # tokens.css / animations.css / main.css
-    ├── components/ui/            # 设计系统组件层（含 RichTextEditor.vue 富文本编辑器、StatusCenter.vue 全局状态中心（标题栏品牌区后统一呈现邮箱同步/应用报错/软件更新/toast 状态条目，独立搜索窗退化为右上角浮动、通知浮窗不显示）、UiShortcutRecorder.vue 快捷键录制组件（点击录制组合键，Esc 取消 / Backspace 清除，录制期间经 settings.suspendShortcuts 暂停全局快捷键））
+    ├── components/ui/            # 设计系统组件层（含 RichTextEditor.vue 富文本编辑器、StatusCenter.vue 全局状态中心（标题栏品牌区后统一呈现邮箱同步/应用报错/软件更新/toast 状态条目，独立搜索窗退化为右上角浮动、通知浮窗不显示）、UiShortcutRecorder.vue 快捷键录制组件（点击录制组合键，Esc 取消 / Backspace 清除，录制期间经 settings.suspendShortcuts 暂停全局快捷键）、UiDateRangePicker.vue 日期区间选择器（@vuepic/vue-datepicker 收口封装：--dp-* 变量经 assets/styles/vendor/datepicker.css 整组桥接到项目 token，双月日历随五套主题自动换肤；对外只暴露 'YYYY-MM-DD' 字符串，常用快捷区间由页面工具栏药丸组承担））
     ├── components/FeatureSearchPanel.vue  # 功能搜索命令面板（Ctrl/Cmd+K 独立搜索窗 SearchFrame 与主页内嵌共用；功能跳转 + 剪贴板/片段/快捷打开数据搜索，文件/文件夹回车即在系统打开；剪贴板历史结果条目下自动展示分词胶囊（splitWords），点某词即只粘贴该词；standalone 模式铺满独立窗、失焦自动隐藏、开关无过渡，重开由主进程 SearchFrame 每次显示时发的 show 事件（onSearchShow）显式驱动，不依赖 visibilitychange；与主页合并记录框共用同一全局搜索逻辑 useGlobalSearch）
     ├── components/HomeNoteCard.vue        # 贴到主页的便利贴可拖拽卡片
     ├── components/QuickFolderPanel.vue    # 主页快捷打开单面板（可拖拽/缩放，框内按自定义分组分区展示 + 分组折叠/组头重命名删除 + 文件/文件夹图标区分 + 组内行拖拽排序/跨组拖拽归组 + 行内「移动到分组」菜单 + 行内重命名别名 + 失效标记 + 空态引导）
