@@ -15,6 +15,7 @@ import type {
   BackupInspectResult,
   BackupSection,
   ClipboardRetention,
+  ClipboardTimeRange,
   ClipboardOpenImageResult,
   DiskScanProgress,
   DiskScanResult,
@@ -146,8 +147,8 @@ const electronAPI: ElectronAPI = {
   },
 
   clipboard: {
-    getHistory: (limit?: number, offset?: number) =>
-      ipcRenderer.invoke(C.getHistory, limit, offset) as Promise<HistoryItem[]>,
+    getHistory: (limit?: number, offset?: number, range?: { from?: number; to?: number }) =>
+      ipcRenderer.invoke(C.getHistory, limit, offset, range) as Promise<HistoryItem[]>,
     searchHistory: (keyword: string) => ipcRenderer.invoke(C.searchHistory, keyword) as Promise<HistoryItem[]>,
     deleteHistory: (id: number) => ipcRenderer.invoke(C.deleteHistory, id) as Promise<void>,
     deleteHistoryBatch: (ids: number[]) =>
@@ -156,6 +157,8 @@ const electronAPI: ElectronAPI = {
     updateHistoryContent: (id: number, content: string) =>
       ipcRenderer.invoke(C.updateHistory, id, content) as Promise<boolean>,
     getHistoryCount: () => ipcRenderer.invoke(C.getHistoryCount) as Promise<number>,
+    getHistoryTimeRange: () =>
+      ipcRenderer.invoke(C.getHistoryTimeRange) as Promise<ClipboardTimeRange>,
     getRetentionState: () => ipcRenderer.invoke(C.getRetentionState) as Promise<ClipboardRetention>,
     setRetentionState: (partial: Partial<ClipboardRetention>) =>
       ipcRenderer.invoke(C.setRetentionState, partial) as Promise<void>,

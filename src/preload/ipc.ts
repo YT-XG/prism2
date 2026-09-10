@@ -29,6 +29,12 @@ export interface ClipboardOpenImageResult {
   error?: string
 }
 
+/** 历史记录实际时间跨度（最早/最晚记录的毫秒时间戳；空库对应字段为 null） */
+export interface ClipboardTimeRange {
+  from: number | null
+  to: number | null
+}
+
 /** 片段内容类型：文本 / 富文本（richtext 的 content 为 HTML） */
 export type FavoriteItemType = 'text' | 'richtext'
 
@@ -945,6 +951,7 @@ export const SERVICE_CHANNELS = {
     clearHistory: 'to-service-ClipboardService:clearHistory',
     updateHistory: 'to-service-ClipboardService:updateHistoryContent',
     getHistoryCount: 'to-service-ClipboardService:getHistoryCount',
+    getHistoryTimeRange: 'to-service-ClipboardService:getHistoryTimeRange',
     getRetentionState: 'to-service-ClipboardService:getRetentionState',
     setRetentionState: 'to-service-ClipboardService:setRetentionState',
     clickItem: 'to-service-ClipboardService:clickItem',
@@ -1204,7 +1211,8 @@ export interface ElectronAPI {
     openAccessibilitySettings: () => Promise<{ ok: boolean; error?: string }>
   }
   clipboard: {
-    getHistory: (limit?: number, offset?: number) => Promise<HistoryItem[]>
+    /** 历史列表（limit 条数，offset 偏移；range 可选时间区间，from/to 均为毫秒时间戳，语义含边界） */
+    getHistory: (limit?: number, offset?: number, range?: { from?: number; to?: number }) => Promise<HistoryItem[]>
     searchHistory: (keyword: string) => Promise<HistoryItem[]>
     deleteHistory: (id: number) => Promise<void>
     /** 批量删除历史记录（ids 为非法集合时静默忽略非法项） */
@@ -1213,6 +1221,8 @@ export interface ElectronAPI {
     /** 修改历史记录内容（改为富文本；图片记录不可编辑返回 false） */
     updateHistoryContent: (id: number, content: string) => Promise<boolean>
     getHistoryCount: () => Promise<number>
+    /** 历史记录实际时间跨度（最早/最晚记录时间戳），供日期筛选行展示与一键填入 */
+    getHistoryTimeRange: () => Promise<ClipboardTimeRange>
     getRetentionState: () => Promise<ClipboardRetention>
     setRetentionState: (partial: Partial<ClipboardRetention>) => Promise<void>
     /** 点击历史项：写剪贴板 → 隐藏窗口 → 恢复焦点 → 模拟粘贴（richtext 写 HTML+纯文本，保留格式） */

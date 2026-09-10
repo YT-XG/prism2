@@ -402,10 +402,32 @@ class ClipboardService extends SqliteStore {
   // 查询
   // -------------------------------------------------------------------------
 
-  getAll(limit = 50, offset = 0): HistoryItem[] {
+  getAll(limit = 50, offset = 0, range?: { from?: number; to?: number }): HistoryItem[] {
+    // 可选时间区间过滤：from 为区间起点（含），to 为区间终点（含，毫秒时间戳）
+    const conds: string[] = []
+    const params: SqlValue[] = []
+    if (range?.from != null && Number.isFinite(range.from)) {
+      conds.push('created_at >= ?')
+      params.push(range.from)
+    }
+    if (range?.to != null && Number.isFinite(range.to)) {
+      conds.push('created_at <= ?')
+      params.push(range.to)
+    }
+    const where = conds.length ? `WHERE ${conds.join(' AND ')}` : ''
+    // 日期区间为用户显式查询：返回区间内全部记录，不受分页 LIMIT 截断
+    // （否则跨多天的区间只拿到最新一页，较早日期的数据「消失」）；
+    // 无区间时维持分页，控制默认视图的 IPC 载荷大小。
+    if (conds.length) {
+      return this.all<HistoryItem>(
+        `SELECT * FROM clipboard_history ${where} ORDER BY created_at DESC`,
+        params
+      )
+    }
+    params.push(limit, offset)
     return this.all<HistoryItem>(
-      'SELECT * FROM clipboard_history ORDER BY created_at DESC LIMIT ? OFFSET ?',
-      [limit, offset]
+      `SELECT * FROM clipboard_history ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`,
+      params
     )
   }
 
@@ -420,6 +442,14 @@ class ClipboardService extends SqliteStore {
 
   getHistoryCount(): number {
     return this.one<{ count: number }>('SELECT COUNT(*) AS count FROM clipboard_history')?.count ?? 0
+  }
+
+  /** 历史记录实际时间跨度（最早/最晚记录的毫秒时间戳；空库对应字段为 null），供渲染端日期筛选参考 */
+  getHistoryTimeRange(): { from: number | null; to: number | null } {
+    const row = this.one<{ min: number | null; max: number | null }>(
+      'SELECT MIN(created_at) AS min, MAX(created_at) AS max FROM clipboard_history'
+    )
+    return { from: row?.min ?? null, to: row?.max ?? null }
   }
 
   getFavorites(limit?: number, before?: FavoritesCursor, category?: string): FavoriteItem[] {
@@ -1086,8 +1116,8 @@ class ClipboardService extends SqliteStore {
   private registerIPC(): void {
     const C = SERVICE_CHANNELS.clipboard
 
-    ipcMain.handle(C.getHistory, (_e, limit?: number, offset?: number) =>
-      this.getAll(limit ?? 50, offset ?? 0)
+    ipcMain.handle(C.getHistory, (_e, limit?: number, offset?: number, range?: { from?: number; to?: number }) =>
+      this.getAll(limit ?? 50, offset ?? 0, range)
     )
     ipcMain.handle(C.searchHistory, (_e, keyword: string) => this.search(String(keyword ?? '')))
     ipcMain.handle(C.deleteHistory, (_e, id: number) => this.delete(Number(id)))
@@ -1097,6 +1127,7 @@ class ClipboardService extends SqliteStore {
       this.updateHistoryContent(Number(id), String(content ?? ''))
     )
     ipcMain.handle(C.getHistoryCount, () => this.getHistoryCount())
+    ipcMain.handle(C.getHistoryTimeRange, () => this.getHistoryTimeRange())
     ipcMain.handle(C.getRetentionState, () => this.getRetentionState())
     ipcMain.handle(C.setRetentionState, (_e, partial: Partial<ClipboardRetention>) =>
       this.setRetentionState(partial ?? {})

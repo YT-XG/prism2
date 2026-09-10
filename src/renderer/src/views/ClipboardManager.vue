@@ -3,12 +3,21 @@
     <!-- 头部：标题 + 标签页 -->
     <header class="cm-header">
       <div class="cm-titlebar">
-        <h1 class="cm-title">剪贴板</h1>
+        <div class="cm-title-group">
+          <h1 class="cm-title">剪贴板</h1>
+          <div class="cm-tabs">
+            <UiPillTab :active="activeTab === 'history'" @click="switchTab('history')">
+              <History :size="14" :stroke-width="1.6" /> 历史记录
+            </UiPillTab>
+            <UiPillTab :active="activeTab === 'favorites'" @click="switchTab('favorites')">
+              <Star :size="14" :stroke-width="1.6" /> 片段
+            </UiPillTab>
+          </div>
+        </div>
         <div
           v-if="retentionLoaded"
           class="cm-auto-clean"
-          :class="{ 'is-off': !retention.autoClean }"
-          title="开启后自动删除超出保留期的历史记录"
+          title="先选好保留数量与单位，再开启开关；开启后自动删除超出保留期的历史记录"
         >
           <UiSwitch
             :model-value="retention.autoClean"
@@ -28,48 +37,85 @@
             @update:model-value="onUnitChange"
           />
         </div>
-        <div class="cm-tabs">
-          <UiPillTab :active="activeTab === 'history'" @click="switchTab('history')">
-            <History :size="14" :stroke-width="1.6" /> 历史记录
-          </UiPillTab>
-          <UiPillTab :active="activeTab === 'favorites'" @click="switchTab('favorites')">
-            <Star :size="14" :stroke-width="1.6" /> 片段
-          </UiPillTab>
-        </div>
       </div>
     </header>
 
     <!-- 工具栏 -->
-    <div v-if="activeTab === 'history'" class="cm-toolbar">
-      <UiInput v-model="keyword" label="搜索历史记录" placeholder="搜索历史记录...">
-        <template #leading><Search :size="15" :stroke-width="1.6" /></template>
-      </UiInput>
-      <template v-if="!selectMode">
+    <div v-if="activeTab === 'history'" class="cm-toolbar cm-toolbar--col">
+      <div class="cm-toolbar-row">
+        <UiInput v-model="keyword" label="搜索历史记录" placeholder="搜索历史记录...">
+          <template #leading><Search :size="15" :stroke-width="1.6" /></template>
+        </UiInput>
+        <template v-if="!selectMode">
+          <UiButton
+            v-if="historyList.length"
+            variant="secondary"
+            class="cm-select-btn"
+            @click="enterSelectMode"
+          >
+            <SquareCheckBig :size="14" :stroke-width="1.6" /> 选择
+          </UiButton>
+          <UiButton v-if="historyList.length" variant="danger" @click="clearConfirm = true">
+            <Trash2 :size="14" :stroke-width="1.6" /> 清空全部
+          </UiButton>
+        </template>
+        <template v-else>
+          <span class="cm-select-count num">已选 {{ selectedIds.size }} 项</span>
+          <UiButton
+            variant="danger"
+            :disabled="!selectedIds.size"
+            @click="batchDeleteConfirm = true"
+          >
+            <Trash2 :size="14" :stroke-width="1.6" /> 删除所选
+          </UiButton>
+          <UiButton variant="ghost" @click="exitSelectMode">
+            <X :size="14" :stroke-width="1.6" /> 取消
+          </UiButton>
+        </template>
+      </div>
+      <!-- 日期区间筛选（选择态隐藏，聚焦批量操作） -->
+      <div v-if="!selectMode" class="cm-toolbar-row cm-datefilter">
+        <span class="cm-datefilter__label">日期</span>
+        <div class="cm-daterange" role="group" aria-label="日期区间">
+          <UiInput
+            type="date"
+            v-model="dateFrom"
+            aria-label="开始日期"
+            class="cm-daterange__input"
+          >
+            <template #leading><Calendar :size="14" :stroke-width="1.6" /></template>
+          </UiInput>
+          <span class="cm-daterange__sep" aria-hidden="true">至</span>
+          <UiInput
+            type="date"
+            v-model="dateTo"
+            aria-label="结束日期"
+            class="cm-daterange__input"
+          >
+            <template #leading><Calendar :size="14" :stroke-width="1.6" /></template>
+          </UiInput>
+        </div>
         <UiButton
-          v-if="historyList.length"
-          variant="secondary"
-          class="cm-select-btn"
-          @click="enterSelectMode"
+          v-if="dateFrom || dateTo"
+          variant="ghost"
+          size="sm"
+          class="cm-datefilter__clear"
+          @click="clearDateFilter"
         >
-          <SquareCheckBig :size="14" :stroke-width="1.6" /> 选择
+          <RotateCcw :size="13" :stroke-width="1.6" /> 清除
         </UiButton>
-        <UiButton v-if="historyList.length" variant="danger" @click="clearConfirm = true">
-          <Trash2 :size="14" :stroke-width="1.6" /> 清空全部
-        </UiButton>
-      </template>
-      <template v-else>
-        <span class="cm-select-count num">已选 {{ selectedIds.size }} 项</span>
-        <UiButton
-          variant="danger"
-          :disabled="!selectedIds.size"
-          @click="batchDeleteConfirm = true"
+        <!-- 库内实际数据跨度：让用户知道最早/最晚记录时间，点击一键填入完整范围 -->
+        <button
+          v-if="timeRange.from != null && timeRange.to != null"
+          type="button"
+          class="cm-datespan num"
+          title="库内最早 ~ 最晚记录，点击填入完整日期范围"
+          @click="applyFullRange"
         >
-          <Trash2 :size="14" :stroke-width="1.6" /> 删除所选
-        </UiButton>
-        <UiButton variant="ghost" @click="exitSelectMode">
-          <X :size="14" :stroke-width="1.6" /> 取消
-        </UiButton>
-      </template>
+          <CalendarRange :size="12" :stroke-width="1.6" />
+          数据 {{ formatSpanDate(timeRange.from) }} ~ {{ formatSpanDate(timeRange.to) }}
+        </button>
+      </div>
     </div>
 
     <div v-else class="cm-toolbar cm-toolbar--col">
@@ -114,8 +160,28 @@
             <!-- 历史：按天分组 -->
             <template v-if="activeTab === 'history'">
               <div v-for="section in daySections" :key="section.key" class="cm-day">
-                <div class="cm-day__label">{{ section.label }}</div>
-                <TransitionGroup tag="div" name="cm-card" class="cm-day__cards">
+                <button
+                  type="button"
+                  class="cm-day__label"
+                  :aria-expanded="!collapsedDays.has(section.key)"
+                  aria-label="折叠或展开这一天的记录"
+                  @click="toggleDay(section.key)"
+                >
+                  <ChevronDown
+                    :size="13"
+                    :stroke-width="2"
+                    class="cm-day__chevron"
+                    :class="{ 'is-collapsed': collapsedDays.has(section.key) }"
+                  />
+                  <span>{{ section.label }}</span>
+                  <span class="cm-day__count num">{{ section.items.length }}</span>
+                </button>
+                <TransitionGroup
+                  v-if="!collapsedDays.has(section.key)"
+                  tag="div"
+                  name="cm-card"
+                  class="cm-day__cards"
+                >
                   <div
                     v-for="(item, index) in section.items"
                     :key="item.id"
@@ -318,7 +384,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
-import { History, Star, Search, Plus, Trash2, Pencil, Check, SquareCheckBig, X, ZoomIn } from '@lucide/vue'
+import { History, Star, Search, Plus, Trash2, Pencil, Check, SquareCheckBig, X, ZoomIn, ChevronDown, RotateCcw, Calendar, CalendarRange } from '@lucide/vue'
 import UiPillTab from '@renderer/components/ui/UiPillTab.vue'
 import UiInput from '@renderer/components/ui/UiInput.vue'
 import UiButton from '@renderer/components/ui/UiButton.vue'
@@ -344,6 +410,13 @@ const favoritesList = ref<FavoriteItem[]>([])
 const categories = ref<CategoryItem[]>([])
 const selectedCategory = ref('')
 const keyword = ref('')
+/** 日期区间筛选：原生 date 输入值（'YYYY-MM-DD'，空串表示不限） */
+const dateFrom = ref('')
+const dateTo = ref('')
+/** 库内历史记录实际时间跨度（最早/最晚记录；空库为 null），用于日期筛选行提示与一键填入 */
+const timeRange = ref<{ from: number | null; to: number | null }>({ from: null, to: null })
+/** 按日折叠：已折叠的日 key（toDayKey 产出）集合 */
+const collapsedDays = ref<Set<string>>(new Set())
 const favKeyword = ref('')
 /** 片段搜索防抖后的过滤词（避免 computed 内每键全量过滤） */
 const favFilterTerm = ref('')
@@ -469,6 +542,20 @@ function toDayLabel(ts: number): string {
   return sameYear ? `${d.getMonth() + 1}月${d.getDate()}日` : `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`
 }
 
+/** 折叠/展开某一天的记录 */
+function toggleDay(key: string): void {
+  const next = new Set(collapsedDays.value)
+  if (next.has(key)) next.delete(key)
+  else next.add(key)
+  collapsedDays.value = next
+}
+
+/** 清除日期区间筛选（置空后由 watch 触发刷新） */
+function clearDateFilter(): void {
+  dateFrom.value = ''
+  dateTo.value = ''
+}
+
 const pad = (n: number): string => String(n).padStart(2, '0')
 
 /** 卡片时钟（分组后仅显示时分） */
@@ -490,8 +577,51 @@ async function previewImage(item: DisplayItem): Promise<void> {
   }
 }
 
+/** 解析本地日期字符串 → 当日零点毫秒时间戳（非法/空返回 undefined） */
+function parseLocalDate(s: string): number | undefined {
+  if (!s) return undefined
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s)
+  if (!m) return undefined
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).getTime()
+}
+
+/** 由当前日期区间输入生成查询区间（from 含当日零点、to 含当日结尾） */
+function currentRange(): { from?: number; to?: number } {
+  const from = parseLocalDate(dateFrom.value)
+  const to = parseLocalDate(dateTo.value)
+  return {
+    from: from === undefined ? undefined : from,
+    to: to === undefined ? undefined : to + 86_400_000 - 1
+  }
+}
+
 async function fetchHistory(): Promise<void> {
-  historyList.value = await window.electronAPI.clipboard.getHistory(100, 0)
+  historyList.value = await window.electronAPI.clipboard.getHistory(100, 0, currentRange())
+}
+
+/** 拉取库内历史实际时间跨度（日期筛选行展示「数据 起 ~ 止」，并支持点击一键填入） */
+async function fetchTimeRange(): Promise<void> {
+  timeRange.value = await window.electronAPI.clipboard.getHistoryTimeRange()
+}
+
+/** 毫秒时间戳 → 原生 date 输入值 'YYYY-MM-DD' */
+function toDateInputValue(ts: number): string {
+  const d = new Date(ts)
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
+/** 跨度展示：同年省略年份（'MM-DD'），跨年带年份（'YYYY-MM-DD'） */
+function formatSpanDate(ts: number): string {
+  const d = new Date(ts)
+  const md = `${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+  return d.getFullYear() === new Date().getFullYear() ? md : `${d.getFullYear()}-${md}`
+}
+
+/** 点击数据跨度提示：把完整范围一键填入起止日期（watch 会自动按区间刷新） */
+function applyFullRange(): void {
+  if (timeRange.value.from == null || timeRange.value.to == null) return
+  dateFrom.value = toDateInputValue(timeRange.value.from)
+  dateTo.value = toDateInputValue(timeRange.value.to)
 }
 async function fetchCategories(): Promise<void> {
   categories.value = await window.electronAPI.clipboard.getCategories()
@@ -585,6 +715,12 @@ watch(keyword, (val) => {
     // 竞态守卫：仅采纳最后一次输入对应的结果
     if (seq === searchSeq) searchResults.value = results
   }, 200)
+})
+
+// 日期区间变化：清空旧的折叠态并重新按区间拉取历史
+watch([dateFrom, dateTo], () => {
+  collapsedDays.value = new Set()
+  void fetchHistory()
 })
 
 // 片段搜索防抖：与历史 keyword 一致 200ms；为空走 keyset 分页，非空走服务器检索
@@ -824,11 +960,16 @@ function formatTime(ts: number): string {
 
 onMounted(async () => {
   await fetchHistory()
+  void fetchTimeRange()
   retention.value = await window.electronAPI.clipboard.getRetentionState()
   retentionLoaded.value = true
 
   subscribeOnUnmounted(() =>
     window.electronAPI.clipboard.onNewItem((item) => {
+      // 设置了日期区间时，区间外的新复制项不插入（避免破坏按区间展示的视图）
+      const range = currentRange()
+      if (range.from !== undefined && item.created_at < range.from) return
+      if (range.to !== undefined && item.created_at > range.to) return
       // 新增或"置顶"（重复复制）：移除旧位置后插到最前
       historyList.value = historyList.value.filter((h) => h.id !== item.id)
       historyList.value.unshift(item)
@@ -836,21 +977,26 @@ onMounted(async () => {
       if (historyList.value.length > HISTORY_MAX) {
         historyList.value.length = HISTORY_MAX
       }
+      // 新复制可能刷新最晚时间，同步跨度提示（聚合查询开销极小）
+      void fetchTimeRange()
     })
   )
 
-  // 历史变更（编辑/删除/清空/导入等）：刷新列表（反映主页等处的编辑）
+  // 历史变更（编辑/删除/清空/导入等）：刷新列表与数据跨度（反映主页等处的编辑）
   subscribeOnUnmounted(() =>
     window.electronAPI.clipboard.onHistoryChanged(() => {
       void fetchHistory()
+      void fetchTimeRange()
     })
   )
 
   // 窗口重新显示时刷新当前页：隐藏期间 onlyVisible 广播被跳过，避免历史/片段停留旧数据
   subscribeOnUnmounted(() =>
     window.electronAPI.window.onWindowEvent('reShow', () => {
-      if (activeTab.value === 'history') void fetchHistory()
-      else refreshFavorites()
+      if (activeTab.value === 'history') {
+        void fetchHistory()
+        void fetchTimeRange()
+      } else refreshFavorites()
     })
   )
 })
@@ -896,26 +1042,39 @@ onBeforeUnmount(() => {
   flex-wrap: wrap;
 }
 
+/* 主区：页面标题 + 视图分段控件成组，形成清晰的「标题 / 导航」层级 */
+.cm-title-group {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
 .cm-title {
   margin: 0;
-  font-size: 20px;
+  font-size: var(--text-xl);
   font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
   white-space: nowrap;
   flex-shrink: 0;
 }
 
+/* 保留策略：收纳进一颗浅色药丸容器，与右侧设置语义一致、不与主标题抢层级 */
 .cm-auto-clean {
   display: flex;
   align-items: center;
   gap: var(--sp-2);
-}
-
-.cm-auto-clean.is-off {
-  opacity: 0.55;
+  padding: 3px var(--sp-2) 3px var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--bg-page);
+  transition: opacity var(--duration-fast) var(--ease-out-soft);
 }
 
 .cm-retention-text {
-  font-size: 12px;
+  font-size: var(--text-sm);
   color: var(--text-secondary);
   white-space: nowrap;
 }
@@ -950,8 +1109,137 @@ onBeforeUnmount(() => {
 
 .cm-select-count {
   flex-shrink: 0;
-  font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  font-size: var(--text-md);
   color: var(--text-secondary);
+}
+
+/* 日期区间筛选行（历史页工具栏第二行） */
+.cm-datefilter {
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.cm-datefilter__label {
+  flex-shrink: 0;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+/* 日期区间：单一描边容器 + 内部无边框字段，视觉上是一个范围控件整体。
+   空闲态与搜索输入同为白底描边，避免灰底控件显得「已填充/可编辑」 */
+.cm-daterange {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  transition: border-color var(--duration-fast) var(--ease-out-soft),
+    box-shadow var(--duration-fast) var(--ease-out-soft);
+}
+
+.cm-daterange:hover {
+  border-color: var(--text-muted);
+}
+
+.cm-daterange:focus-within {
+  border-color: var(--brand);
+  box-shadow: var(--ring);
+}
+
+.cm-daterange .cm-daterange__input {
+  width: 150px;
+  flex-shrink: 0;
+}
+
+/* 组内字段去边框扁平化；hover/聚焦的单字段浮起浅底，表明当前面板归属 */
+.cm-daterange :deep(.ui-input) {
+  height: 28px;
+  padding: 0 var(--sp-2);
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  border-radius: var(--radius-sm);
+}
+
+.cm-daterange :deep(.ui-input:hover) {
+  background: var(--bg-selected-subtle);
+}
+
+.cm-daterange :deep(.ui-input:focus-within) {
+  background: var(--bg-selected-subtle);
+}
+
+.cm-daterange :deep(.ui-input__leading) {
+  color: var(--text-muted);
+}
+
+.cm-daterange :deep(.ui-input input) {
+  cursor: pointer;
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+}
+
+/* 隐藏浏览器默认日历指示器，改由前置日历图标表达；点击整行经 UiInput.showPicker() 唤出面板 */
+.cm-daterange :deep(.ui-input input::-webkit-calendar-picker-indicator) {
+  display: none;
+}
+
+.cm-daterange__sep {
+  flex-shrink: 0;
+  padding: 0 var(--sp-1);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  user-select: none;
+}
+
+.cm-datefilter__clear {
+  flex-shrink: 0;
+}
+
+/* 库内数据跨度提示：右侧淡色药丸，点击把完整起止日期填入筛选框 */
+.cm-datespan {
+  margin-left: auto;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--bg-surface);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background-color var(--duration-fast) var(--ease-out-soft),
+    color var(--duration-fast) var(--ease-out-soft),
+    border-color var(--duration-fast) var(--ease-out-soft);
+}
+
+.cm-datespan svg {
+  color: var(--text-muted);
+  transition: color var(--duration-fast) var(--ease-out-soft);
+}
+
+.cm-datespan:hover {
+  color: var(--text-primary);
+  border-color: var(--text-muted);
+  background: var(--bg-hover);
+}
+
+.cm-datespan:hover svg {
+  color: var(--text-secondary);
+}
+
+.cm-datespan:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
 }
 
 .cm-toolbar-row {
@@ -1026,16 +1314,61 @@ onBeforeUnmount(() => {
   min-height: 20px;
 }
 .cm-fav-end {
-  font-size: 12px;
+  font-size: var(--text-sm);
   color: var(--text-muted);
 }
 
+/* 日期分组头：长列表滚动时吸附在列表顶部，毛玻璃底遮住下方划过的卡片 */
 .cm-day__label {
-  padding: 0 var(--sp-1) var(--sp-2);
-  font-size: 12px;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  width: 100%;
+  margin: 0;
+  padding: var(--sp-1) var(--sp-1) var(--sp-2);
+  border: none;
+  background: color-mix(in srgb, var(--bg-surface) 82%, transparent);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  font-size: var(--text-sm);
   font-weight: 600;
   color: var(--text-secondary);
+  text-align: left;
+  cursor: pointer;
   animation: fade-up var(--duration-enter) var(--ease-out-soft);
+  transition: color var(--duration-fast) var(--ease-out-soft);
+}
+
+.cm-day__label:hover {
+  color: var(--text-primary);
+}
+
+.cm-day__label:focus-visible {
+  outline: none;
+  border-radius: var(--radius-sm);
+  box-shadow: var(--ring);
+}
+
+.cm-day__chevron {
+  flex-shrink: 0;
+  transition: transform var(--duration-base) var(--ease-out-soft);
+}
+
+.cm-day__chevron.is-collapsed {
+  transform: rotate(-90deg);
+}
+
+.cm-day__count {
+  margin-left: auto;
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--text-secondary);
+  padding: 1px 8px;
+  border-radius: var(--radius-pill);
+  background: var(--bg-selected-subtle);
 }
 
 .cm-day__cards {
@@ -1102,6 +1435,13 @@ onBeforeUnmount(() => {
   opacity: 0.55;
 }
 
+/* 键盘可达：卡片是 role=button 可聚焦元素，必须有清晰焦点环 */
+.cm-card:focus-visible {
+  outline: none;
+  border-color: var(--brand);
+  box-shadow: var(--ring);
+}
+
 .cm-card.is-selected {
   border-color: var(--brand);
   box-shadow: 0 0 0 1px var(--brand), var(--shadow-sm);
@@ -1117,7 +1457,7 @@ onBeforeUnmount(() => {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 11px;
+  font-size: var(--text-xs);
   font-weight: 600;
   color: var(--brand);
   animation: pop var(--duration-base) var(--ease-spring);
@@ -1148,7 +1488,7 @@ onBeforeUnmount(() => {
 }
 
 .cm-card__content {
-  font-size: 13px;
+  font-size: var(--text-md);
   line-height: 1.5;
   color: var(--text-primary);
   display: -webkit-box;
@@ -1174,17 +1514,18 @@ onBeforeUnmount(() => {
   flex-wrap: wrap;
 }
 
+/* 分类徽标在粉彩片段卡上：用半透明白底（深色主题随 surface 自动加深），避免灰底发闷 */
 .cm-card__cat {
-  font-size: 11px;
+  font-size: var(--text-xs);
   font-weight: 500;
   padding: 2px var(--sp-2);
   border-radius: var(--radius-pill);
-  background: var(--bg-selected-subtle);
+  background: color-mix(in srgb, var(--bg-surface) 60%, transparent);
   color: var(--text-secondary);
 }
 
 .cm-card__desc {
-  font-size: 12px;
+  font-size: var(--text-sm);
   color: var(--text-muted);
 }
 
@@ -1200,7 +1541,7 @@ onBeforeUnmount(() => {
   padding: 2px var(--sp-2);
   border: none;
   border-radius: var(--radius-pill);
-  font-size: 11px;
+  font-size: var(--text-xs);
   line-height: 1.4;
   color: var(--text-secondary);
   background: var(--bg-selected-subtle);
@@ -1239,8 +1580,9 @@ onBeforeUnmount(() => {
 }
 
 .cm-card__time {
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
 }
 
 .cm-card__actions {
@@ -1312,13 +1654,13 @@ onBeforeUnmount(() => {
 }
 
 .action-btn--danger:hover {
-  background: rgba(229, 72, 77, 0.12);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
   color: var(--danger);
 }
 
 .confirm-text {
   margin: 0;
-  font-size: 14px;
+  font-size: var(--text-base);
   color: var(--text-secondary);
   line-height: 1.6;
 }
