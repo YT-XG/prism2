@@ -8,6 +8,8 @@ import { ref } from 'vue'
 import type { Component } from 'vue'
 import { House, ClipboardList, StickyNote, Settings2, Mail, HardDrive } from '@lucide/vue'
 import type { QuickFolder, HistoryItem, FavoriteItem } from '@preload/ipc'
+import { itemText } from '@renderer/composables/useClipboardText'
+import { isPinyinQuery, matchesPinyin } from '@renderer/composables/usePinyin'
 
 /** 全局功能源：名称/别名命中即跳转对应页面（命令面板 launcher 态亦展示全部） */
 export interface FeatureDef {
@@ -67,12 +69,62 @@ const EMPTY_RESULT: GlobalSearchResult = {
   snippets: []
 }
 
-/** 按名称/别名做不区分大小写的包含匹配 */
+/** 按名称/别名做不区分大小写的包含匹配，并叠加拼音命中 */
 function matchFeatures(q: string): FeatureDef[] {
   const lower = q.toLowerCase()
   return GLOBAL_FEATURES.filter(
-    (f) => f.name.toLowerCase().includes(lower) || f.aliases.some((a) => a.toLowerCase().includes(lower))
+    (f) =>
+      f.name.toLowerCase().includes(lower) ||
+      f.aliases.some((a) => a.toLowerCase().includes(lower)) ||
+      matchesPinyin(f.name, q) ||
+      f.aliases.some((a) => matchesPinyin(a, q))
   )
+}
+
+/** 拼音查询时历史 / 片段的候选池大小（本地 SQLite IPC，受 200ms 防抖限制，量级可控） */
+const PINYIN_POOL = 300
+
+/** 单个文本是否命中：普通子串 或 拼音 */
+function matchText(text: string, lower: string, q: string): boolean {
+  return text.toLowerCase().includes(lower) || matchesPinyin(text, q)
+}
+
+/** 历史条目：仅文本/富文本，按纯文本 + 拼音命中 */
+function filterHistory(
+  items: HistoryItem[],
+  lower: string,
+  q: string,
+  limit: number
+): HistoryItem[] {
+  const pool = items.filter((h) => h.type === 'text' || h.type === 'richtext')
+  const hits: HistoryItem[] = []
+  for (const h of pool) {
+    if (matchText(itemText(h), lower, q)) {
+      hits.push(h)
+      if (hits.length >= limit) break
+    }
+  }
+  return hits
+}
+
+/** 片段：内容或描述命中（拼音按纯文本） */
+function filterSnippets(
+  items: FavoriteItem[],
+  lower: string,
+  q: string,
+  limit: number
+): FavoriteItem[] {
+  const hits: FavoriteItem[] = []
+  for (const s of items) {
+    if (
+      matchText(itemText(s), lower, q) ||
+      matchText(s.description ?? '', lower, q)
+    ) {
+      hits.push(s)
+      if (hits.length >= limit) break
+    }
+  }
+  return hits
 }
 
 /**
@@ -91,25 +143,45 @@ export async function searchGlobal(q: string): Promise<GlobalSearchResult> {
   }
 
   const lower = trimmed.toLowerCase()
-  const [history, snippets, folders] = await Promise.all([
-    window.electronAPI.clipboard.searchHistory(trimmed),
-    window.electronAPI.clipboard.searchSnippets(trimmed),
-    window.electronAPI.quickFolders.getFolders()
-  ])
+  const pinyinOnly = isPinyinQuery(trimmed)
+  const folders = await window.electronAPI.quickFolders.getFolders()
+
+  let history: HistoryItem[] = []
+  let snippets: FavoriteItem[] = []
+  if (pinyinOnly) {
+    // 拼音查询：LIKE 子串无法命中，改拉取受控候选池后由渲染端做拼音过滤
+    const [hPool, fPool] = await Promise.all([
+      window.electronAPI.clipboard.getHistory(PINYIN_POOL, 0),
+      window.electronAPI.clipboard.getFavorites(PINYIN_POOL)
+    ])
+    history = filterHistory(hPool, lower, trimmed, 10)
+    snippets = filterSnippets(fPool, lower, trimmed, 10)
+  } else {
+    const [hs, ss] = await Promise.all([
+      window.electronAPI.clipboard.searchHistory(trimmed),
+      window.electronAPI.clipboard.searchSnippets(trimmed)
+    ])
+    history = hs.slice(0, 10)
+    snippets = ss.slice(0, 10)
+  }
+
   return {
     features: matchFeatures(trimmed),
-    // 快捷文件夹：按别名/名称/路径匹配，失效路径不参与
+    // 快捷文件夹：按别名/名称/路径匹配（含拼音），失效路径不参与
     folders: folders
       .filter((f) => !f.missing)
       .filter(
         (f) =>
           (f.alias?.toLowerCase().includes(lower) ?? false) ||
           f.name.toLowerCase().includes(lower) ||
-          f.path.toLowerCase().includes(lower)
+          f.path.toLowerCase().includes(lower) ||
+          matchesPinyin(f.alias ?? '', trimmed) ||
+          matchesPinyin(f.name, trimmed) ||
+          matchesPinyin(f.path, trimmed)
       )
       .slice(0, 8),
-    history: history.slice(0, 10),
-    snippets: snippets.slice(0, 10)
+    history,
+    snippets
   }
 }
 
