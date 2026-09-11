@@ -227,7 +227,8 @@ onBeforeUnmount(() => {
 .ui-dialog__overlay {
   position: fixed;
   inset: 0;
-  z-index: 200;
+  /* 需高于浮动面板层：功能搜索面板 / 快捷打开移动菜单均为 z-index 1000 */
+  z-index: 1100;
   display: flex;
   align-items: center;
   justify-content: center;
